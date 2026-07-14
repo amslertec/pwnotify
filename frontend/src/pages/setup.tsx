@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import type { GraphTestResult, SetupStatus } from '@/lib/types'
@@ -210,6 +211,13 @@ function GraphStep({ onNext }: { onNext: () => void }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<GraphTestResult | null>(null)
 
+  // Optionale Einstellungen — können auch später in den Einstellungen gesetzt werden.
+  const [publicUrl, setPublicUrl] = useState('')
+  const [group, setGroup] = useState('')
+  const [ssoEnabled, setSsoEnabled] = useState(false)
+  const [ssoGroup, setSsoGroup] = useState('')
+  const [ssoLabel, setSsoLabel] = useState('Mit Microsoft anmelden')
+
   const saveTest = async () => {
     setBusy(true)
     setResult(null)
@@ -237,6 +245,29 @@ function GraphStep({ onNext }: { onNext: () => void }) {
     }
   }
 
+  const proceed = async () => {
+    setBusy(true)
+    try {
+      await api.put('/settings', {
+        values: {
+          'app.public_url': publicUrl.trim(),
+          'sync.group_id': group.trim(),
+          'oidc.enabled': ssoEnabled,
+          'oidc.admin_group_id': ssoGroup.trim(),
+          'oidc.button_label': ssoLabel.trim() || 'Mit Microsoft anmelden',
+        },
+      })
+      onNext()
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Speichern fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const base = (publicUrl.trim() || 'https://<deine-app-url>').replace(/\/$/, '')
+  const redirectUri = `${base}/api/auth/oidc/callback`
+
   return (
     <div className="space-y-5">
       <StepHeading
@@ -262,7 +293,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
 
       {result && <GraphResultCard result={result} />}
 
-      <div className="flex justify-between">
+      <div className="flex justify-end">
         <Button
           variant="outline"
           onClick={saveTest}
@@ -271,7 +302,77 @@ function GraphStep({ onNext }: { onNext: () => void }) {
         >
           Speichern & Verbindung testen
         </Button>
-        <Button onClick={onNext} disabled={!result?.connected}>
+      </div>
+
+      {/* Optionale Einstellungen */}
+      <div className="border-border space-y-4 rounded-lg border p-4">
+        <div>
+          <p className="text-sm font-medium">Optionale Einstellungen</p>
+          <p className="text-muted-foreground text-xs">
+            Alles hier ist optional und lässt sich später in den Einstellungen ändern.
+          </p>
+        </div>
+
+        <Field
+          label="Öffentliche App-URL (Domain)"
+          hint="Für Links in E-Mails und den SSO-Redirect. Leer lassen = interne URL verwenden."
+        >
+          <Input
+            value={publicUrl}
+            onChange={(e) => setPublicUrl(e.target.value)}
+            placeholder="https://pwnotify.example.com"
+          />
+        </Field>
+
+        <Field
+          label="Sync-Umfang: Gruppen-Objekt-ID"
+          hint="Nur Mitglieder dieser Entra-Gruppe synchronisieren. Leer lassen = alle Benutzer. Benötigt GroupMember.Read.All."
+        >
+          <Input
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            placeholder="00000000-0000-0000-0000-000000000000"
+            className="font-mono"
+          />
+        </Field>
+
+        <div className="border-border flex items-center justify-between rounded-md border p-3">
+          <div className="pr-3">
+            <p className="text-sm font-medium">Microsoft-SSO-Anmeldung aktivieren</p>
+            <p className="text-muted-foreground text-xs">
+              Login per Microsoft-Konto — nutzt dieselbe App-Registrierung. Benötigt
+              GroupMember.Read.All und den groups-Claim im Token.
+            </p>
+          </div>
+          <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
+        </div>
+
+        {ssoEnabled && (
+          <div className="grid gap-3">
+            <Field
+              label="Admin-Gruppen-Objekt-ID"
+              hint="Nur Mitglieder dieser Gruppe dürfen sich per SSO anmelden."
+            >
+              <Input
+                value={ssoGroup}
+                onChange={(e) => setSsoGroup(e.target.value)}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono"
+              />
+            </Field>
+            <Field label="Button-Beschriftung">
+              <Input value={ssoLabel} onChange={(e) => setSsoLabel(e.target.value)} />
+            </Field>
+            <div className="text-muted-foreground bg-muted/40 rounded-md p-3 text-xs">
+              Diese Redirect-URI in der Entra-App-Registrierung (Plattform Web) hinterlegen:{' '}
+              <code className="bg-card rounded px-1 py-0.5 font-mono break-all">{redirectUri}</code>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={proceed} loading={busy} disabled={!result?.connected}>
           Weiter
         </Button>
       </div>
@@ -403,6 +504,30 @@ function MailStep({ onNext }: { onNext: () => void }) {
 }
 
 function DoneStep({ onFinish }: { onFinish: () => void }) {
+  const [syncing, setSyncing] = useState(true)
+
+  // Erst-Sync automatisch starten: Benutzer (dry-run -> befüllen ohne Mailversand)
+  // und SSO-Benutzer (No-op, falls SSO nicht aktiviert wurde).
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        await api.post('/runs/trigger', { dry_run: true })
+      } catch {
+        /* Erst-Sync ist best-effort; jederzeit manuell wiederholbar */
+      }
+      try {
+        await api.post('/admin/users/sso/sync')
+      } catch {
+        /* SSO-Sync nur relevant, wenn SSO konfiguriert ist */
+      }
+      if (active) setSyncing(false)
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center">
       <div className="bg-success/15 text-success grid size-14 place-items-center rounded-2xl">
@@ -411,9 +536,20 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
       <div>
         <h2 className="font-display text-xl font-semibold">Alles bereit!</h2>
         <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-          PwNotify ist eingerichtet. Sie können jetzt den ersten Sync starten und den Zeitplan in
-          den Einstellungen anpassen.
+          PwNotify ist eingerichtet. Der Erst-Sync läuft automatisch — Benutzer und SSO-Benutzer
+          werden geladen. Es werden noch keine E-Mails versendet; das übernimmt der Zeitplan.
         </p>
+      </div>
+      <div className="text-muted-foreground flex items-center gap-2 text-sm">
+        {syncing ? (
+          <>
+            <Loader2 className="size-4 animate-spin" /> Erst-Sync läuft…
+          </>
+        ) : (
+          <>
+            <Check className="text-success size-4" /> Erst-Sync abgeschlossen
+          </>
+        )}
       </div>
       <Button onClick={onFinish}>Zum Dashboard</Button>
     </div>
@@ -434,15 +570,18 @@ function Field({
   label,
   children,
   className,
+  hint,
 }: {
   label: string
   children: React.ReactNode
   className?: string
+  hint?: string
 }) {
   return (
     <div className={cn('space-y-1.5', className)}>
       <Label>{label}</Label>
       {children}
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
     </div>
   )
 }
