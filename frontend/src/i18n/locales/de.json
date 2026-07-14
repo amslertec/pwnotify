@@ -32,6 +32,22 @@
     "inHoursMins": "in {{h}} h {{m}} min",
     "inMins": "in {{m}} min"
   },
+  "pwa": {
+    "title": "PwNotify installieren",
+    "subtitle": "Als App zum Startbildschirm — schneller Zugriff, Vollbild.",
+    "installButton": "Installieren",
+    "dismiss": "Ausblenden",
+    "ios": {
+      "title": "So installieren (Safari):",
+      "step1": "Unten auf das Teilen-Symbol tippen",
+      "step2": "„Zum Home-Bildschirm“ wählen"
+    },
+    "android": {
+      "title": "So installieren (Chrome):",
+      "step1": "Oben rechts auf das Menü (⋮) tippen",
+      "step2": "„App installieren“ bzw. „Zum Startbildschirm“ wählen"
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "users": "Benutzer",

@@ -32,6 +32,22 @@
     "inHoursMins": "in {{h}}h {{m}}m",
     "inMins": "in {{m}} min"
   },
+  "pwa": {
+    "title": "Install PwNotify",
+    "subtitle": "Add it to your home screen — quick access, full screen.",
+    "installButton": "Install",
+    "dismiss": "Dismiss",
+    "ios": {
+      "title": "How to install (Safari):",
+      "step1": "Tap the Share icon at the bottom",
+      "step2": "Choose “Add to Home Screen”"
+    },
+    "android": {
+      "title": "How to install (Chrome):",
+      "step1": "Tap the menu (⋮) at the top right",
+      "step2": "Choose “Install app” or “Add to Home screen”"
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "users": "Users",

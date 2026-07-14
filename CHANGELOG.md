@@ -4,6 +4,17 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-07-14
+
+### Added
+
+- **Progressive Web App**: a minimal service worker (registered only in secure contexts)
+  enables installation to the home screen alongside the existing web manifest and icons.
+- **Mobile install hint**: on phones, a bottom-sheet prompt offers the native install
+  (Android/Chrome) or step-by-step instructions (iOS/Safari, Android/Chrome). It never
+  shows when the app already runs as an installed PWA, nor after it is dismissed. Fully
+  localized (DE/EN).
+
 ## [0.1.5] — 2026-07-14
 
 ### Added
@@ -115,6 +126,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.6
 [0.1.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.5
 [0.1.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.4
 [0.1.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.3

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { FullScreenLoader } from './components/full-screen-loader'
+import { InstallPrompt } from './components/install-prompt'
 import { AppLayout } from './components/layout/app-layout'
 import { Toaster } from './components/toaster'
 import { api } from './lib/api'
@@ -38,6 +39,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster />
+      <InstallPrompt />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/setup" element={<SetupPage />} />

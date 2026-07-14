@@ -16,6 +16,15 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { AuthProvider } from './lib/auth'
 import { queryClient } from './lib/query'
 
+// PWA: Service Worker nur im sicheren Kontext registrieren (HTTPS/localhost).
+// Auf plain-HTTP-LAN blockiert der Browser SWs ohnehin — die manuelle Install-
+// Anleitung greift dort trotzdem.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
