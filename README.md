@@ -74,29 +74,58 @@ address you configure — make sure that mailbox exists.
 
 ---
 
-## Installation
+## Installation (production, prebuilt image)
+
+You do **not** need to clone the repository. Copy just two files onto the target server —
+`docker-compose-prod.yml` and `example.env` — then rename them:
+
+```bash
+mkdir pwnotify && cd pwnotify
+# put docker-compose-prod.yml and example.env into this directory
+# (scp from another machine, or download them from the repository)
+
+cp docker-compose-prod.yml docker-compose.yml   # so plain `docker compose` works
+cp example.env .env                              # your live configuration
+
+# edit .env — at minimum:
+#   POSTGRES_PASSWORD   strong password
+#   PWNOTIFY_BASE_URL   how you reach the app (see below)
+#   PWNOTIFY_BIND       127.0.0.1:8080 behind a proxy, or 0.0.0.0:8080 for direct LAN
+#   PWNOTIFY_COOKIE_SECURE  true behind HTTPS, false for plain HTTP
+
+docker compose pull
+docker compose up -d
+```
+
+Then open the app and complete the setup wizard (create admin → enter Graph credentials →
+test → configure mail).
+
+### Reaching the app — important
+
+By default the container binds to `127.0.0.1:8080` (localhost only), which is correct
+**behind a reverse proxy** but means a browser on another machine gets
+`ERR_CONNECTION_REFUSED`. For **direct access over the LAN without a proxy**, set in `.env`:
+
+```dotenv
+PWNOTIFY_BIND=0.0.0.0:8080
+PWNOTIFY_BASE_URL=http://<server-ip>:8080
+PWNOTIFY_COOKIE_SECURE=false
+```
+
+then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse proxy
+with TLS (see below) for anything beyond a trusted LAN.
+
+The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
+`amslertec/pwnotify:0.1.0`.
+
+### From source (development)
 
 ```bash
 git clone https://github.com/amslertec/pwnotify.git
 cd pwnotify
-cp .env.example .env
-# edit .env — set POSTGRES_PASSWORD at minimum
-docker compose up -d
+cp .env.example .env      # set POSTGRES_PASSWORD at minimum
+docker compose up -d      # builds the image locally
 ```
-
-Open <http://localhost:8080> and complete the setup wizard (create admin → enter Graph
-credentials → test → configure mail). By default the app binds to `127.0.0.1:8080`; put a
-reverse proxy in front for TLS (see below).
-
-### Using the prebuilt image
-
-```yaml
-services:
-  app:
-    image: amslertec/pwnotify:0.1.0
-```
-
-The image is multi-arch (`linux/amd64`, `linux/arm64`).
 
 ---
 
@@ -170,6 +199,8 @@ Database migrations run automatically on startup (idempotent).
 
 | Symptom | Likely cause / fix |
 |---|---|
+| `ERR_CONNECTION_REFUSED` from another machine | App binds to `127.0.0.1:8080` (localhost only). For LAN access set `PWNOTIFY_BIND=0.0.0.0:8080` (and `PWNOTIFY_COOKIE_SECURE=false` for plain HTTP), then `docker compose up -d`. |
+| Reachable but login doesn't stick over HTTP | `PWNOTIFY_COOKIE_SECURE=true` on plain HTTP — the browser drops the secure cookie. Set it to `false`, or serve via HTTPS. |
 | "Test connection" shows missing permissions | Admin consent not granted, or Delegated instead of Application permissions. |
 | Graph connects but no users sync | Check the run log (Runs page) — often `Domain.Read.All` missing, so validity can't be read. |
 | Mails not sent (Graph) | The `mail.from` mailbox must exist and the app needs `Mail.Send`. |

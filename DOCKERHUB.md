@@ -44,28 +44,26 @@ You need two files on the target server: `docker-compose-prod.yml` and `example.
 (copy them from the source repository — see below for their full contents).
 
 ```bash
-# 1. Place docker-compose-prod.yml and example.env in a directory, then:
-cp example.env .env
-#   -> edit .env:  POSTGRES_PASSWORD, PWNOTIFY_BASE_URL, PWNOTIFY_COOKIE_SECURE
+mkdir pwnotify && cd pwnotify
+# put docker-compose-prod.yml and example.env here (scp / download from the repo)
 
-# 2. Pull and start
-docker compose -f docker-compose-prod.yml pull
-docker compose -f docker-compose-prod.yml up -d
+cp docker-compose-prod.yml docker-compose.yml   # so plain `docker compose` works
+cp example.env .env                             # your live configuration
+#   -> edit .env:  POSTGRES_PASSWORD, PWNOTIFY_BASE_URL, PWNOTIFY_BIND, PWNOTIFY_COOKIE_SECURE
 
-# 3. Watch it become healthy
-docker compose -f docker-compose-prod.yml ps
+docker compose pull
+docker compose up -d
+docker compose ps        # wait for "healthy"
 ```
 
-> Both files live in the source repository (`docker-compose-prod.yml`, `example.env`).
-> Copy them to the server via `scp`/clone, then follow the steps above.
+Then open the app — the **first-run setup wizard** guides you through database check → admin
+account → Microsoft Graph (with a built-in Entra registration guide) → mail backend.
 
-Then open the app (default `http://localhost:8080`) — the **first-run setup wizard** guides
-you through database check → admin account → Microsoft Graph (with a built-in Entra
-registration guide) → mail backend.
-
-> The bundled PostgreSQL is reachable only on the internal Docker network. By default the
-> app binds to `127.0.0.1:8080` — put a TLS reverse proxy in front, or set
-> `PWNOTIFY_BIND=0.0.0.0:8080` in `.env` to expose it on your LAN.
+> **Can't reach it / `ERR_CONNECTION_REFUSED`?** The container binds to `127.0.0.1:8080` by
+> default (localhost only) — correct behind a reverse proxy, but unreachable from another
+> machine. For direct LAN access set in `.env`: `PWNOTIFY_BIND=0.0.0.0:8080`,
+> `PWNOTIFY_BASE_URL=http://<server-ip>:8080`, `PWNOTIFY_COOKIE_SECURE=false`, then
+> `docker compose up -d` again. The bundled PostgreSQL stays on the internal Docker network.
 
 ### Minimal run without Compose
 
