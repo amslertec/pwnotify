@@ -40,15 +40,16 @@ Multi-arch manifests: **linux/amd64** and **linux/arm64**.
 
 ## Quick start (Docker Compose)
 
-You need two files on the target server: `docker-compose-prod.yml` and `example.env`
-(copy them from the source repository — see below for their full contents).
+You need two files on the target server: `docker-compose-prod.yml` and `example.env`.
+The commands below download them straight from the public repository — no clone required.
 
 ```bash
 mkdir pwnotify && cd pwnotify
-# put docker-compose-prod.yml and example.env here (scp / download from the repo)
 
-cp docker-compose-prod.yml docker-compose.yml   # so plain `docker compose` works
-cp example.env .env                             # your live configuration
+# Download the two files straight to their final names (public repo, no auth needed):
+curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/docker-compose-prod.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/example.env -o .env
+
 #   -> edit .env:  POSTGRES_PASSWORD, PWNOTIFY_BASE_URL, PWNOTIFY_BIND, PWNOTIFY_COOKIE_SECURE
 
 docker compose pull

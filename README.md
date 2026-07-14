@@ -81,11 +81,10 @@ You do **not** need to clone the repository. Copy just two files onto the target
 
 ```bash
 mkdir pwnotify && cd pwnotify
-# put docker-compose-prod.yml and example.env into this directory
-# (scp from another machine, or download them from the repository)
 
-cp docker-compose-prod.yml docker-compose.yml   # so plain `docker compose` works
-cp example.env .env                              # your live configuration
+# Download the two files straight to their final names (public repo, no auth needed):
+curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/docker-compose-prod.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/example.env -o .env
 
 # edit .env — at minimum:
 #   POSTGRES_PASSWORD   strong password
