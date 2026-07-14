@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
+import { UpdateModal } from '../update-modal'
 import { Sheet, SheetContent } from '../ui/sheet'
 import { Sidebar } from './sidebar'
 import { Topbar } from './topbar'
@@ -20,6 +21,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full">
+      <UpdateModal />
       {/* Desktop-Sidebar */}
       <div className="hidden lg:block">
         <Sidebar collapsed={collapsed} onToggle={toggle} />

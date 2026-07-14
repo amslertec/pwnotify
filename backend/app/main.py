@@ -28,6 +28,7 @@ from .api.routes import (
     runs,
     setup,
     users,
+    version,
 )
 from .api.routes import (
     settings as settings_routes,
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
         settings_routes.router,
         dashboard.router,
         branding.router,
+        version.router,
     ]
     for r in api:
         app.include_router(r, prefix="/api")

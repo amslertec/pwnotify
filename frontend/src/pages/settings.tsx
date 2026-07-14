@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, ApiError } from '@/lib/api'
 import type { Settings } from '@/lib/types'
 import { BrandingTab } from '@/components/settings/branding-tab'
+import { GeneralTab } from '@/components/settings/general-tab'
 import { GraphTab } from '@/components/settings/graph-tab'
 import { MailTab } from '@/components/settings/mail-tab'
 import { PolicyTab } from '@/components/settings/policy-tab'
@@ -28,6 +29,7 @@ const TABS = [
   { value: 'policy', label: 'Passwort-Policy' },
   { value: 'branding', label: 'Branding' },
   { value: 'template', label: 'Vorlage' },
+  { value: 'general', label: 'Allgemein' },
 ]
 
 export default function SettingsPage() {
@@ -99,6 +101,9 @@ export default function SettingsPage() {
             </TabsContent>
             <TabsContent value="template">
               <TemplateTab {...tabProps} />
+            </TabsContent>
+            <TabsContent value="general">
+              <GeneralTab {...tabProps} />
             </TabsContent>
           </>
         )}

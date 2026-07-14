@@ -30,6 +30,8 @@ SETTINGS: dict[str, SettingSpec] = {
     # ---- Allgemein ----
     # Öffentliche URL der App (für SSO-Redirect und E-Mail-Links). Leer -> ENV PWNOTIFY_BASE_URL.
     "app.public_url": SettingSpec(""),
+    # Prüft periodisch das neueste GitHub-Release und zeigt bei neuerer Version einen Hinweis.
+    "app.update_check": SettingSpec(True),
     # ---- Graph / Entra ----
     "graph.tenant_id": SettingSpec(""),
     "graph.client_id": SettingSpec(""),

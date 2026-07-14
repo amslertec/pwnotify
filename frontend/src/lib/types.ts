@@ -9,6 +9,18 @@ export interface User {
   avatar_version: number
 }
 
+export interface VersionInfo {
+  current: string
+  latest: string | null
+  update_available: boolean
+  release_url: string
+  release_name: string | null
+  notes: string | null
+  published_at: string | null
+  checked_at: string | null
+  enabled: boolean
+}
+
 export interface AdminUser {
   id: number
   username: string

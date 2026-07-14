@@ -4,6 +4,23 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-07-14
+
+### Added
+
+- **In-app update notification**: the running instance periodically checks the latest
+  GitHub release (`GET /api/version`, cached 6 h) and, when a newer version exists, shows a
+  centered modal that must be acknowledged — including the new release's notes, so operators
+  see what an update brings before installing it. The tag used (`latest` vs pinned) does not
+  matter; the check compares the version baked into the running image.
+- **Settings → General tab**: shows the installed vs. available version and a toggle to
+  enable/disable the update check (`app.update_check`, on by default).
+
+### Fixed
+
+- `__version__` was stale at `0.1.0`; it is now bumped with every release (drives the
+  update check).
+
 ## [0.1.2] — 2026-07-14
 
 ### Added
@@ -76,6 +93,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.3
 [0.1.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.2
 [0.1.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.1
 [0.1.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.0
