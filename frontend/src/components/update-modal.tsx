@@ -16,6 +16,8 @@ export function UpdateModal() {
     queryKey: ['version'],
     queryFn: () => api.get<VersionInfo>('/version'),
     staleTime: 60 * 60 * 1000,
+    // Auch lange offene Sessions prüfen periodisch nach (Backend cacht 6 h -> günstig).
+    refetchInterval: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
   const [ack, setAck] = useState(() => localStorage.getItem(ACK_KEY))

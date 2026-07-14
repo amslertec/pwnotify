@@ -66,10 +66,10 @@ def _is_newer(latest: str, current: str) -> bool:
     return _parse(latest) > _parse(current)
 
 
-async def _fetch_latest() -> _Release | None:
+async def _fetch_latest(force: bool = False) -> _Release | None:
     global _cached, _checked_at
     now = dt.datetime.now(dt.UTC)
-    if _checked_at is not None and now - _checked_at < _CACHE_TTL:
+    if not force and _checked_at is not None and now - _checked_at < _CACHE_TTL:
         return _cached
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -94,11 +94,12 @@ async def _fetch_latest() -> _Release | None:
 
 
 @router.get("", response_model=VersionInfo)
-async def version(_: CurrentUser, svc: SettingsDep) -> VersionInfo:
+async def version(_: CurrentUser, svc: SettingsDep, force: bool = False) -> VersionInfo:
+    """Aktuelle vs. neueste Version. ``force=true`` umgeht den 6-h-Cache (manuelle Prüfung)."""
     settings = await svc.get_all()
     if not bool(settings.get("app.update_check", True)):
         return VersionInfo(current=__version__, enabled=False)
-    rel = await _fetch_latest()
+    rel = await _fetch_latest(force=force)
     tag = rel.tag if rel else None
     return VersionInfo(
         current=__version__,

@@ -8,7 +8,7 @@ address, or both. Self-hosted, hardened, and driven by a modern admin UI with a 
 setup wizard.
 
 ```
-docker pull amslertec/pwnotify:0.1.3
+docker pull amslertec/pwnotify:0.1.4
 ```
 
 ---
@@ -31,7 +31,7 @@ docker pull amslertec/pwnotify:0.1.3
 
 | Tag | Meaning |
 |---|---|
-| `0.1.3` | Pinned release (recommended for production) |
+| `0.1.4` | Pinned release (recommended for production) |
 | `latest` | Most recent release |
 
 Multi-arch manifests: **linux/amd64** and **linux/arm64**.
@@ -79,7 +79,7 @@ docker run -d --name pwnotify \
   -v pwnotify-data:/data \
   --read-only --tmpfs /tmp \
   --security-opt no-new-privileges:true --cap-drop ALL \
-  amslertec/pwnotify:0.1.3
+  amslertec/pwnotify:0.1.4
 ```
 
 ---
@@ -144,9 +144,9 @@ This image is built for a Docker Scout **A rating**:
 Inspect the attestations yourself:
 
 ```bash
-docker scout cves amslertec/pwnotify:0.1.3            # vulnerability report
-docker buildx imagetools inspect amslertec/pwnotify:0.1.3   # platforms + attestations
-docker scout sbom amslertec/pwnotify:0.1.3            # software bill of materials
+docker scout cves amslertec/pwnotify:0.1.4            # vulnerability report
+docker buildx imagetools inspect amslertec/pwnotify:0.1.4   # platforms + attestations
+docker scout sbom amslertec/pwnotify:0.1.4            # software bill of materials
 ```
 
 ---

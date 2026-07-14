@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { ArrowUpCircle, CheckCircle2, ExternalLink } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 import { Button } from '../ui/button'
 import { Switch } from '../ui/switch'
@@ -11,10 +12,22 @@ import type { VersionInfo } from '@/lib/types'
 
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
   const [updateCheck, setUpdateCheck] = useState(Boolean(settings['app.update_check'] ?? true))
+  const qc = useQueryClient()
   const { data: ver } = useQuery({
     queryKey: ['version'],
     queryFn: () => api.get<VersionInfo>('/version'),
     staleTime: 60 * 60 * 1000,
+  })
+
+  const check = useMutation({
+    mutationFn: () => api.get<VersionInfo>('/version?force=true'),
+    onSuccess: (data) => {
+      qc.setQueryData(['version'], data)
+      if (!data.enabled) toast.info('Update-Prüfung ist deaktiviert.')
+      else if (data.update_available) toast.info(`Update verfügbar: ${data.latest}`)
+      else toast.success('Sie verwenden die neueste Version.')
+    },
+    onError: () => toast.error('Prüfung fehlgeschlagen.'),
   })
 
   return (
@@ -49,16 +62,26 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
               </p>
             </div>
           </div>
-          {ver?.update_available && (
-            <a
-              href={ver.release_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary inline-flex items-center gap-1 text-sm font-medium underline underline-offset-2"
+          <div className="flex items-center gap-3">
+            {ver?.update_available && (
+              <a
+                href={ver.release_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary inline-flex items-center gap-1 text-sm font-medium underline underline-offset-2"
+              >
+                Release ansehen <ExternalLink className="size-3.5" />
+              </a>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => check.mutate()}
+              loading={check.isPending}
             >
-              Release ansehen <ExternalLink className="size-3.5" />
-            </a>
-          )}
+              <RefreshCw className="size-4" /> Jetzt prüfen
+            </Button>
+          </div>
         </div>
 
         <div className="border-border flex items-center justify-between rounded-lg border p-4">
