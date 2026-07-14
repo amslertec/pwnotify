@@ -49,8 +49,10 @@ SETTINGS: dict[str, SettingSpec] = {
     # ---- SSO / OIDC (Anmeldung mit Microsoft-Konto) ----
     # Nutzt dieselbe App-Registrierung (Tenant/Client/Secret) wie Graph.
     "oidc.enabled": SettingSpec(False),
-    # Entra-Gruppen-Objekt-ID: nur Mitglieder dürfen sich per SSO anmelden.
+    # Entra-Gruppen-Objekt-ID: Mitglieder erhalten die Admin-Rolle (voller Zugriff).
     "oidc.admin_group_id": SettingSpec(""),
+    # Optional: Mitglieder dieser Gruppe erhalten die Auditor-Rolle (read-only).
+    "oidc.auditor_group_id": SettingSpec(""),
     # Beschriftung des SSO-Buttons auf der Login-Seite.
     "oidc.button_label": SettingSpec("Mit Microsoft anmelden"),
     # ---- Mail ----

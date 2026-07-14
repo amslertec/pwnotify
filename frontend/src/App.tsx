@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { FullScreenLoader } from './components/full-screen-loader'
@@ -35,6 +36,13 @@ function Guarded() {
   return <AppLayout />
 }
 
+/** Nur für Admins erreichbar; Auditoren werden aufs Dashboard umgeleitet. */
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user && user.role !== 'admin') return <Navigate to="/" replace />
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -46,11 +54,25 @@ export default function App() {
         <Route element={<Guarded />}>
           <Route index element={<DashboardPage />} />
           <Route path="/users" element={<UsersPage />} />
-          <Route path="/access" element={<AccessPage />} />
+          <Route
+            path="/access"
+            element={
+              <AdminOnly>
+                <AccessPage />
+              </AdminOnly>
+            }
+          />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/runs" element={<RunsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/settings"
+            element={
+              <AdminOnly>
+                <SettingsPage />
+              </AdminOnly>
+            }
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

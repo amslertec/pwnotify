@@ -4,6 +4,21 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] — 2026-07-14
+
+### Added
+
+- **SSO role mapping via Entra groups**: members of the admin group get the `admin` role,
+  members of a new optional **auditor group** (`oidc.auditor_group_id`) get the read-only
+  `auditor` role (admin wins if in both). The role is applied on SSO login and on the SSO
+  user sync; users in neither group are removed. Configurable in Settings → SSO and in the
+  first-run setup wizard.
+
+### Changed
+
+- Auditors no longer see **Settings** and **User management** in the sidebar, and those
+  routes redirect them to the dashboard.
+
 ## [0.1.7] — 2026-07-14
 
 ### Added
@@ -144,6 +159,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.8
 [0.1.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.7
 [0.1.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.6
 [0.1.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.5

@@ -222,6 +222,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
   const [group, setGroup] = useState('')
   const [ssoEnabled, setSsoEnabled] = useState(false)
   const [ssoGroup, setSsoGroup] = useState('')
+  const [ssoAuditorGroup, setSsoAuditorGroup] = useState('')
   const [ssoLabel, setSsoLabel] = useState(t('setup.graph.ssoDefaultLabel'))
 
   const saveTest = async () => {
@@ -260,6 +261,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
           'sync.group_id': group.trim(),
           'oidc.enabled': ssoEnabled,
           'oidc.admin_group_id': ssoGroup.trim(),
+          'oidc.auditor_group_id': ssoAuditorGroup.trim(),
           'oidc.button_label': ssoLabel.trim() || t('setup.graph.ssoDefaultLabel'),
         },
       })
@@ -345,6 +347,17 @@ function GraphStep({ onNext }: { onNext: () => void }) {
               <Input
                 value={ssoGroup}
                 onChange={(e) => setSsoGroup(e.target.value)}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono"
+              />
+            </Field>
+            <Field
+              label={t('setup.graph.ssoAuditorGroupLabel')}
+              hint={t('setup.graph.ssoAuditorGroupHint')}
+            >
+              <Input
+                value={ssoAuditorGroup}
+                onChange={(e) => setSsoAuditorGroup(e.target.value)}
                 placeholder="00000000-0000-0000-0000-000000000000"
                 className="font-mono"
               />

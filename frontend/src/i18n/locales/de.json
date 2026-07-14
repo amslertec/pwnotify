@@ -456,6 +456,10 @@
       "step4e": ". Ohne sie schlägt der Sync mit „403 / Insufficient privileges“ fehl.",
       "photoNote1": "Profilbilder der SSO-Benutzer werden über die bereits benötigte Berechtigung",
       "photoNote2": "geladen — eine zusätzliche API-Berechtigung ist dafür nicht nötig."
+    },
+    "auditorGroup": {
+      "label": "Auditor-Gruppen-Objekt-ID (optional)",
+      "hint": "Mitglieder erhalten die read-only Auditor-Rolle. Entra → Gruppen → Objekt-ID."
     }
   },
   "generalTab": {
@@ -711,7 +715,9 @@
       "ssoLabelLabel": "Button-Beschriftung",
       "ssoDefaultLabel": "Mit Microsoft anmelden",
       "redirectHint": "Diese Redirect-URI in der Entra-App-Registrierung (Plattform Web) hinterlegen:",
-      "nextButton": "Weiter"
+      "nextButton": "Weiter",
+      "ssoAuditorGroupLabel": "Auditor-Gruppen-Objekt-ID (optional)",
+      "ssoAuditorGroupHint": "Mitglieder erhalten read-only Auditor-Zugriff. Leer lassen = keine Auditoren per SSO."
     },
     "mail": {
       "title": "E-Mail-Versand",

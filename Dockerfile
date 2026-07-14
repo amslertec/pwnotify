@@ -41,7 +41,7 @@ RUN mkdir -p /tmp/data-empty
 FROM cgr.dev/chainguard/python:latest@sha256:4d908c6a44ba22460e34a2f6dd665b8fcb82bd3e6c887e749bd6fef243e10094 AS runtime
 
 # --- OCI-Labels (Werte via build-args aus CI) ---
-ARG VERSION=0.1.7
+ARG VERSION=0.1.8
 ARG REVISION=dev
 ARG CREATED=1970-01-01T00:00:00Z
 LABEL org.opencontainers.image.title="PwNotify" \

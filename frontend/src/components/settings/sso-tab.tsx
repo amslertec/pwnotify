@@ -11,6 +11,9 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
   const [enabled, setEnabled] = useState(Boolean(settings['oidc.enabled'] ?? false))
   const [groupId, setGroupId] = useState(String(settings['oidc.admin_group_id'] ?? ''))
+  const [auditorGroupId, setAuditorGroupId] = useState(
+    String(settings['oidc.auditor_group_id'] ?? ''),
+  )
   const [label, setLabel] = useState(
     String(settings['oidc.button_label'] ?? t('ssoTab.defaultButtonLabel')),
   )
@@ -22,6 +25,7 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
     save({
       'oidc.enabled': enabled,
       'oidc.admin_group_id': groupId,
+      'oidc.auditor_group_id': auditorGroupId.trim(),
       'oidc.button_label': label,
       'app.public_url': publicUrl.trim().replace(/\/+$/, ''),
     })
@@ -64,6 +68,18 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
           <Input
             value={groupId}
             onChange={(e) => setGroupId(e.target.value)}
+            placeholder="00000000-0000-0000-0000-000000000000"
+            className="font-mono"
+          />
+        </Field>
+        <Field
+          label={t('ssoTab.auditorGroup.label')}
+          hint={t('ssoTab.auditorGroup.hint')}
+          className="sm:col-span-2"
+        >
+          <Input
+            value={auditorGroupId}
+            onChange={(e) => setAuditorGroupId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
             className="font-mono"
           />

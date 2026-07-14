@@ -41,6 +41,7 @@ class OidcResult:
     username: str
     display_name: str
     allowed: bool
+    role: str = "admin"
     reason: str | None = None
 
 
@@ -120,6 +121,7 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
     display_name = claims.get("name") or username
 
     admin_group = str(settings.get("oidc.admin_group_id") or "")
+    auditor_group = str(settings.get("oidc.auditor_group_id") or "")
     groups = claims.get("groups")
     if not isinstance(groups, list):
         # Overage (User in >200 Gruppen) oder groupMembershipClaims nicht gesetzt.
@@ -130,24 +132,33 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
             reason="Keine Gruppeninformationen im Token. Bitte im App-Manifest "
             "'groupMembershipClaims' auf 'SecurityGroup' setzen.",
         )
-    allowed = admin_group in groups
+    # Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
+    if admin_group and admin_group in groups:
+        role, allowed = "admin", True
+    elif auditor_group and auditor_group in groups:
+        role, allowed = "auditor", True
+    else:
+        role, allowed = "admin", False
     return OidcResult(
         username=username,
         display_name=display_name,
         allowed=allowed,
-        reason=None if allowed else "Nicht Mitglied der Admin-Gruppe.",
+        role=role,
+        reason=None if allowed else "Nicht Mitglied einer berechtigten Gruppe.",
     )
 
 
 async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
-    """Gleicht die SSO-Benutzer mit der Entra-Admin-Gruppe ab.
+    """Gleicht die SSO-Benutzer mit der Entra-Admin- und -Auditor-Gruppe ab.
 
-    Mitglieder werden als SSO-Benutzer angelegt/aktualisiert; frühere SSO-Benutzer,
-    die nicht mehr in der Gruppe sind, werden deaktiviert (Login gesperrt).
+    Mitglieder der Admin-Gruppe erhalten die Rolle ``admin``, Mitglieder der
+    Auditor-Gruppe ``auditor`` (Admin hat Vorrang). Frühere SSO-Benutzer, die in
+    keiner der Gruppen mehr sind, werden komplett entfernt.
     """
-    group_id = str(settings.get("oidc.admin_group_id") or "")
-    if not (settings.get("oidc.enabled") and group_id and settings.get("graph.client_secret")):
-        return {"synced": 0, "deactivated": 0}
+    admin_group = str(settings.get("oidc.admin_group_id") or "")
+    auditor_group = str(settings.get("oidc.auditor_group_id") or "")
+    if not (settings.get("oidc.enabled") and admin_group and settings.get("graph.client_secret")):
+        return {"synced": 0, "removed": 0}
 
     graph = GraphClient(
         GraphConfig(
@@ -157,16 +168,21 @@ async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dic
             cloud=settings.get("graph.cloud") or "global",
         )
     )
-    members = await graph.get_group_members(group_id)
 
-    present: set[str] = set()
-    synced = 0
-    for m in members:
+    # upn_lower -> (Original-UPN, Rolle, Anzeigename); Admin-Gruppe überschreibt Auditor.
+    desired: dict[str, tuple[str, str, str]] = {}
+    if auditor_group:
+        for m in await graph.get_group_members(auditor_group):
+            upn = m.get("userPrincipalName")
+            if upn:
+                desired[upn.lower()] = (upn, "auditor", m.get("displayName") or upn)
+    for m in await graph.get_group_members(admin_group):
         upn = m.get("userPrincipalName")
-        if not upn:
-            continue
-        present.add(upn.lower())
-        name = m.get("displayName") or upn
+        if upn:
+            desired[upn.lower()] = (upn, "admin", m.get("displayName") or upn)
+
+    synced = 0
+    for upn, role, name in desired.values():
         user = await user_repo.get_by_username(session, upn)
         if user is None:
             await user_repo.create(
@@ -174,17 +190,19 @@ async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dic
                 username=upn,
                 password_hash=hash_password(uuid.uuid4().hex),
                 display_name=name,
+                role=role,
                 is_sso=True,
             )
         else:
             user.is_sso = True
             user.display_name = name
+            user.role = role
             user.is_active = True
         synced += 1
 
-    # SSO-Benutzer, die nicht mehr in der Gruppe sind, komplett entfernen.
+    # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen.
     to_remove = [
-        u.id for u in await user_repo.list_sso(session) if u.username.lower() not in present
+        u.id for u in await user_repo.list_sso(session) if u.username.lower() not in desired
     ]
     for uid in to_remove:
         if uid is not None:

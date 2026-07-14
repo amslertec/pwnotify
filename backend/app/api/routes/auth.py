@@ -499,11 +499,13 @@ async def oidc_callback(
             username=result.username,
             password_hash=hash_password(uuid.uuid4().hex),
             display_name=result.display_name,
+            role=result.role,
             is_sso=True,
         )
     else:
         user.is_sso = True
         user.display_name = result.display_name
+        user.role = result.role  # Rolle folgt der Entra-Gruppenmitgliedschaft
     user.last_login_at = utcnow()
     pair = issue_token_pair(str(user.id))
     await user_repo.create_session(

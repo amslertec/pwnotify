@@ -14,15 +14,16 @@ import { LanguageSwitcher } from './language-switcher'
 import { Logo } from '../logo'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const NAV = [
-  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true },
-  { to: '/users', labelKey: 'nav.users', icon: Users, end: false },
-  { to: '/notifications', labelKey: 'nav.notifications', icon: Bell, end: false },
-  { to: '/runs', labelKey: 'nav.runs', icon: History, end: false },
-  { to: '/access', labelKey: 'nav.access', icon: UserCog, end: false },
-  { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false },
+  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true, adminOnly: false },
+  { to: '/users', labelKey: 'nav.users', icon: Users, end: false, adminOnly: false },
+  { to: '/notifications', labelKey: 'nav.notifications', icon: Bell, end: false, adminOnly: false },
+  { to: '/runs', labelKey: 'nav.runs', icon: History, end: false, adminOnly: false },
+  { to: '/access', labelKey: 'nav.access', icon: UserCog, end: false, adminOnly: true },
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false, adminOnly: true },
 ]
 
 export function Sidebar({
@@ -35,6 +36,8 @@ export function Sidebar({
   onNavigate?: () => void
 }) {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
+  const nav = NAV.filter((item) => isAdmin || !item.adminOnly)
   return (
     <aside
       className={cn(
@@ -59,7 +62,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const link = (
             <NavLink
               key={item.to}

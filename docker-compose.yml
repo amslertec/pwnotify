@@ -35,12 +35,12 @@ services:
       - internal
 
   app:
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.7}
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.8}
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: "0.1.7"
+        VERSION: "0.1.8"
     depends_on:
       db:
         condition: service_healthy

@@ -456,6 +456,10 @@
       "step4e": ". Without it, the sync fails with “403 / Insufficient privileges”.",
       "photoNote1": "Profile pictures of SSO users are loaded via the already required permission",
       "photoNote2": "— no additional API permission is needed for this."
+    },
+    "auditorGroup": {
+      "label": "Auditor group object ID (optional)",
+      "hint": "Members get the read-only auditor role. Entra → Groups → object ID."
     }
   },
   "generalTab": {
@@ -711,7 +715,9 @@
       "ssoLabelLabel": "Button label",
       "ssoDefaultLabel": "Sign in with Microsoft",
       "redirectHint": "Register this redirect URI in the Entra app registration (Web platform):",
-      "nextButton": "Next"
+      "nextButton": "Next",
+      "ssoAuditorGroupLabel": "Auditor group object ID (optional)",
+      "ssoAuditorGroupHint": "Members get read-only auditor access. Leave empty = no SSO auditors."
     },
     "mail": {
       "title": "Email delivery",
