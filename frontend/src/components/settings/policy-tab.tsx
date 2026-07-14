@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -8,6 +9,7 @@ import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 
 export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
+  const { t } = useTranslation()
   const [auto, setAuto] = useState(Boolean(settings['policy.auto_detect'] ?? true))
   const [override, setOverride] = useState(
     settings['policy.validity_days_override'] == null
@@ -39,63 +41,61 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
   return (
     <div className="space-y-4">
       <Section
-        title="Passwort-Policy"
-        description="Gültigkeitsdauer aus der Domain-Konfiguration erkennen oder manuell setzen."
+        title={t('policyTab.passwordPolicy.title')}
+        description={t('policyTab.passwordPolicy.description')}
         footer={
           <Button onClick={onSave} loading={saving}>
-            Speichern
+            {t('policyTab.save')}
           </Button>
         }
       >
         <div className="border-border flex items-center justify-between rounded-lg border p-4">
           <div>
-            <p className="text-sm font-medium">Automatische Erkennung</p>
+            <p className="text-sm font-medium">{t('policyTab.autoDetect.title')}</p>
             <p className="text-muted-foreground text-xs">
-              Liest <code className="font-mono">passwordValidityPeriodInDays</code> aus den
-              Entra-Domains.
+              <Trans
+                i18nKey="policyTab.autoDetect.description"
+                components={{ code: <code className="font-mono" /> }}
+              />
             </p>
           </div>
           <Switch checked={auto} onCheckedChange={setAuto} />
         </div>
 
         <Field
-          label="Manuelle Gültigkeitsdauer (Tage)"
-          hint="Setzen, wenn Passwörter im Tenant nie ablaufen — sonst gibt es kein Ablaufdatum. Überschreibt die Auto-Erkennung."
+          label={t('policyTab.manualValidity.label')}
+          hint={t('policyTab.manualValidity.hint')}
         >
           <Input
             type="number"
             value={override}
             onChange={(e) => setOverride(e.target.value)}
-            placeholder="z. B. 90"
+            placeholder={t('policyTab.manualValidity.placeholder')}
             className="max-w-40"
           />
         </Field>
       </Section>
 
       <Section
-        title="Shared Mailboxes"
-        description="Erkannte Shared/Room/Equipment-Postfächer werden aus der Benutzerliste ausgeblendet (eigene Ansicht in der Status-Auswahl) und nicht benachrichtigt. Greift beim nächsten Sync."
+        title={t('policyTab.shared.title')}
+        description={t('policyTab.shared.description')}
         footer={
           <Button onClick={onSave} loading={saving}>
-            Speichern
+            {t('policyTab.save')}
           </Button>
         }
       >
         <div className="border-border flex items-center justify-between rounded-lg border p-4">
           <div>
-            <p className="text-sm font-medium">Automatisch erkennen (Postfach ohne Lizenz)</p>
+            <p className="text-sm font-medium">{t('policyTab.detectUnlicensed.title')}</p>
             <p className="text-muted-foreground text-xs">
-              Konto mit Postfach, aber ohne zugewiesene Lizenz → Shared Mailbox. Zuverlässig, da
-              normale Benutzer für ein Postfach eine Lizenz brauchen.
+              {t('policyTab.detectUnlicensed.description')}
             </p>
           </div>
           <Switch checked={detectUnlicensed} onCheckedChange={setDetectUnlicensed} />
         </div>
 
-        <Field
-          label="Zusätzliche Muster (optional, Glob z. B. noreply@*)"
-          hint="Manueller Override — greift zusätzlich zur automatischen Erkennung."
-        >
+        <Field label={t('policyTab.patterns.label')} hint={t('policyTab.patterns.hint')}>
           <div className="flex flex-wrap items-center gap-2">
             {patterns.map((p) => (
               <span
@@ -105,7 +105,7 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
                 {p}
                 <button
                   onClick={() => setPatterns(patterns.filter((x) => x !== p))}
-                  aria-label="Entfernen"
+                  aria-label={t('policyTab.remove')}
                 >
                   <X className="size-3" />
                 </button>
@@ -115,7 +115,7 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
               value={patternInput}
               onChange={(e) => setPatternInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPattern())}
-              placeholder="+ Muster"
+              placeholder={t('policyTab.patterns.placeholder')}
               className="w-40 font-mono"
             />
           </div>

@@ -91,10 +91,12 @@ def _autotrim(data: bytes) -> bytes | None:
 async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> str:
     ext = _ALLOWED.get(file.content_type or "")
     if ext is None:
-        raise PwNotifyError("Nicht unterstütztes Format (PNG, SVG, WebP, JPG, ICO).")
+        raise PwNotifyError(
+            "Nicht unterstütztes Format (PNG, SVG, WebP, JPG, ICO).", code="unsupported_format"
+        )
     data = await file.read()
     if len(data) > _MAX_BYTES:
-        raise PwNotifyError("Datei zu gross (max. 2 MB).")
+        raise PwNotifyError("Datei zu gross (max. 2 MB).", code="file_too_large")
     # Logo: transparente Ränder automatisch abschneiden (SVG bleibt unverändert).
     if trim and ext != ".svg":
         trimmed = _autotrim(data)
@@ -145,7 +147,7 @@ async def delete_favicon(_: CurrentUser, svc: SettingsDep) -> Message:
 async def get_logo(svc: SettingsDep) -> Response:
     path = await svc.get("branding.logo_path")
     if not path or not Path(path).exists():
-        raise NotFoundError("Kein Logo gesetzt.")
+        raise NotFoundError("Kein Logo gesetzt.", code="no_logo")
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
@@ -153,5 +155,5 @@ async def get_logo(svc: SettingsDep) -> Response:
 async def get_favicon(svc: SettingsDep) -> Response:
     path = await svc.get("branding.favicon_path")
     if not path or not Path(path).exists():
-        raise NotFoundError("Kein Favicon gesetzt.")
+        raise NotFoundError("Kein Favicon gesetzt.", code="no_favicon")
     return FileResponse(path, headers={"Cache-Control": "no-cache"})

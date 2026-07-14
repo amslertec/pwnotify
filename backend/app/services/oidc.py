@@ -82,7 +82,9 @@ def verify_state(state: str) -> None:
     try:
         jwt.decode(state, _state_key(), algorithms=["HS256"])
     except jwt.PyJWTError as exc:
-        raise AuthError("Ungültiger oder abgelaufener SSO-State.") from exc
+        raise AuthError(
+            "Ungültiger oder abgelaufener SSO-State.", code="sso_state_invalid"
+        ) from exc
 
 
 # -- Flow --------------------------------------------------------------------- #
@@ -111,7 +113,7 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
     )
     if "access_token" not in result:
         desc = result.get("error_description", result.get("error", "unbekannt"))
-        raise AuthError(f"SSO-Token-Austausch fehlgeschlagen: {desc}")
+        raise AuthError(desc, code="sso_token_exchange_failed")
 
     claims: dict[str, Any] = result.get("id_token_claims", {})
     username = claims.get("preferred_username") or claims.get("email") or claims.get("upn") or ""

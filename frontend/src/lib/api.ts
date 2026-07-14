@@ -55,7 +55,7 @@ async function request<T>(
     const ok = await tryRefresh()
     if (ok) return request<T>(method, path, body, true, raw)
     onAuthExpired.handler?.()
-    throw new ApiError(401, 'unauthorized', 'Sitzung abgelaufen.')
+    throw new ApiError(401, 'token_expired', 'Sitzung abgelaufen.')
   }
 
   if (!res.ok) {

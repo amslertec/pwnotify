@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { expiryStatus, STATUS_META, type ExpiryStatus } from '@/lib/expiry'
 import type { EntraUser } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -13,14 +15,15 @@ export function StatusDot({ status, className }: { status: ExpiryStatus; classNa
 
 /** Farbcodiertes Badge für „verbleibende Tage". */
 export function DaysBadge({ user }: { user: Pick<EntraUser, 'days_left' | 'account_enabled'> }) {
+  const { t } = useTranslation()
   const status = expiryStatus(user)
   const color = STATUS_META[status].varName
   const text =
     user.days_left == null
       ? '—'
       : user.days_left <= 0
-        ? `${Math.abs(user.days_left)} T über`
-        : `${user.days_left} T`
+        ? t('statusBadge.daysOver', { n: Math.abs(user.days_left) })
+        : t('statusBadge.days', { n: user.days_left })
 
   return (
     <span

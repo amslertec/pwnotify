@@ -42,10 +42,10 @@ async def list_notifications(
 async def retry(_: CurrentUser, log_id: int, session: SessionDep, svc: SettingsDep) -> Message:
     log_entry = await notification_repo.get(session, log_id)
     if log_entry is None:
-        raise NotFoundError("Log-Eintrag nicht gefunden.")
+        raise NotFoundError("Log-Eintrag nicht gefunden.", code="log_not_found")
     user = await entra_repo.get(session, log_entry.entra_user_id)
     if user is None:
-        raise NotFoundError("Zugehöriger Benutzer nicht gefunden.")
+        raise NotFoundError("Zugehöriger Benutzer nicht gefunden.", code="user_not_found")
 
     settings = await svc.get_all()
     sender = build_sender(settings)
@@ -100,7 +100,7 @@ async def retry(_: CurrentUser, log_id: int, session: SessionDep, svc: SettingsD
     if not sent_any:
         await notification_repo.record(session, {**data, "status": "failed", "error": err_text})
         await session.commit()
-        raise NotFoundError(f"Erneuter Versand fehlgeschlagen: {err_text}")
+        raise NotFoundError(err_text or "", code="resend_failed")
 
     await notification_repo.record(session, {**data, "status": "sent", "error": err_text})
     await session.commit()

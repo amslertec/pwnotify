@@ -24,7 +24,9 @@ class GraphMailSender:
         inline_images: list[InlineImage] | None = None,
     ) -> None:
         if not self.sender:
-            raise MailError("Keine Absenderadresse konfiguriert (mail.from).")
+            raise MailError(
+                "Keine Absenderadresse konfiguriert (mail.from).", code="mail_no_sender"
+            )
         await self.client.send_mail(
             sender=self.sender,
             to=to,

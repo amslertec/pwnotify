@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { EntraGuide } from '../entra-guide'
@@ -7,11 +8,13 @@ import { Input } from '../ui/input'
 import { Field, Section } from './section'
 import { GraphResultCard } from '@/pages/setup'
 import type { SettingsTabProps } from '@/pages/settings'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
+import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
 import type { GraphTestResult } from '@/lib/types'
 
 export function GraphTab({ settings, save, saving }: SettingsTabProps) {
+  const { t } = useTranslation()
   const [tenant, setTenant] = useState(String(settings['graph.tenant_id'] ?? ''))
   const [clientId, setClientId] = useState(String(settings['graph.client_id'] ?? ''))
   const [secret, setSecret] = useState('')
@@ -38,11 +41,11 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
       const res = await api.post<GraphTestResult>('/settings/graph/test', {})
       setResult(res)
       if (res.connected && res.missing_permissions.length === 0)
-        toast.success('Verbindung erfolgreich')
-      else if (res.connected) toast.warning('Verbunden, aber Berechtigungen fehlen')
-      else toast.error(res.error ?? 'Verbindung fehlgeschlagen')
+        toast.success(t('graphTab.toast.connectionSuccess'))
+      else if (res.connected) toast.warning(t('graphTab.toast.connectedMissingPermissions'))
+      else toast.error(res.error ?? t('graphTab.toast.connectionFailed'))
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Test fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setTesting(false)
     }
@@ -51,29 +54,29 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   return (
     <div className="space-y-4">
       <Section
-        title="Microsoft Graph"
-        description="App-Registrierung (Client-Credentials-Flow) für Lesen der Benutzer und Mailversand."
+        title={t('graphTab.graph.title')}
+        description={t('graphTab.graph.description')}
         footer={
           <>
             <Button variant="outline" onClick={test} loading={testing}>
-              Verbindung testen
+              {t('graphTab.graph.testButton')}
             </Button>
             <Button onClick={saveGraph} loading={saving}>
-              Speichern
+              {t('graphTab.graph.saveButton')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tenant-ID" className="sm:col-span-2">
+          <Field label={t('graphTab.graph.tenantId')} className="sm:col-span-2">
             <Input value={tenant} onChange={(e) => setTenant(e.target.value)} />
           </Field>
-          <Field label="Client-ID" className="sm:col-span-2">
+          <Field label={t('graphTab.graph.clientId')} className="sm:col-span-2">
             <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
           </Field>
           <Field
-            label="Client-Secret"
-            hint={secretSet ? 'Gesetzt — leer lassen, um beizubehalten.' : undefined}
+            label={t('graphTab.graph.clientSecret')}
+            hint={secretSet ? t('graphTab.graph.clientSecretHint') : undefined}
             className="sm:col-span-2"
           >
             <Input
@@ -88,87 +91,82 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
       </Section>
 
       <Section
-        title="Sync-Umfang (Benutzergruppe)"
-        description="Nur Mitglieder einer Entra-Gruppe synchronisieren und auf Passwortablauf prüfen — statt aller Tenant-Benutzer. Leer lassen = alle Benutzer."
+        title={t('graphTab.group.title')}
+        description={t('graphTab.group.description')}
         footer={
           <Button onClick={saveGroup} loading={saving}>
-            Speichern
+            {t('graphTab.group.saveButton')}
           </Button>
         }
       >
-        <Field
-          label="Gruppen-Objekt-ID"
-          hint="Entra → Gruppen → gewünschte Gruppe → Objekt-ID kopieren. Verschachtelte Gruppen werden aufgelöst (transitive Mitglieder)."
-        >
+        <Field label={t('graphTab.group.objectIdLabel')} hint={t('graphTab.group.objectIdHint')}>
           <Input
             value={group}
             onChange={(e) => setGroup(e.target.value)}
-            placeholder="z. B. 00000000-0000-0000-0000-000000000000"
+            placeholder={t('graphTab.group.objectIdPlaceholder')}
             className="font-mono"
           />
         </Field>
 
         <div className="border-warning/40 bg-warning/10 text-foreground rounded-lg border p-3 text-xs">
           <p>
-            <strong>Zusätzliche Berechtigung nötig:</strong> Zum Lesen der Gruppenmitglieder braucht
-            die App-Registrierung die Anwendungsberechtigung{' '}
+            <strong>{t('graphTab.group.permWarning.title')}</strong>{' '}
+            {t('graphTab.group.permWarning.text1')}{' '}
             <code className="bg-card rounded px-1 py-0.5 font-mono">GroupMember.Read.All</code>{' '}
-            (Microsoft Graph, mit Administratorzustimmung) — zusätzlich zu den drei Standard-Rechten.
-            Ohne sie schlägt der Sync mit „403 / Insufficient privileges" fehl.
+            {t('graphTab.group.permWarning.text2')}
           </p>
         </div>
 
         <div className="border-border bg-muted/40 text-muted-foreground space-y-3 rounded-lg border p-4 text-xs">
           <p className="text-foreground text-sm font-medium">
-            Vorlage: dynamische Gruppe (erfasst Mitglieder automatisch)
+            {t('graphTab.group.template.heading')}
           </p>
           <p>
-            In Entra unter <strong>Gruppen → Neue Gruppe</strong> den Mitgliedschaftstyp{' '}
-            <strong>Dynamischer Benutzer</strong> wählen (benötigt Entra ID P1) und bei{' '}
-            <strong>Dynamische Abfrage → Regel-Syntax bearbeiten</strong> eine der folgenden
-            Vorlagen einfügen.
+            {t('graphTab.group.template.intro1')}{' '}
+            <strong>{t('graphTab.group.template.introGroupsNew')}</strong>{' '}
+            {t('graphTab.group.template.intro2')}{' '}
+            <strong>{t('graphTab.group.template.introDynamicUser')}</strong>{' '}
+            {t('graphTab.group.template.intro3')}{' '}
+            <strong>{t('graphTab.group.template.introEditRule')}</strong>{' '}
+            {t('graphTab.group.template.intro4')}
           </p>
 
           <div className="space-y-1.5">
-            <p className="text-foreground font-medium">
-              1 · Basisregel — direkt einsetzbar, keine Platzhalter
-            </p>
-            <p>
-              Erfasst nur aktive, lizenzierte Benutzer. Shared Mailboxes (ohne Lizenz) und
-              deaktivierte Konten fallen automatisch heraus.
-            </p>
+            <p className="text-foreground font-medium">{t('graphTab.group.template.rule1Title')}</p>
+            <p>{t('graphTab.group.template.rule1Desc')}</p>
             <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
               {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.assignedPlans -any (assignedPlan.capabilityStatus -eq "Enabled"))`}
             </pre>
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-foreground font-medium">
-              2 · Vorlage mit Platzhaltern — für Produktiv anpassen
-            </p>
+            <p className="text-foreground font-medium">{t('graphTab.group.template.rule2Title')}</p>
             <p>
-              Zusätzlich auf eine Domain und/oder Abteilung einschränken. Ersetze die{' '}
+              {t('graphTab.group.template.rule2Desc1')}{' '}
               <code className="bg-card rounded px-1 py-0.5 font-mono">GROSSBUCHSTABEN</code>
-              -Platzhalter durch deine echten Werte:
+              {t('graphTab.group.template.rule2Desc2')}
             </p>
             <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
               {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.userPrincipalName -match "@FIRMA-DOMAIN.CH$") and\n(user.department -eq "ABTEILUNG")`}
             </pre>
             <ul className="list-disc space-y-0.5 pl-4">
               <li>
-                <code className="bg-card rounded px-1 py-0.5 font-mono">FIRMA-DOMAIN.CH</code> →
-                deine E-Mail-Domain
+                <code className="bg-card rounded px-1 py-0.5 font-mono">FIRMA-DOMAIN.CH</code>{' '}
+                {t('graphTab.group.template.placeholderDomain')}
               </li>
               <li>
-                <code className="bg-card rounded px-1 py-0.5 font-mono">ABTEILUNG</code> → Wert des
-                Feldes <code className="font-mono">department</code> — oder diese Zeile ganz weglassen
+                <code className="bg-card rounded px-1 py-0.5 font-mono">ABTEILUNG</code>{' '}
+                {t('graphTab.group.template.placeholderDept1')}{' '}
+                <code className="font-mono">department</code>{' '}
+                {t('graphTab.group.template.placeholderDept2')}
               </li>
             </ul>
           </div>
 
           <p>
-            Alternativ funktioniert auch eine <strong>statische Gruppe</strong>, in die du die zu
-            prüfenden Benutzer manuell aufnimmst. Der Abgleich erfolgt beim nächsten Sync.
+            {t('graphTab.group.template.static1')}{' '}
+            <strong>{t('graphTab.group.template.staticGroup')}</strong>
+            {t('graphTab.group.template.static2')}
           </p>
         </div>
       </Section>

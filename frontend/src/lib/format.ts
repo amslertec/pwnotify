@@ -1,10 +1,17 @@
 import { format, formatDistanceToNowStrict, parseISO } from 'date-fns'
-import { de } from 'date-fns/locale'
+import { de, enUS } from 'date-fns/locale'
+
+import i18n from '@/i18n'
+
+/** date-fns-Locale passend zur aktiven UI-Sprache. */
+function dfLocale() {
+  return i18n.resolvedLanguage === 'en' ? enUS : de
+}
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return format(parseISO(iso), 'dd.MM.yyyy', { locale: de })
+    return format(parseISO(iso), 'dd.MM.yyyy', { locale: dfLocale() })
   } catch {
     return '—'
   }
@@ -13,7 +20,7 @@ export function fmtDate(iso: string | null | undefined): string {
 export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return format(parseISO(iso), 'dd.MM.yyyy HH:mm', { locale: de })
+    return format(parseISO(iso), 'dd.MM.yyyy HH:mm', { locale: dfLocale() })
   } catch {
     return '—'
   }
@@ -22,7 +29,7 @@ export function fmtDateTime(iso: string | null | undefined): string {
 export function fmtRelative(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return formatDistanceToNowStrict(parseISO(iso), { locale: de, addSuffix: true })
+    return formatDistanceToNowStrict(parseISO(iso), { locale: dfLocale(), addSuffix: true })
   } catch {
     return '—'
   }
@@ -42,13 +49,13 @@ export function fmtCountdown(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
     const diff = parseISO(iso).getTime() - Date.now()
-    if (diff <= 0) return 'jetzt'
+    if (diff <= 0) return i18n.t('time.now')
     const mins = Math.floor(diff / 60000)
     const h = Math.floor(mins / 60)
     const d = Math.floor(h / 24)
-    if (d > 0) return `in ${d} T ${h % 24} h`
-    if (h > 0) return `in ${h} h ${mins % 60} min`
-    return `in ${mins} min`
+    if (d > 0) return i18n.t('time.inDaysHours', { d, h: h % 24 })
+    if (h > 0) return i18n.t('time.inHoursMins', { h, m: mins % 60 })
+    return i18n.t('time.inMins', { m: mins })
   } catch {
     return '—'
   }

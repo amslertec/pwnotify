@@ -136,7 +136,7 @@ async def export_users(
 async def get_user(_: CurrentUser, user_id: int, session: SessionDep) -> EntraUserDetail:
     user = await entra_repo.get(session, user_id)
     if user is None:
-        raise NotFoundError("Benutzer nicht gefunden.")
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     return EntraUserDetail.model_validate(user, from_attributes=True)
 
 
@@ -146,7 +146,7 @@ async def set_exclude(
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
-        raise NotFoundError("Benutzer nicht gefunden.")
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     await entra_repo.set_excluded(session, user_id, body.excluded)
     return Message(message="Aktualisiert.")
 
@@ -157,7 +157,7 @@ async def notify_now(
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
-        raise NotFoundError("Benutzer nicht gefunden.")
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     settings = await svc.get_all()
     sender = build_sender(settings)
     outcome = await notify_user(
@@ -173,7 +173,7 @@ async def notify_now(
         force=True,
     )
     if outcome.action == "failed":
-        raise NotFoundError(f"Versand fehlgeschlagen: {outcome.error}")
+        raise NotFoundError(outcome.error or "", code="send_failed")
     if outcome.action == "skipped":
         return Message(message=f"Kein Versand: {outcome.reason}")
     return Message(message=f"Reminder an {outcome.recipient} gesendet.")
@@ -208,4 +208,4 @@ async def bulk(_: CurrentUser, body: BulkRequest, session: SessionDep, svc: Sett
             if outcome.action == "sent":
                 sent += 1
         return Message(message=f"{sent} Reminder gesendet.")
-    raise NotFoundError("Unbekannte Aktion.")
+    raise NotFoundError("Unbekannte Aktion.", code="unknown_action")

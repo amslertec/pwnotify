@@ -69,6 +69,9 @@
 | react-hook-form | 7.81.0 | 2026-07-13 | |
 | @hookform/resolvers | 5.4.0 | 2026-07-13 | |
 | zod | 4.4.3 | 2026-07-13 | |
+| i18next | 26.3.6 | 2026-07-14 | i18n-Kern |
+| react-i18next | 17.0.9 | 2026-07-14 | react 19 ✅ (peer i18next ≥26.2) |
+| i18next-browser-languagedetector | 8.2.1 | 2026-07-14 | Sprach-Erkennung (Pre-Login) |
 | class-variance-authority | 0.7.1 | 2026-07-13 | shadcn-Baustein |
 | clsx | 2.1.1 | 2026-07-13 | |
 | tailwind-merge | 3.6.0 | 2026-07-13 | |

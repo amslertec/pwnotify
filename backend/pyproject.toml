@@ -1,6 +1,6 @@
 [project]
 name = "pwnotify"
-version = "0.1.4"
+version = "0.1.5"
 description = "Password Expiry Notification Tool für Microsoft Entra ID (Azure AD)."
 readme = "../README.md"
 requires-python = ">=3.14,<3.15"

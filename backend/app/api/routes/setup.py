@@ -85,7 +85,7 @@ async def database_test(session: SessionDep) -> DatabaseStatus:
 async def database_migrate(session: SessionDep) -> DatabaseStatus:
     # Nur während des Setups (kein Admin) frei; danach laufen Migrationen beim Start.
     if await _admin_count(session) > 0:
-        raise ConflictError("Setup bereits abgeschlossen.")
+        raise ConflictError("Setup bereits abgeschlossen.", code="setup_done")
     try:
         await asyncio.to_thread(run_migrations)
     except Exception as exc:
@@ -98,7 +98,7 @@ async def create_admin(
     body: AdminCreate, response: Response, request: Request, session: SessionDep
 ) -> UserOut:
     if await _admin_count(session) > 0:
-        raise ConflictError("Es existiert bereits ein Administrator.")
+        raise ConflictError("Es existiert bereits ein Administrator.", code="admin_exists")
     user = await user_repo.create(
         session,
         username=body.username,

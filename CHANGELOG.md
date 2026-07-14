@@ -4,6 +4,20 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-07-14
+
+### Added
+
+- **Full internationalization (German / English)** across the entire UI — every page, the
+  setup wizard, all toasts, and all error messages. Backend errors carry stable error codes
+  that the frontend translates (`app/core/errors.py` + `lib/errors.ts`), so nothing stays
+  untranslated. Date/relative-time formatting follows the active language.
+- **Per-account language**: a new `app_user.language` column (Alembic migration) stores each
+  user's UI language; `POST /api/auth/language` updates it, and it is applied on login across
+  devices. A **language switch (DE/EN)** sits at the bottom of the sidebar and takes effect
+  immediately without a reload.
+- Stack: `i18next`, `react-i18next`, `i18next-browser-languagedetector` (see VERSIONS.md).
+
 ## [0.1.4] — 2026-07-14
 
 ### Added
@@ -101,6 +115,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.5
 [0.1.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.4
 [0.1.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.3
 [0.1.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.2

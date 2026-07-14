@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
+import { translateError } from '@/lib/errors'
 import type { Settings } from '@/lib/types'
 import { BrandingTab } from '@/components/settings/branding-tab'
 import { GeneralTab } from '@/components/settings/general-tab'
@@ -22,17 +24,18 @@ export interface SettingsTabProps {
 }
 
 const TABS = [
-  { value: 'graph', label: 'Graph' },
-  { value: 'sso', label: 'SSO' },
-  { value: 'mail', label: 'E-Mail' },
-  { value: 'schedule', label: 'Zeitplan' },
-  { value: 'policy', label: 'Passwort-Policy' },
-  { value: 'branding', label: 'Branding' },
-  { value: 'template', label: 'Vorlage' },
-  { value: 'general', label: 'Allgemein' },
+  { value: 'graph', labelKey: 'settingsPage.tabs.graph' },
+  { value: 'sso', labelKey: 'settingsPage.tabs.sso' },
+  { value: 'mail', labelKey: 'settingsPage.tabs.mail' },
+  { value: 'schedule', labelKey: 'settingsPage.tabs.schedule' },
+  { value: 'policy', labelKey: 'settingsPage.tabs.policy' },
+  { value: 'branding', labelKey: 'settingsPage.tabs.branding' },
+  { value: 'template', labelKey: 'settingsPage.tabs.template' },
+  { value: 'general', labelKey: 'settingsPage.tabs.general' },
 ]
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') ?? 'graph'
@@ -47,9 +50,9 @@ export default function SettingsPage() {
     onSuccess: (data) => {
       qc.setQueryData(['settings'], data)
       void qc.invalidateQueries({ queryKey: ['branding'] })
-      toast.success('Gespeichert')
+      toast.success(t('settingsPage.toast.saved'))
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Speichern fehlgeschlagen'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   const save = async (values: Record<string, unknown>) => {
@@ -65,15 +68,15 @@ export default function SettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Einstellungen"
-        description="Verbindung, Versand, Zeitplan und Erscheinungsbild."
+        title={t('settingsPage.header.title')}
+        description={t('settingsPage.header.description')}
       />
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v })}>
         <div className="overflow-x-auto pb-1">
           <TabsList>
-            {TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>
-                {t.label}
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {t(tab.labelKey)}
               </TabsTrigger>
             ))}
           </TabsList>

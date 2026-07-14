@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, ChevronDown, RotateCw } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/empty-state'
@@ -15,12 +16,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
+import { translateError } from '@/lib/errors'
 import { fmtDateTime } from '@/lib/format'
 import type { Notification, Page } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export default function NotificationsPage() {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
@@ -43,7 +46,7 @@ export default function NotificationsPage() {
       toast.success(r.message)
       void qc.invalidateQueries({ queryKey: ['notifications'] })
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   const rows = data?.items ?? []
@@ -52,17 +55,17 @@ export default function NotificationsPage() {
   return (
     <div>
       <PageHeader
-        title="Benachrichtigungen"
-        description="Alle versendeten Erinnerungs-E-Mails."
+        title={t('notifications.title')}
+        description={t('notifications.description')}
         actions={
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Alle</SelectItem>
-              <SelectItem value="sent">Gesendet</SelectItem>
-              <SelectItem value="failed">Fehlgeschlagen</SelectItem>
+              <SelectItem value="all">{t('notifications.filter.all')}</SelectItem>
+              <SelectItem value="sent">{t('notifications.filter.sent')}</SelectItem>
+              <SelectItem value="failed">{t('notifications.filter.failed')}</SelectItem>
             </SelectContent>
           </Select>
         }
@@ -73,12 +76,12 @@ export default function NotificationsPage() {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                <th className="px-4 py-3 font-medium">Zeitpunkt</th>
-                <th className="px-4 py-3 font-medium">Empfänger</th>
-                <th className="px-4 py-3 font-medium">Stufe</th>
-                <th className="px-4 py-3 font-medium">Backend</th>
-                <th className="px-4 py-3 font-medium">Sprache</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.time')}</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.recipient')}</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.stage')}</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.backend')}</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.language')}</th>
+                <th className="px-4 py-3 font-medium">{t('notifications.columns.status')}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -96,8 +99,8 @@ export default function NotificationsPage() {
                   <td colSpan={7}>
                     <EmptyState
                       icon={Bell}
-                      title="Keine Benachrichtigungen"
-                      description="Es wurden noch keine Erinnerungen versendet."
+                      title={t('notifications.empty.title')}
+                      description={t('notifications.empty.description')}
                     />
                   </td>
                 </tr>
@@ -112,7 +115,9 @@ export default function NotificationsPage() {
                           {fmtDateTime(n.created_at)}
                         </td>
                         <td className="max-w-[280px] truncate px-4 py-2.5">{n.recipient}</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{n.reminder_day} Tage</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          {t('notifications.days', { n: n.reminder_day })}
+                        </td>
                         <td className="text-muted-foreground px-4 py-2.5 uppercase">{n.backend}</td>
                         <td className="text-muted-foreground px-4 py-2.5 uppercase">
                           {n.language}
@@ -128,7 +133,7 @@ export default function NotificationsPage() {
                                 background: ok ? 'var(--status-ok)' : 'var(--status-expired)',
                               }}
                             />
-                            {ok ? 'Gesendet' : 'Fehler'}
+                            {ok ? t('notifications.status.sent') : t('notifications.status.failed')}
                           </span>
                         </td>
                         <td className="px-4 py-2.5">
@@ -138,7 +143,7 @@ export default function NotificationsPage() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => retry.mutate(n.id)}
-                                aria-label="Erneut senden"
+                                aria-label={t('notifications.actions.retry')}
                               >
                                 <RotateCw className="size-3.5" />
                               </Button>
@@ -147,7 +152,7 @@ export default function NotificationsPage() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => setExpanded(open ? null : n.id)}
-                                  aria-label="Fehler anzeigen"
+                                  aria-label={t('notifications.actions.showError')}
                                 >
                                   <ChevronDown
                                     className={cn(
@@ -181,7 +186,11 @@ export default function NotificationsPage() {
 
         <div className="border-border flex items-center justify-between border-t px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            {data?.total ?? 0} Einträge · Seite {page}/{totalPages}
+            {t('notifications.pagination.summary', {
+              count: data?.total ?? 0,
+              page,
+              total: totalPages,
+            })}
           </span>
           <div className="flex gap-1">
             <Button
@@ -190,7 +199,7 @@ export default function NotificationsPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Zurück
+              {t('notifications.pagination.prev')}
             </Button>
             <Button
               variant="outline"
@@ -198,7 +207,7 @@ export default function NotificationsPage() {
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Weiter
+              {t('notifications.pagination.next')}
             </Button>
           </div>
         </div>

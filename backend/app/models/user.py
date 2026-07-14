@@ -20,6 +20,10 @@ class AppUser(SQLModel, table=True):
     role: str = Field(default="admin", sa_column=Column(String(32), nullable=False))
     is_active: bool = Field(default=True)
     is_sso: bool = Field(default=False)
+    # UI-Sprache des Kontos (de | en). Steuert nur die Admin-Oberfläche.
+    language: str = Field(
+        default="de", sa_column=Column(String(8), nullable=False, server_default="de")
+    )
 
     failed_login_count: int = Field(default=0)
     locked_until: dt.datetime | None = Field(

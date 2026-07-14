@@ -1,4 +1,5 @@
 import { LogOut, Menu, User as UserIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ThemeToggle } from '../theme-toggle'
@@ -14,25 +15,27 @@ import {
 import { UserAvatar } from '../user-avatar'
 import { useAuth } from '@/lib/auth'
 
-const TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/users': 'Benutzer',
-  '/access': 'Benutzerverwaltung',
-  '/profile': 'Mein Konto',
-  '/notifications': 'Benachrichtigungen',
-  '/runs': 'Läufe',
-  '/settings': 'Einstellungen',
+const TITLE_KEYS: Record<string, string> = {
+  '/': 'nav.dashboard',
+  '/users': 'nav.users',
+  '/access': 'nav.access',
+  '/profile': 'nav.profile',
+  '/notifications': 'nav.notifications',
+  '/runs': 'nav.runs',
+  '/settings': 'nav.settings',
 }
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const { pathname } = useLocation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const crumb = TITLES[pathname] ?? TITLES['/' + pathname.split('/')[1]] ?? 'PwNotify'
+  const { t } = useTranslation()
+  const crumbKey = TITLE_KEYS[pathname] ?? TITLE_KEYS['/' + pathname.split('/')[1]]
+  const crumb = crumbKey ? t(crumbKey) : 'PwNotify'
 
   return (
     <header className="border-border bg-background/80 sticky top-0 z-30 flex h-16 items-center gap-3 border-b px-4 backdrop-blur-md md:px-6">
-      <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenu} aria-label="Menü">
+      <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenu} aria-label={t('nav.menu')}>
         <Menu className="size-5" />
       </Button>
 
@@ -57,11 +60,11 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/profile')}>
-              <UserIcon /> Mein Konto
+              <UserIcon /> {t('nav.profile')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem destructive onClick={() => void logout()}>
-              <LogOut /> Abmelden
+              <LogOut /> {t('nav.logout')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

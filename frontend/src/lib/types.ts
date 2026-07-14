@@ -4,6 +4,7 @@ export interface User {
   display_name: string | null
   is_sso: boolean
   role: string
+  language: string
   last_login_at: string | null
   has_avatar: boolean
   avatar_version: number

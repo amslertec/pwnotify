@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 import { api, ApiError, onAuthExpired } from './api'
 import type { User } from './types'
+import { setLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n'
 
 interface AuthContextValue {
   user: User | null
@@ -39,6 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onAuthExpired.handler = null
     }
   }, [qc])
+
+  // Konto-Sprache anwenden, sobald der Benutzer bekannt ist (Login/Refresh, geräteübergreifend).
+  useEffect(() => {
+    const lang = user?.language
+    if (lang && (SUPPORTED_LANGUAGES as readonly string[]).includes(lang)) {
+      setLanguage(lang as Language)
+    }
+  }, [user?.language])
 
   const login = async (username: string, password: string) => {
     const u = await api.post<User>('/auth/login', { username, password })

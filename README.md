@@ -23,6 +23,8 @@ alternate (SSPR) address, or both. Self-hosted, hardened, and driven by a modern
 - **Modern UI** — dashboard with charts, server-side users table with detail drawer and
   CSV/XLSX export, notification history with retry, run history, full settings area.
 - **First-run wizard** — database → admin → Graph (with a built-in setup guide) → mail.
+- **i18n** — full German/English UI (including toasts and error messages), switchable per
+  account from the sidebar.
 - **Security** — Argon2id logins, rotating JWT cookies, rate limiting, Fernet-encrypted
   secrets at rest, dark/light theme, WCAG-AA, keyboard navigation.
 - **Compliance** — Chainguard base, non-root, read-only FS, **0 known HIGH/CRITICAL CVEs**,
@@ -117,7 +119,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.1.4`.
+`amslertec/pwnotify:0.1.5`.
 
 ### From source (development)
 

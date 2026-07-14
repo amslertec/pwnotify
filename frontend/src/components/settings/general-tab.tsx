@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '../ui/button'
@@ -11,6 +12,7 @@ import { api } from '@/lib/api'
 import type { VersionInfo } from '@/lib/types'
 
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
+  const { t } = useTranslation()
   const [updateCheck, setUpdateCheck] = useState(Boolean(settings['app.update_check'] ?? true))
   const qc = useQueryClient()
   const { data: ver } = useQuery({
@@ -23,21 +25,22 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
     mutationFn: () => api.get<VersionInfo>('/version?force=true'),
     onSuccess: (data) => {
       qc.setQueryData(['version'], data)
-      if (!data.enabled) toast.info('Update-Prüfung ist deaktiviert.')
-      else if (data.update_available) toast.info(`Update verfügbar: ${data.latest}`)
-      else toast.success('Sie verwenden die neueste Version.')
+      if (!data.enabled) toast.info(t('generalTab.toast.checkDisabled'))
+      else if (data.update_available)
+        toast.info(t('generalTab.toast.updateAvailable', { version: data.latest }))
+      else toast.success(t('generalTab.toast.upToDate'))
     },
-    onError: () => toast.error('Prüfung fehlgeschlagen.'),
+    onError: () => toast.error(t('generalTab.toast.checkFailed')),
   })
 
   return (
     <div className="space-y-4">
       <Section
-        title="Version & Updates"
-        description="Installierte Version und Update-Hinweise."
+        title={t('generalTab.version.title')}
+        description={t('generalTab.version.description')}
         footer={
           <Button onClick={() => save({ 'app.update_check': updateCheck })} loading={saving}>
-            Speichern
+            {t('generalTab.version.saveButton')}
           </Button>
         }
       >
@@ -50,15 +53,17 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
             )}
             <div>
               <p className="text-sm font-medium">
-                Installiert: {ver?.current ?? '—'}
-                {ver?.update_available && ver.latest ? ` · neu verfügbar: ${ver.latest}` : ''}
+                {t('generalTab.version.installed', { version: ver?.current ?? '—' })}
+                {ver?.update_available && ver.latest
+                  ? t('generalTab.version.newAvailableSuffix', { version: ver.latest })
+                  : ''}
               </p>
               <p className="text-muted-foreground text-xs">
                 {ver && !ver.enabled
-                  ? 'Update-Prüfung ist deaktiviert.'
+                  ? t('generalTab.toast.checkDisabled')
                   : ver?.update_available
-                    ? 'Ein neueres Release ist verfügbar.'
-                    : 'Sie verwenden die neueste Version.'}
+                    ? t('generalTab.version.newerReleaseAvailable')
+                    : t('generalTab.toast.upToDate')}
               </p>
             </div>
           </div>
@@ -70,7 +75,7 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
                 rel="noreferrer"
                 className="text-primary inline-flex items-center gap-1 text-sm font-medium underline underline-offset-2"
               >
-                Release ansehen <ExternalLink className="size-3.5" />
+                {t('generalTab.version.viewRelease')} <ExternalLink className="size-3.5" />
               </a>
             )}
             <Button
@@ -79,18 +84,15 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
               onClick={() => check.mutate()}
               loading={check.isPending}
             >
-              <RefreshCw className="size-4" /> Jetzt prüfen
+              <RefreshCw className="size-4" /> {t('generalTab.version.checkNow')}
             </Button>
           </div>
         </div>
 
         <div className="border-border flex items-center justify-between rounded-lg border p-4">
           <div className="pr-3">
-            <p className="text-sm font-medium">Automatisch auf Updates prüfen</p>
-            <p className="text-muted-foreground text-xs">
-              Vergleicht periodisch mit dem neuesten GitHub-Release und zeigt bei neuerer Version
-              ein Hinweis-Fenster. Ruft dazu die öffentliche GitHub-API auf.
-            </p>
+            <p className="text-sm font-medium">{t('generalTab.autoCheck.title')}</p>
+            <p className="text-muted-foreground text-xs">{t('generalTab.autoCheck.description')}</p>
           </div>
           <Switch checked={updateCheck} onCheckedChange={setUpdateCheck} />
         </div>

@@ -8,19 +8,21 @@ import {
   Users,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
+import { LanguageSwitcher } from './language-switcher'
 import { Logo } from '../logo'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { cn } from '@/lib/utils'
 
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/users', label: 'Benutzer', icon: Users, end: false },
-  { to: '/notifications', label: 'Benachrichtigungen', icon: Bell, end: false },
-  { to: '/runs', label: 'Läufe', icon: History, end: false },
-  { to: '/access', label: 'Benutzerverwaltung', icon: UserCog, end: false },
-  { to: '/settings', label: 'Einstellungen', icon: Settings, end: false },
+  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true },
+  { to: '/users', labelKey: 'nav.users', icon: Users, end: false },
+  { to: '/notifications', labelKey: 'nav.notifications', icon: Bell, end: false },
+  { to: '/runs', labelKey: 'nav.runs', icon: History, end: false },
+  { to: '/access', labelKey: 'nav.access', icon: UserCog, end: false },
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false },
 ]
 
 export function Sidebar({
@@ -32,6 +34,7 @@ export function Sidebar({
   onToggle?: () => void
   onNavigate?: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <aside
       className={cn(
@@ -45,11 +48,11 @@ export function Sidebar({
           collapsed ? 'justify-center' : 'justify-between',
         )}
       >
-        <NavLink to="/" aria-label="Zum Dashboard" className="rounded-md">
+        <NavLink to="/" aria-label={t('nav.dashboard')} className="rounded-md">
           <Logo collapsed={collapsed} />
         </NavLink>
         {!collapsed && onToggle && (
-          <Button variant="ghost" size="icon" onClick={onToggle} aria-label="Sidebar einklappen">
+          <Button variant="ghost" size="icon" onClick={onToggle} aria-label={t('nav.collapse')}>
             <PanelLeftClose className="size-4" />
           </Button>
         )}
@@ -74,19 +77,21 @@ export function Sidebar({
               }
             >
               <item.icon className="size-[1.15rem] shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span>{t(item.labelKey)}</span>}
             </NavLink>
           )
           return collapsed ? (
             <Tooltip key={item.to}>
               <TooltipTrigger asChild>{link}</TooltipTrigger>
-              <TooltipContent side="right">{item.label}</TooltipContent>
+              <TooltipContent side="right">{t(item.labelKey)}</TooltipContent>
             </Tooltip>
           ) : (
             link
           )
         })}
       </nav>
+
+      <LanguageSwitcher collapsed={collapsed} />
 
       {collapsed && onToggle && (
         <div className="border-sidebar-border border-t p-3">
@@ -95,7 +100,7 @@ export function Sidebar({
             size="icon"
             onClick={onToggle}
             className="mx-auto"
-            aria-label="Sidebar ausklappen"
+            aria-label={t('nav.collapse')}
           >
             <PanelLeftClose className="size-4 rotate-180" />
           </Button>

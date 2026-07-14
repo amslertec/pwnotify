@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -7,10 +8,11 @@ import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 
 export function SsoTab({ settings, save, saving }: SettingsTabProps) {
+  const { t } = useTranslation()
   const [enabled, setEnabled] = useState(Boolean(settings['oidc.enabled'] ?? false))
   const [groupId, setGroupId] = useState(String(settings['oidc.admin_group_id'] ?? ''))
   const [label, setLabel] = useState(
-    String(settings['oidc.button_label'] ?? 'Mit Microsoft anmelden'),
+    String(settings['oidc.button_label'] ?? t('ssoTab.defaultButtonLabel')),
   )
   const [publicUrl, setPublicUrl] = useState(String(settings['app.public_url'] ?? ''))
   const base = publicUrl.trim().replace(/\/+$/, '') || window.location.origin
@@ -26,28 +28,26 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
 
   return (
     <Section
-      title="SSO — Anmeldung mit Microsoft"
-      description="Nutzt dieselbe App-Registrierung wie Graph. Nur Mitglieder der angegebenen Entra-Gruppe dürfen sich per SSO anmelden."
+      title={t('ssoTab.title')}
+      description={t('ssoTab.description')}
       footer={
         <Button onClick={onSave} loading={saving}>
-          Speichern
+          {t('ssoTab.saveButton')}
         </Button>
       }
     >
       <div className="border-border flex items-center justify-between rounded-lg border p-4">
         <div>
-          <p className="text-sm font-medium">SSO aktivieren</p>
-          <p className="text-muted-foreground text-xs">
-            Blendet auf der Login-Seite den Microsoft-Button ein.
-          </p>
+          <p className="text-sm font-medium">{t('ssoTab.enable.title')}</p>
+          <p className="text-muted-foreground text-xs">{t('ssoTab.enable.description')}</p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="Öffentliche App-URL (Domain)"
-          hint="z. B. https://domain.example.com — bestimmt die SSO-Redirect-URI und die Links in E-Mails. Leer = lokale Adresse."
+          label={t('ssoTab.publicUrl.label')}
+          hint={t('ssoTab.publicUrl.hint')}
           className="sm:col-span-2"
         >
           <Input
@@ -57,8 +57,8 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
           />
         </Field>
         <Field
-          label="Admin-Gruppen-Objekt-ID"
-          hint="Entra → Gruppen → gewünschte Gruppe → Objekt-ID."
+          label={t('ssoTab.adminGroup.label')}
+          hint={t('ssoTab.adminGroup.hint')}
           className="sm:col-span-2"
         >
           <Input
@@ -68,38 +68,40 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
             className="font-mono"
           />
         </Field>
-        <Field label="Button-Beschriftung" className="sm:col-span-2">
+        <Field label={t('ssoTab.buttonLabel.label')} className="sm:col-span-2">
           <Input value={label} onChange={(e) => setLabel(e.target.value)} />
         </Field>
       </div>
 
       <div className="border-border bg-muted/40 rounded-lg border p-4 text-xs">
-        <p className="mb-2 font-medium">In der App-Registrierung zusätzlich einrichten:</p>
+        <p className="mb-2 font-medium">{t('ssoTab.setup.heading')}</p>
         <ol className="text-muted-foreground list-decimal space-y-1 pl-4">
           <li>
-            Plattform <strong>Web</strong> mit Redirect-URI:{' '}
+            {t('ssoTab.setup.step1a')} <strong>Web</strong> {t('ssoTab.setup.step1b')}{' '}
             <code className="bg-card rounded px-1 py-0.5 font-mono break-all">{redirectUri}</code>
           </li>
           <li>
-            Unter „Authentifizierung" die <strong>ID-Token</strong> aktivieren.
+            {t('ssoTab.setup.step2a')} <strong>{t('ssoTab.setup.step2IdToken')}</strong>{' '}
+            {t('ssoTab.setup.step2b')}
           </li>
           <li>
-            Im <strong>Manifest</strong> <code className="font-mono">groupMembershipClaims</code>{' '}
-            auf <code className="font-mono">"SecurityGroup"</code> setzen (liefert die Gruppen im
-            Token).
+            {t('ssoTab.setup.step3a')} <strong>{t('ssoTab.setup.step3Manifest')}</strong>{' '}
+            <code className="font-mono">groupMembershipClaims</code> {t('ssoTab.setup.step3b')}{' '}
+            <code className="font-mono">"SecurityGroup"</code> {t('ssoTab.setup.step3c')}
           </li>
           <li>
-            Für den <strong>SSO-Benutzer-Sync</strong> (Gruppenmitglieder lesen) unter{' '}
-            <strong>API-Berechtigungen</strong> die <strong>Anwendungsberechtigung</strong>{' '}
+            {t('ssoTab.setup.step4a')} <strong>{t('ssoTab.setup.step4Sync')}</strong>{' '}
+            {t('ssoTab.setup.step4b')} <strong>{t('ssoTab.setup.step4ApiPerms')}</strong>{' '}
+            {t('ssoTab.setup.step4c')} <strong>{t('ssoTab.setup.step4AppPerm')}</strong>{' '}
             <code className="bg-card rounded px-1 py-0.5 font-mono">GroupMember.Read.All</code>{' '}
-            hinzufügen und <strong>Administratorzustimmung erteilen</strong>. Ohne sie schlägt der
-            Sync mit „403 / Insufficient privileges" fehl.
+            {t('ssoTab.setup.step4d')} <strong>{t('ssoTab.setup.step4Consent')}</strong>
+            {t('ssoTab.setup.step4e')}
           </li>
         </ol>
         <p className="text-muted-foreground mt-3 text-xs">
-          Profilbilder der SSO-Benutzer werden über die bereits benötigte Berechtigung{' '}
-          <code className="bg-card rounded px-1 py-0.5 font-mono">User.Read.All</code> geladen — eine
-          zusätzliche API-Berechtigung ist dafür nicht nötig.
+          {t('ssoTab.setup.photoNote1')}{' '}
+          <code className="bg-card rounded px-1 py-0.5 font-mono">User.Read.All</code>{' '}
+          {t('ssoTab.setup.photoNote2')}
         </p>
       </div>
     </Section>

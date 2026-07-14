@@ -28,7 +28,7 @@ async def list_users(_: CurrentUser, session: SessionDep) -> dict[str, list[Admi
 async def create_local(_: CurrentUser, body: AdminUserCreate, session: SessionDep) -> AdminUserOut:
     existing = await user_repo.get_by_username(session, body.username)
     if existing is not None:
-        raise ConflictError("Benutzername bereits vergeben.")
+        raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
     user = await user_repo.create(
         session,
         username=body.username,
@@ -43,12 +43,14 @@ async def create_local(_: CurrentUser, body: AdminUserCreate, session: SessionDe
 async def delete_user(user: CurrentUser, user_id: int, session: SessionDep) -> Message:
     target = await user_repo.get(session, user_id)
     if target is None:
-        raise NotFoundError("Benutzer nicht gefunden.")
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     # Löschen gesperrt, wenn es nur einen Benutzer gibt.
     if await user_repo.count(session) <= 1:
-        raise ConflictError("Der letzte Benutzer kann nicht gelöscht werden.")
+        raise ConflictError("Der letzte Benutzer kann nicht gelöscht werden.", code="last_user")
     if target.id == user.id:
-        raise ConflictError("Sie können Ihr eigenes Konto nicht löschen.")
+        raise ConflictError(
+            "Sie können Ihr eigenes Konto nicht löschen.", code="cannot_delete_self"
+        )
     await user_repo.delete(session, user_id)
     return Message(message="Benutzer gelöscht.")
 
@@ -59,7 +61,9 @@ async def sync_sso(_: CurrentUser, session: SessionDep, svc: SettingsDep) -> Mes
 
     settings = await svc.get_all()
     if not settings.get("oidc.enabled") or not settings.get("oidc.admin_group_id"):
-        raise ConflictError("SSO ist nicht aktiviert oder keine Admin-Gruppe hinterlegt.")
+        raise ConflictError(
+            "SSO ist nicht aktiviert oder keine Admin-Gruppe hinterlegt.", code="sso_not_configured"
+        )
     stats = await oidc.sync_sso_users(session, settings)
     return Message(
         message=(f"{stats['synced']} SSO-Benutzer synchronisiert, {stats['removed']} entfernt.")

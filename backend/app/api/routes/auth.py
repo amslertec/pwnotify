@@ -26,6 +26,7 @@ from ...models._base import utcnow
 from ...models.user import AppUser
 from ...repositories import user_repo
 from ...schemas.auth import (
+    LanguageUpdate,
     LoginRequest,
     PasswordChangeRequest,
     ProfileUpdate,
@@ -114,6 +115,7 @@ def _user_out(user: AppUser) -> UserOut:
         display_name=user.display_name,
         is_sso=user.is_sso,
         role=user.role,
+        language=user.language,
         last_login_at=user.last_login_at,
         has_avatar=exists,
         avatar_version=int(path.stat().st_mtime) if exists and path else 0,
@@ -129,7 +131,9 @@ async def login(
     now = utcnow()
 
     if user and user.locked_until and user.locked_until > now:
-        raise AuthError("Konto vorübergehend gesperrt. Bitte später erneut versuchen.")
+        raise AuthError(
+            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
+        )
 
     if user is None or not verify_password(body.password, user.password_hash):
         if user is not None:
@@ -138,7 +142,7 @@ async def login(
                 user.locked_until = now + dt.timedelta(minutes=_settings.login_lockout_min)
                 user.failed_login_count = 0
             await session.commit()
-        raise AuthError("Ungültiger Benutzername oder Passwort.")
+        raise AuthError("Ungültiger Benutzername oder Passwort.", code="invalid_credentials")
 
     # Erfolg
     user.failed_login_count = 0
@@ -168,12 +172,12 @@ async def login(
 async def refresh(request: Request, response: Response, session: SessionDep) -> UserOut:
     token = request.cookies.get(REFRESH_COOKIE)
     if not token:
-        raise AuthError("Kein Refresh-Token.")
+        raise AuthError("Kein Refresh-Token.", code="no_refresh_token")
     try:
         payload = decode_token(token, expected_type="refresh")
     except jwt.PyJWTError as exc:
         clear_auth_cookies(response)
-        raise AuthError("Ungültiges Refresh-Token.") from exc
+        raise AuthError("Ungültiges Refresh-Token.", code="invalid_token") from exc
 
     us = await user_repo.get_session_by_jti(session, payload["jti"])
     now = utcnow()
@@ -182,12 +186,12 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
         if us is not None:
             await user_repo.revoke_all(session, us.user_id)
         clear_auth_cookies(response)
-        raise AuthError("Sitzung ungültig. Bitte erneut anmelden.")
+        raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
 
     user = await user_repo.get(session, us.user_id)
     if user is None or not user.is_active:
         clear_auth_cookies(response)
-        raise AuthError("Konto nicht verfügbar.")
+        raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
 
     # Rotation in-place: dieselbe Sitzung behält eine Zeile, Token wird ausgetauscht.
     pair = issue_token_pair(str(user.id))
@@ -229,26 +233,39 @@ async def update_profile(body: ProfileUpdate, user: CurrentUser, session: Sessio
     return _user_out(user)
 
 
+@router.post("/language", response_model=UserOut)
+async def set_language(body: LanguageUpdate, user: CurrentUser, session: SessionDep) -> UserOut:
+    user.language = body.language
+    user.updated_at = utcnow()
+    await session.commit()
+    await session.refresh(user)
+    return _user_out(user)
+
+
 @router.get("/me/avatar")
 async def get_my_avatar(user: CurrentUser) -> FileResponse:
     path = _avatar_path(user.id) if user.id is not None else None
     if not (path and path.exists()):
-        raise NotFoundError("Kein Profilbild vorhanden.")
+        raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
 @router.post("/me/avatar", response_model=UserOut)
 async def upload_my_avatar(user: CurrentUser, file: UploadFile = File(...)) -> UserOut:
     if user.is_sso:
-        raise PwNotifyError("Das Profilbild wird aus Microsoft Entra übernommen.")
+        raise PwNotifyError(
+            "Das Profilbild wird aus Microsoft Entra übernommen.", code="avatar_sso_managed"
+        )
     if (file.content_type or "") not in _AVATAR_ALLOWED:
-        raise PwNotifyError("Nicht unterstütztes Format (PNG, JPG, WebP).")
+        raise PwNotifyError(
+            "Nicht unterstütztes Format (PNG, JPG, WebP).", code="unsupported_format"
+        )
     data = await file.read()
     if len(data) > _AVATAR_MAX_BYTES:
-        raise PwNotifyError("Datei zu gross (max. 5 MB).")
+        raise PwNotifyError("Datei zu gross (max. 5 MB).", code="file_too_large")
     processed = _process_avatar(data)
     if processed is None:
-        raise PwNotifyError("Ungültige Bilddatei.")
+        raise PwNotifyError("Ungültige Bilddatei.", code="invalid_image")
     _avatar_path(user.id).write_bytes(processed)  # type: ignore[arg-type]
     return _user_out(user)
 
@@ -256,7 +273,9 @@ async def upload_my_avatar(user: CurrentUser, file: UploadFile = File(...)) -> U
 @router.delete("/me/avatar", response_model=UserOut)
 async def delete_my_avatar(user: CurrentUser) -> UserOut:
     if user.is_sso:
-        raise PwNotifyError("Das Profilbild wird aus Microsoft Entra übernommen.")
+        raise PwNotifyError(
+            "Das Profilbild wird aus Microsoft Entra übernommen.", code="avatar_sso_managed"
+        )
     if user.id is not None:
         _avatar_path(user.id).unlink(missing_ok=True)
     return _user_out(user)
@@ -301,7 +320,7 @@ async def change_password(
     body: PasswordChangeRequest, user: CurrentUser, session: SessionDep
 ) -> Message:
     if not verify_password(body.current_password, user.password_hash):
-        raise AuthError("Aktuelles Passwort ist falsch.")
+        raise AuthError("Aktuelles Passwort ist falsch.", code="wrong_current_password")
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
     await session.commit()

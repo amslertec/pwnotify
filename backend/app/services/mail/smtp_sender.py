@@ -41,15 +41,17 @@ class SmtpMailSender:
         inline_images: list[InlineImage] | None = None,
     ) -> None:
         if not self.host:
-            raise MailError("Kein SMTP-Host konfiguriert.")
+            raise MailError("Kein SMTP-Host konfiguriert.", code="smtp_no_host")
         if not self.sender:
-            raise MailError("Keine Absenderadresse konfiguriert (mail.from).")
+            raise MailError(
+                "Keine Absenderadresse konfiguriert (mail.from).", code="mail_no_sender"
+            )
         try:
             await asyncio.to_thread(
                 self._send_sync, to, subject, html_body, text_body, inline_images or []
             )
         except (smtplib.SMTPException, OSError) as exc:
-            raise MailError(f"SMTP-Versand fehlgeschlagen: {exc}") from exc
+            raise MailError(str(exc), code="smtp_send_failed") from exc
 
     def _send_sync(
         self,

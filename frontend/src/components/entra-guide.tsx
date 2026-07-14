@@ -1,41 +1,39 @@
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 
 const PERMISSIONS = [
-  { name: 'User.Read.All', why: 'Benutzer, UPN, letzte Passwortänderung lesen', optional: false },
-  {
-    name: 'Domain.Read.All',
-    why: 'Passwort-Gültigkeitsdauer der Domain ermitteln',
-    optional: false,
-  },
-  { name: 'Mail.Send', why: 'Erinnerungs-E-Mails über Graph versenden', optional: false },
+  { name: 'User.Read.All', whyKey: 'entraGuide.permissions.userReadAll', optional: false },
+  { name: 'Domain.Read.All', whyKey: 'entraGuide.permissions.domainReadAll', optional: false },
+  { name: 'Mail.Send', whyKey: 'entraGuide.permissions.mailSend', optional: false },
   {
     name: 'GroupMember.Read.All',
-    why: 'Nur bei Sync-Gruppe & SSO — Gruppenmitglieder lesen',
+    whyKey: 'entraGuide.permissions.groupMemberReadAll',
     optional: true,
   },
 ]
 
-const STEPS = [
-  'Öffnen Sie das Entra-Admin-Center → „App-Registrierungen" → „Neue Registrierung".',
-  'Vergeben Sie einen Namen (z. B. „PwNotify") und registrieren Sie die App (nur dieser Tenant).',
-  'Kopieren Sie auf der Übersicht die „Anwendungs-(Client-)ID" und die „Verzeichnis-(Mandanten-)ID".',
-  'Unter „Zertifikate & Geheimnisse" → „Neuer geheimer Clientschlüssel" erstellen und den Wert sofort kopieren.',
-  'Unter „API-Berechtigungen" die Application-Permissions hinzufügen (Microsoft Graph → Anwendungsberechtigungen). GroupMember.Read.All nur, wenn Sie eine Sync-Gruppe oder SSO nutzen.',
-  'Auf „Administratorzustimmung erteilen" klicken — die Status-Spalte muss grün sein.',
+const STEP_KEYS = [
+  'entraGuide.steps.step1',
+  'entraGuide.steps.step2',
+  'entraGuide.steps.step3',
+  'entraGuide.steps.step4',
+  'entraGuide.steps.step5',
+  'entraGuide.steps.step6',
 ]
 
 export function EntraGuide() {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState<string | null>(null)
 
   const copy = (text: string) => {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(text)
-      toast.success('Kopiert')
+      toast.success(t('entraGuide.copied'))
       setTimeout(() => setCopied(null), 1500)
     })
   }
@@ -43,34 +41,32 @@ export function EntraGuide() {
   return (
     <div className="border-border bg-muted/40 rounded-lg border p-4">
       <div className="flex items-center justify-between">
-        <h4 className="font-display text-sm font-semibold">
-          Entra-App-Registrierung — Schritt für Schritt
-        </h4>
+        <h4 className="font-display text-sm font-semibold">{t('entraGuide.title')}</h4>
         <Button variant="outline" size="sm" asChild>
           <a
             href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
             target="_blank"
             rel="noreferrer"
           >
-            Entra öffnen <ExternalLink className="size-3.5" />
+            {t('entraGuide.openEntra')} <ExternalLink className="size-3.5" />
           </a>
         </Button>
       </div>
 
       <ol className="mt-3 space-y-2">
-        {STEPS.map((step, i) => (
+        {STEP_KEYS.map((stepKey, i) => (
           <li key={i} className="text-muted-foreground flex gap-3 text-sm">
             <span className="bg-primary/15 text-primary grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold">
               {i + 1}
             </span>
-            <span>{step}</span>
+            <span>{t(stepKey)}</span>
           </li>
         ))}
       </ol>
 
       <div className="mt-4">
         <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-          Benötigte Application-Berechtigungen
+          {t('entraGuide.permissionsHeading')}
         </p>
         <div className="space-y-1.5">
           {PERMISSIONS.map((p) => (
@@ -83,17 +79,17 @@ export function EntraGuide() {
                   <code className="font-mono text-xs font-semibold">{p.name}</code>
                   {p.optional && (
                     <Badge variant="outline" className="shrink-0">
-                      Optional
+                      {t('entraGuide.optionalBadge')}
                     </Badge>
                   )}
                 </div>
-                <p className="text-muted-foreground truncate text-xs">{p.why}</p>
+                <p className="text-muted-foreground truncate text-xs">{t(p.whyKey)}</p>
               </div>
               <button
                 type="button"
                 onClick={() => copy(p.name)}
                 className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1"
-                aria-label={`${p.name} kopieren`}
+                aria-label={t('entraGuide.copyAriaLabel', { name: p.name })}
               >
                 {copied === p.name ? (
                   <Check className="text-success size-3.5" />
@@ -105,11 +101,11 @@ export function EntraGuide() {
           ))}
         </div>
         <div className="text-muted-foreground mt-3 flex items-start gap-2 text-xs">
-          <Badge variant="outline">Wichtig</Badge>
+          <Badge variant="outline">{t('entraGuide.importantBadge')}</Badge>
           <span>
-            Es müssen <strong>Anwendungsberechtigungen</strong> (nicht „Delegiert") sein, und die
-            <strong> Administratorzustimmung</strong> muss erteilt werden — sonst schlägt der Sync
-            fehl.
+            {t('entraGuide.importantNote1')}{' '}
+            <strong>{t('entraGuide.importantAppPerms')}</strong> {t('entraGuide.importantNote2')}{' '}
+            <strong> {t('entraGuide.importantConsent')}</strong> {t('entraGuide.importantNote3')}
           </span>
         </div>
       </div>

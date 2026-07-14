@@ -7,6 +7,7 @@ import {
   UserX,
   Users as UsersIcon,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import {
   Bar,
@@ -39,40 +40,37 @@ const STATUS_COLORS: Record<string, string> = {
   never: 'var(--status-never)',
   disabled: 'var(--status-soon)',
 }
-const STATUS_LABELS: Record<string, string> = {
-  ok: 'Aktiv & gültig',
-  soon: 'Läuft bald ab',
-  expired: 'Abgelaufen',
-  never: 'Kein Ablauf',
-  disabled: 'Deaktiviert',
-}
-
 export default function DashboardPage() {
   const { resolved } = useTheme()
+  const { t } = useTranslation()
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardData>('/dashboard'),
     refetchInterval: 30_000,
   })
 
+  const statusLabel = (s: string) => t(`dashboard.status.${s}`, { defaultValue: s })
   const axis = resolved === 'dark' ? '#94a3b8' : '#64748b'
   const k = data?.kpis
   const total = k?.total ?? 0
-  const pct = (n: number) => (total ? `${Math.round((n / total) * 100)} % der Benutzer` : undefined)
+  const pct = (n: number) =>
+    total ? t('dashboard.pctUsers', { pct: Math.round((n / total) * 100) }) : undefined
   const dist = (data?.status_distribution ?? []).filter((d) => d.count > 0)
 
   return (
     <div>
-      <PageHeader
-        title="Dashboard"
-        description="Überblick über Passwort-Ablauf und Benachrichtigungen."
-      />
+      <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
 
       {/* KPI-Karten */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Benutzer gesamt" value={total} icon={UsersIcon} loading={isLoading} />
         <KpiCard
-          label="Ablauf ≤ 7 Tage"
+          label={t('dashboard.kpi.total')}
+          value={total}
+          icon={UsersIcon}
+          loading={isLoading}
+        />
+        <KpiCard
+          label={t('dashboard.kpi.expiringSoon')}
           value={k?.expiring_soon ?? 0}
           icon={CalendarClock}
           accent="var(--status-soon)"
@@ -80,15 +78,15 @@ export default function DashboardPage() {
           loading={isLoading}
         />
         <KpiCard
-          label="Abgelaufen"
+          label={t('dashboard.kpi.expired')}
           value={k?.expired ?? 0}
           icon={AlertTriangle}
           accent="var(--status-expired)"
-          hint={(k?.expired ?? 0) > 0 ? 'Handeln erforderlich' : 'Alles aktuell'}
+          hint={(k?.expired ?? 0) > 0 ? t('dashboard.actionRequired') : t('dashboard.allCurrent')}
           loading={isLoading}
         />
         <KpiCard
-          label="Kein Ablauf"
+          label={t('dashboard.kpi.never')}
           value={k?.never ?? 0}
           icon={InfinityIcon}
           accent="var(--status-never)"
@@ -96,14 +94,14 @@ export default function DashboardPage() {
           loading={isLoading}
         />
         <KpiCard
-          label="Deaktiviert"
+          label={t('dashboard.kpi.disabled')}
           value={k?.disabled ?? 0}
           icon={UserX}
           accent="var(--status-soon)"
           loading={isLoading}
         />
         <KpiCard
-          label="Mails heute"
+          label={t('dashboard.kpi.mailsToday')}
           value={k?.mails_today ?? 0}
           icon={Send}
           accent="var(--color-accent)"
@@ -115,7 +113,7 @@ export default function DashboardPage() {
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Ablauf-Verteilung — nächste 30 Tage</CardTitle>
+            <CardTitle>{t('dashboard.expiryDist')}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -147,7 +145,7 @@ export default function DashboardPage() {
                       fontSize: 12,
                     }}
                     labelFormatter={(d) => fmtDate(d as string)}
-                    formatter={(v) => [v, 'Abläufe']}
+                    formatter={(v) => [v, t('dashboard.expirations')]}
                   />
                   <Bar
                     dataKey="count"
@@ -164,7 +162,7 @@ export default function DashboardPage() {
         {/* Status-Verteilung */}
         <Card>
           <CardHeader>
-            <CardTitle>Status-Verteilung</CardTitle>
+            <CardTitle>{t('dashboard.statusDist')}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -197,7 +195,7 @@ export default function DashboardPage() {
                           borderRadius: 8,
                           fontSize: 12,
                         }}
-                        formatter={(v, n) => [v, STATUS_LABELS[n as string] ?? n]}
+                        formatter={(v, n) => [v, statusLabel(n as string)]}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -205,7 +203,7 @@ export default function DashboardPage() {
                     <span className="font-display text-2xl font-semibold tabular-nums">
                       {total}
                     </span>
-                    <span className="text-muted-foreground text-xs">Benutzer</span>
+                    <span className="text-muted-foreground text-xs">{t('dashboard.users')}</span>
                   </div>
                 </div>
                 <div className="mt-3 space-y-1.5">
@@ -215,7 +213,7 @@ export default function DashboardPage() {
                         className="size-2.5 rounded-full"
                         style={{ background: STATUS_COLORS[d.status] }}
                       />
-                      <span className="text-muted-foreground">{STATUS_LABELS[d.status]}</span>
+                      <span className="text-muted-foreground">{statusLabel(d.status)}</span>
                       <span className="ml-auto font-medium tabular-nums">{d.count}</span>
                       <span className="text-muted-foreground w-9 text-right tabular-nums">
                         {total ? Math.round((d.count / total) * 100) : 0} %
@@ -232,9 +230,9 @@ export default function DashboardPage() {
       {/* Top 10 */}
       <Card className="mt-4">
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Nächste Ablaufdaten</CardTitle>
+          <CardTitle>{t('dashboard.upcomingExpiry')}</CardTitle>
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/users">Alle Benutzer</Link>
+            <Link to="/users">{t('dashboard.allUsers')}</Link>
           </Button>
         </CardHeader>
         <CardContent>
@@ -242,7 +240,7 @@ export default function DashboardPage() {
             <Skeleton className="h-40 w-full" />
           ) : (data?.top_upcoming.length ?? 0) === 0 ? (
             <p className="text-muted-foreground py-6 text-center text-sm">
-              Noch keine Daten — starten Sie einen Sync auf der Benutzer-Seite.
+              {t('dashboard.noData')}
             </p>
           ) : (
             <div className="divide-border divide-y">

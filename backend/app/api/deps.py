@@ -36,16 +36,16 @@ SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
 async def get_current_user(request: Request, session: SessionDep) -> AppUser:
     token = request.cookies.get(ACCESS_COOKIE)
     if not token:
-        raise AuthError("Nicht angemeldet.")
+        raise AuthError("Nicht angemeldet.", code="not_authenticated")
     try:
         payload = decode_token(token, expected_type="access")
     except jwt.ExpiredSignatureError as exc:
         raise AuthError("Sitzung abgelaufen.", code="token_expired") from exc
     except jwt.PyJWTError as exc:
-        raise AuthError("Ungültiges Token.") from exc
+        raise AuthError("Ungültiges Token.", code="invalid_token") from exc
     user = await user_repo.get(session, int(payload["sub"]))
     if user is None or not user.is_active:
-        raise AuthError("Konto nicht verfügbar.")
+        raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
     return user
 
 

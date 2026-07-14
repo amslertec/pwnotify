@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -11,14 +12,15 @@ import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
+import { translateError } from '@/lib/errors'
 import { useAuth } from '@/lib/auth'
 import { useBranding } from '@/components/branding-provider'
 import type { AuthConfig, SetupStatus } from '@/lib/types'
 
 const schema = z.object({
-  username: z.string().min(1, 'Benutzername erforderlich'),
-  password: z.string().min(1, 'Passwort erforderlich'),
+  username: z.string().min(1, 'validation.usernameRequired'),
+  password: z.string().min(1, 'validation.passwordRequired'),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -36,6 +38,7 @@ function MicrosoftIcon() {
 export default function LoginPage() {
   const { user, login } = useAuth()
   const { branding } = useBranding()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [email, setEmail] = useState('')
@@ -58,9 +61,9 @@ export default function LoginPage() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) })
 
   useEffect(() => {
-    if (params.get('sso_denied')) toast.error('Kein Zugriff — nicht Mitglied der Admin-Gruppe.')
-    if (params.get('sso_error')) toast.error('Microsoft-Anmeldung fehlgeschlagen.')
-  }, [params])
+    if (params.get('sso_denied')) toast.error(t('login.ssoDenied'))
+    if (params.get('sso_error')) toast.error(t('login.ssoError'))
+  }, [params, t])
 
   if (setup?.needs_setup) return <Navigate to="/setup" replace />
   if (user) return <Navigate to="/" replace />
@@ -70,7 +73,7 @@ export default function LoginPage() {
       await login(values.username, values.password)
       navigate('/')
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Anmeldung fehlgeschlagen.')
+      toast.error(translateError(e))
     }
   }
 
@@ -100,12 +103,9 @@ export default function LoginPage() {
         />
         <div className="relative max-w-md">
           <h2 className="font-display text-3xl leading-tight font-semibold text-slate-100">
-            Passwort-Ablauf im Blick behalten.
+            {t('login.brandHeadline')}
           </h2>
-          <p className="mt-3 text-slate-400">
-            Automatische, gestaffelte Erinnerungen für Ihre Microsoft-Entra-ID-Benutzer — bevor das
-            Kennwort abläuft.
-          </p>
+          <p className="mt-3 text-slate-400">{t('login.brandSubtext')}</p>
         </div>
         <p className="relative text-xs text-slate-500">
           {branding.company_name || branding.app_name}
@@ -120,23 +120,23 @@ export default function LoginPage() {
           </div>
           <div className="text-primary mb-6 flex items-center gap-2">
             <ShieldCheck className="size-5" />
-            <span className="text-sm font-medium">Anmeldung</span>
+            <span className="text-sm font-medium">{t('login.signInTag')}</span>
           </div>
-          <h1 className="font-display text-2xl font-semibold">Willkommen zurück</h1>
+          <h1 className="font-display text-2xl font-semibold">{t('login.welcomeBack')}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Melden Sie sich an, um {branding.app_name} zu verwalten.
+            {t('login.signInPrompt', { app: branding.app_name })}
           </p>
 
           {/* SSO-Block */}
           {ssoEnabled && (
             <div className="mt-8 space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="email">E-Mail-Adresse</Label>
+                <Label htmlFor="email">{t('login.emailLabel')}</Label>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="email"
-                  placeholder="name@firma.ch"
+                  placeholder={t('login.emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -149,7 +149,7 @@ export default function LoginPage() {
                     window.location.href = `/api/auth/oidc/login?login_hint=${encodeURIComponent(email)}`
                   }}
                 >
-                  <MicrosoftIcon /> {authCfg?.oidc_button_label || 'Mit Microsoft anmelden'}
+                  <MicrosoftIcon /> {authCfg?.oidc_button_label || t('login.microsoftButton')}
                 </Button>
               )}
               <button
@@ -157,7 +157,7 @@ export default function LoginPage() {
                 onClick={() => setShowLocal((v) => !v)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >
-                {showLocal ? 'Lokale Anmeldung ausblenden' : 'Mit lokalem Konto anmelden'}
+                {showLocal ? t('login.hideLocal') : t('login.useLocalAccount')}
               </button>
             </div>
           )}
@@ -171,14 +171,14 @@ export default function LoginPage() {
               }
             >
               <div className="space-y-1.5">
-                <Label htmlFor="username">Benutzername</Label>
+                <Label htmlFor="username">{t('login.usernameLabel')}</Label>
                 <Input id="username" autoComplete="username" {...register('username')} />
                 {errors.username && (
-                  <p className="text-danger text-xs">{errors.username.message}</p>
+                  <p className="text-danger text-xs">{t(errors.username.message ?? '')}</p>
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Passwort</Label>
+                <Label htmlFor="password">{t('login.passwordLabel')}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -186,11 +186,11 @@ export default function LoginPage() {
                   {...register('password')}
                 />
                 {errors.password && (
-                  <p className="text-danger text-xs">{errors.password.message}</p>
+                  <p className="text-danger text-xs">{t(errors.password.message ?? '')}</p>
                 )}
               </div>
               <Button type="submit" className="w-full" loading={isSubmitting}>
-                Anmelden
+                {t('login.signInButton')}
               </Button>
             </form>
           )}

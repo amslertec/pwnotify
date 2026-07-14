@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, RefreshCw, Search, SlidersHorizontal, Users as UsersIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { UserDrawer } from '@/components/user-drawer'
@@ -28,29 +29,31 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
+import { translateError } from '@/lib/errors'
 import { fmtDate } from '@/lib/format'
 import type { EntraUser, Page } from '@/lib/types'
 import { cn, initials } from '@/lib/utils'
 
 const COLUMNS = [
-  { key: 'mail', label: 'Primär-Mail' },
-  { key: 'other_mails', label: 'Alternativ-Mail' },
-  { key: 'last_password_change', label: 'Zuletzt geändert' },
-  { key: 'expiry_date', label: 'Ablaufdatum' },
-  { key: 'account_enabled', label: 'Konto' },
+  { key: 'mail', labelKey: 'users.columns.mail' },
+  { key: 'other_mails', labelKey: 'users.columns.otherMails' },
+  { key: 'last_password_change', labelKey: 'users.columns.lastPasswordChange' },
+  { key: 'expiry_date', labelKey: 'users.columns.expiryDate' },
+  { key: 'account_enabled', labelKey: 'users.columns.accountEnabled' },
 ] as const
 
 const STATUS_OPTIONS = [
-  { value: 'all', label: 'Alle Status' },
-  { value: 'ok', label: 'OK (> 14 T)' },
-  { value: 'soon', label: 'Bald (≤ 7 T)' },
-  { value: 'expired', label: 'Abgelaufen' },
-  { value: 'never', label: 'Kein Ablauf' },
-  { value: 'excluded', label: 'Ausgeschlossen' },
+  { value: 'all', labelKey: 'users.status.all' },
+  { value: 'ok', labelKey: 'users.status.ok' },
+  { value: 'soon', labelKey: 'users.status.soon' },
+  { value: 'expired', labelKey: 'users.status.expired' },
+  { value: 'never', labelKey: 'users.status.never' },
+  { value: 'excluded', labelKey: 'users.status.excluded' },
 ]
 
 export default function UsersPage() {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -87,10 +90,10 @@ export default function UsersPage() {
   const sync = useMutation({
     mutationFn: () => api.post('/runs/trigger', { dry_run: false }),
     onSuccess: () => {
-      toast.success('Lauf gestartet')
+      toast.success(t('users.runStarted'))
       void qc.invalidateQueries({ queryKey: ['users'] })
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   const bulk = useMutation({
@@ -101,7 +104,7 @@ export default function UsersPage() {
       setSelected(new Set())
       void qc.invalidateQueries({ queryKey: ['users'] })
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   const rows = data?.items ?? []
@@ -126,22 +129,22 @@ export default function UsersPage() {
   return (
     <div>
       <PageHeader
-        title="Benutzer"
-        description="Alle Entra-ID-Benutzer und ihr Passwort-Ablaufstatus."
+        title={t('users.title')}
+        description={t('users.description')}
         actions={
           <>
             <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
-              <RefreshCw /> Sync
+              <RefreshCw /> {t('users.sync')}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
-                  <Download /> Export
+                  <Download /> {t('users.export')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItemLink href={exportUrl('csv')}>Als CSV</DropdownMenuItemLink>
-                <DropdownMenuItemLink href={exportUrl('xlsx')}>Als XLSX</DropdownMenuItemLink>
+                <DropdownMenuItemLink href={exportUrl('csv')}>{t('users.exportCsv')}</DropdownMenuItemLink>
+                <DropdownMenuItemLink href={exportUrl('xlsx')}>{t('users.exportXlsx')}</DropdownMenuItemLink>
               </DropdownMenuContent>
             </DropdownMenu>
           </>
@@ -155,7 +158,7 @@ export default function UsersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name, UPN oder Mail suchen…"
+            placeholder={t('users.searchPlaceholder')}
             className="pl-9"
           />
         </div>
@@ -166,19 +169,19 @@ export default function UsersPage() {
           <SelectContent>
             {STATUS_OPTIONS.map((o) => (
               <SelectItem key={o.value} value={o.value}>
-                {o.label}
+                {t(o.labelKey)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" aria-label="Spalten">
+            <Button variant="outline" size="icon" aria-label={t('users.columnsAria')}>
               <SlidersHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Spalten</DropdownMenuLabel>
+            <DropdownMenuLabel>{t('users.columnsLabel')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {COLUMNS.map((c) => (
               <DropdownMenuCheckboxItem
@@ -193,7 +196,7 @@ export default function UsersPage() {
                   })
                 }
               >
-                {c.label}
+                {t(c.labelKey)}
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuContent>
@@ -203,20 +206,20 @@ export default function UsersPage() {
       {/* Bulk-Leiste */}
       {selected.size > 0 && (
         <div className="border-primary/30 bg-primary/5 mb-3 flex items-center gap-3 rounded-lg border px-4 py-2 text-sm">
-          <span className="font-medium">{selected.size} ausgewählt</span>
+          <span className="font-medium">{t('users.selectedCount', { n: selected.size })}</span>
           <Button
             size="sm"
             variant="outline"
             onClick={() => bulk.mutate('notify')}
             loading={bulk.isPending}
           >
-            Erinnerung senden
+            {t('users.notify')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => bulk.mutate('exclude')}>
-            Ausschliessen
+            {t('users.exclude')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => bulk.mutate('include')}>
-            Einschliessen
+            {t('users.include')}
           </Button>
           <Button
             size="sm"
@@ -224,7 +227,7 @@ export default function UsersPage() {
             onClick={() => setSelected(new Set())}
             className="ml-auto"
           >
-            Aufheben
+            {t('users.clearSelection')}
           </Button>
         </div>
       )}
@@ -244,29 +247,29 @@ export default function UsersPage() {
                         return next
                       })
                     }
-                    aria-label="Alle auswählen"
+                    aria-label={t('users.selectAll')}
                   />
                 </th>
-                <SortableTh label="Name" col="display_name" {...{ sortBy, sortDir, toggleSort }} />
-                <th className="px-4 py-3 font-medium">UPN</th>
-                {!hidden.has('mail') && <th className="px-4 py-3 font-medium">Primär-Mail</th>}
-                {!hidden.has('other_mails') && <th className="px-4 py-3 font-medium">Alt.-Mail</th>}
+                <SortableTh label={t('users.colName')} col="display_name" {...{ sortBy, sortDir, toggleSort }} />
+                <th className="px-4 py-3 font-medium">{t('users.colUpn')}</th>
+                {!hidden.has('mail') && <th className="px-4 py-3 font-medium">{t('users.colMail')}</th>}
+                {!hidden.has('other_mails') && <th className="px-4 py-3 font-medium">{t('users.colOtherMails')}</th>}
                 {!hidden.has('last_password_change') && (
                   <SortableTh
-                    label="Geändert"
+                    label={t('users.colChanged')}
                     col="last_password_change"
                     {...{ sortBy, sortDir, toggleSort }}
                   />
                 )}
                 {!hidden.has('expiry_date') && (
                   <SortableTh
-                    label="Ablauf"
+                    label={t('users.colExpiry')}
                     col="expiry_date"
                     {...{ sortBy, sortDir, toggleSort }}
                   />
                 )}
-                <SortableTh label="Rest" col="days_left" {...{ sortBy, sortDir, toggleSort }} />
-                {!hidden.has('account_enabled') && <th className="px-4 py-3 font-medium">Konto</th>}
+                <SortableTh label={t('users.colDaysLeft')} col="days_left" {...{ sortBy, sortDir, toggleSort }} />
+                {!hidden.has('account_enabled') && <th className="px-4 py-3 font-medium">{t('users.colAccount')}</th>}
               </tr>
             </thead>
             <tbody className="divide-border divide-y">
@@ -283,8 +286,8 @@ export default function UsersPage() {
                   <td colSpan={9}>
                     <EmptyState
                       icon={UsersIcon}
-                      title="Keine Benutzer"
-                      description="Starten Sie einen Sync, um Benutzer aus Entra ID zu laden."
+                      title={t('users.emptyTitle')}
+                      description={t('users.emptyDescription')}
                     />
                   </td>
                 </tr>
@@ -306,7 +309,7 @@ export default function UsersPage() {
                             return next
                           })
                         }
-                        aria-label="Auswählen"
+                        aria-label={t('users.select')}
                       />
                     </td>
                     <td className="px-4 py-2.5">
@@ -318,8 +321,8 @@ export default function UsersPage() {
                           <p className="truncate font-medium">{u.display_name}</p>
                           {(u.is_shared || u.excluded) && (
                             <div className="mt-0.5 flex gap-1">
-                              {u.is_shared && <Badge variant="secondary">Shared</Badge>}
-                              {u.excluded && <Badge variant="secondary">ausgeschlossen</Badge>}
+                              {u.is_shared && <Badge variant="secondary">{t('users.shared')}</Badge>}
+                              {u.excluded && <Badge variant="secondary">{t('users.excludedBadge')}</Badge>}
                             </div>
                           )}
                         </div>
@@ -355,7 +358,7 @@ export default function UsersPage() {
                       <td className="px-4 py-2.5">
                         <span className="inline-flex items-center gap-1.5 text-xs">
                           <StatusDot status={u.account_enabled ? 'ok' : 'disabled'} />
-                          {u.account_enabled ? 'Aktiv' : 'Deaktiviert'}
+                          {u.account_enabled ? t('users.active') : t('users.disabled')}
                         </span>
                       </td>
                     )}
@@ -369,7 +372,7 @@ export default function UsersPage() {
         {/* Pagination */}
         <div className="border-border flex items-center justify-between border-t px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            {data?.total ?? 0} Benutzer · Seite {page}/{totalPages}
+            {t('users.pagination', { total: data?.total ?? 0, page, totalPages })}
           </span>
           <div className="flex gap-1">
             <Button
@@ -378,7 +381,7 @@ export default function UsersPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Zurück
+              {t('users.prev')}
             </Button>
             <Button
               variant="outline"
@@ -386,7 +389,7 @@ export default function UsersPage() {
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Weiter
+              {t('users.next')}
             </Button>
           </div>
         </div>

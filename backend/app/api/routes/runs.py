@@ -39,7 +39,7 @@ async def list_runs(
 async def get_run(_: CurrentUser, run_id: int, session: SessionDep) -> RunDetail:
     run = await run_repo.get(session, run_id)
     if run is None:
-        raise NotFoundError("Lauf nicht gefunden.")
+        raise NotFoundError("Lauf nicht gefunden.", code="run_not_found")
     return RunDetail.model_validate(run, from_attributes=True)
 
 

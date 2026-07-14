@@ -1,0 +1,750 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "remove": "Entfernen",
+    "edit": "Bearbeiten",
+    "add": "Hinzufügen",
+    "close": "Schließen",
+    "back": "Zurück",
+    "next": "Weiter",
+    "loading": "Wird geladen…",
+    "search": "Suchen",
+    "confirm": "Bestätigen",
+    "upload": "Hochladen",
+    "export": "Export",
+    "sync": "Sync",
+    "actions": "Aktionen",
+    "of": "von",
+    "page": "Seite",
+    "yes": "Ja",
+    "no": "Nein"
+  },
+  "language": {
+    "label": "Sprache",
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "time": {
+    "now": "jetzt",
+    "inDaysHours": "in {{d}} T {{h}} h",
+    "inHoursMins": "in {{h}} h {{m}} min",
+    "inMins": "in {{m}} min"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Benutzer",
+    "access": "Benutzerverwaltung",
+    "profile": "Mein Konto",
+    "notifications": "Benachrichtigungen",
+    "runs": "Läufe",
+    "settings": "Einstellungen",
+    "logout": "Abmelden",
+    "collapse": "Sidebar einklappen",
+    "menu": "Menü"
+  },
+  "validation": {
+    "usernameRequired": "Benutzername erforderlich",
+    "passwordRequired": "Passwort erforderlich"
+  },
+  "login": {
+    "signInTag": "Anmeldung",
+    "welcomeBack": "Willkommen zurück",
+    "signInPrompt": "Melden Sie sich an, um {{app}} zu verwalten.",
+    "emailLabel": "E-Mail-Adresse",
+    "emailPlaceholder": "name@firma.ch",
+    "microsoftButton": "Mit Microsoft anmelden",
+    "useLocalAccount": "Mit lokalem Konto anmelden",
+    "hideLocal": "Lokale Anmeldung ausblenden",
+    "usernameLabel": "Benutzername",
+    "passwordLabel": "Passwort",
+    "signInButton": "Anmelden",
+    "brandHeadline": "Passwort-Ablauf im Blick behalten.",
+    "brandSubtext": "Automatische, gestaffelte Erinnerungen für Ihre Microsoft-Entra-ID-Benutzer — bevor das Kennwort abläuft.",
+    "ssoDenied": "Kein Zugriff — nicht Mitglied der Admin-Gruppe.",
+    "ssoError": "Microsoft-Anmeldung fehlgeschlagen."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "description": "Überblick über Passwort-Ablauf und Benachrichtigungen.",
+    "kpi": {
+      "total": "Benutzer gesamt",
+      "expiringSoon": "Ablauf ≤ 7 Tage",
+      "expired": "Abgelaufen",
+      "never": "Kein Ablauf",
+      "disabled": "Deaktiviert",
+      "mailsToday": "Mails heute"
+    },
+    "pctUsers": "{{pct}} % der Benutzer",
+    "actionRequired": "Handeln erforderlich",
+    "allCurrent": "Alles aktuell",
+    "expiryDist": "Ablauf-Verteilung — nächste 30 Tage",
+    "statusDist": "Status-Verteilung",
+    "expirations": "Abläufe",
+    "users": "Benutzer",
+    "upcomingExpiry": "Nächste Ablaufdaten",
+    "allUsers": "Alle Benutzer",
+    "noData": "Noch keine Daten — starten Sie einen Sync auf der Benutzer-Seite.",
+    "status": {
+      "ok": "Aktiv & gültig",
+      "soon": "Läuft bald ab",
+      "expired": "Abgelaufen",
+      "never": "Kein Ablauf",
+      "disabled": "Deaktiviert"
+    }
+  },
+  "update": {
+    "title": "Update verfügbar",
+    "subtitle": "Neue Version {{latest}} · installiert: {{current}}",
+    "changesHeading": "Änderungen in diesem Release",
+    "noNotes": "Keine Detailinformationen zum Release verfügbar.",
+    "releaseDetails": "Vollständige Release-Details auf GitHub",
+    "acknowledge": "Gelesen & verstanden"
+  },
+  "errors": {
+    "generic": "Ein Fehler ist aufgetreten.",
+    "invalid_credentials": "Ungültiger Benutzername oder Passwort.",
+    "account_locked": "Konto vorübergehend gesperrt. Bitte später erneut versuchen.",
+    "no_refresh_token": "Nicht angemeldet.",
+    "invalid_token": "Ungültige Sitzung. Bitte erneut anmelden.",
+    "session_invalid": "Sitzung ungültig. Bitte erneut anmelden.",
+    "account_unavailable": "Konto nicht verfügbar.",
+    "not_authenticated": "Nicht angemeldet.",
+    "token_expired": "Sitzung abgelaufen. Bitte erneut anmelden.",
+    "wrong_current_password": "Aktuelles Passwort ist falsch.",
+    "username_taken": "Benutzername bereits vergeben.",
+    "user_not_found": "Benutzer nicht gefunden.",
+    "last_user": "Der letzte Benutzer kann nicht gelöscht werden.",
+    "cannot_delete_self": "Sie können Ihr eigenes Konto nicht löschen.",
+    "sso_not_configured": "SSO ist nicht aktiviert oder keine Admin-Gruppe hinterlegt.",
+    "unsupported_format": "Nicht unterstütztes Dateiformat.",
+    "file_too_large": "Datei zu groß.",
+    "invalid_image": "Ungültige Bilddatei.",
+    "no_avatar": "Kein Profilbild vorhanden.",
+    "avatar_sso_managed": "Das Profilbild wird aus Microsoft Entra übernommen.",
+    "no_logo": "Kein Logo gesetzt.",
+    "no_favicon": "Kein Favicon gesetzt.",
+    "setup_done": "Setup bereits abgeschlossen.",
+    "admin_exists": "Es existiert bereits ein Administrator.",
+    "run_not_found": "Lauf nicht gefunden.",
+    "log_not_found": "Log-Eintrag nicht gefunden.",
+    "unknown_action": "Unbekannte Aktion.",
+    "resend_failed": "Erneuter Versand fehlgeschlagen: {{detail}}",
+    "send_failed": "Versand fehlgeschlagen: {{detail}}",
+    "graph_error": "Graph-Fehler: {{detail}}",
+    "graph_token_failed": "Token-Abruf fehlgeschlagen: {{detail}}",
+    "oidc_not_configured": "SSO ist nicht vollständig konfiguriert.",
+    "sso_state_invalid": "Ungültiger oder abgelaufener SSO-State.",
+    "sso_token_exchange_failed": "SSO-Anmeldung fehlgeschlagen: {{detail}}",
+    "smtp_no_host": "Kein SMTP-Host konfiguriert.",
+    "mail_no_sender": "Keine Absenderadresse konfiguriert (mail.from).",
+    "smtp_send_failed": "SMTP-Versand fehlgeschlagen: {{detail}}",
+    "template_error": "Vorlagen-Fehler: {{detail}}"
+  },
+  "access": {
+    "title": "Benutzerverwaltung",
+    "description": "Lokale Konten und per SSO berechtigte Konten.",
+    "tabLocal": "Lokale Benutzer",
+    "tabSso": "SSO-Benutzer",
+    "newLocalUser": "Lokaler Benutzer",
+    "colName": "Name",
+    "colUsername": "Benutzername",
+    "colLastLogin": "Letzte Anmeldung",
+    "colCreated": "Erstellt",
+    "colUpn": "UPN",
+    "colStatus": "Status",
+    "syncEntra": "Mit Entra-Gruppe synchronisieren",
+    "noSsoUsers": "Keine SSO-Benutzer. Synchronisieren, sobald SSO aktiv ist.",
+    "you": "Sie",
+    "statusActive": "Aktiv",
+    "statusDisabled": "Deaktiviert",
+    "delete": "Löschen",
+    "cannotDelete": "Letzter Benutzer / eigenes Konto kann nicht gelöscht werden",
+    "createTitle": "Lokalen Benutzer erstellen",
+    "firstName": "Vorname",
+    "lastName": "Nachname",
+    "username": "Benutzername",
+    "passwordLabel": "Passwort (mind. 10 Zeichen)",
+    "create": "Erstellen",
+    "userCreated": "Benutzer erstellt"
+  },
+  "account": {
+    "avatarTitle": "Profilbild",
+    "avatarDescSso": "Wird automatisch aus Microsoft Entra übernommen.",
+    "avatarDesc": "Angezeigt oben rechts und in Ihrem Konto.",
+    "avatarUpdated": "Profilbild aktualisiert",
+    "avatarRemoved": "Profilbild entfernt",
+    "uploadImage": "Bild hochladen",
+    "remove": "Entfernen",
+    "nameTitle": "Name",
+    "nameDesc": "Ihr angezeigter Name in der App.",
+    "nameSaved": "Name gespeichert",
+    "save": "Speichern",
+    "firstName": "Vorname",
+    "lastName": "Nachname",
+    "pwTitle": "Passwort ändern",
+    "pwDesc": "Für Ihr PwNotify-Anmeldekonto.",
+    "pwChanged": "Passwort geändert",
+    "pwTooShort": "Neues Passwort mind. 10 Zeichen",
+    "pwMismatch": "Passwörter stimmen nicht überein",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort (mind. 10 Zeichen)",
+    "confirmPassword": "Bestätigen",
+    "sessionsTitle": "Aktive Sitzungen",
+    "sessionsDesc": "Angemeldete Geräte dieses Kontos.",
+    "revokeOthers": "Andere Sitzungen abmelden",
+    "unknownDevice": "Unbekanntes Gerät",
+    "activeLabel": "aktiv",
+    "currentSession": "Diese Sitzung"
+  },
+  "profile": {
+    "title": "Mein Konto",
+    "subtitle": "Angemeldet als {{name}}{{sso}} · aktive Sitzungen verwalten.",
+    "ssoSuffix": " (SSO)"
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "description": "Alle versendeten Erinnerungs-E-Mails.",
+    "filter": {
+      "all": "Alle",
+      "sent": "Gesendet",
+      "failed": "Fehlgeschlagen"
+    },
+    "columns": {
+      "time": "Zeitpunkt",
+      "recipient": "Empfänger",
+      "stage": "Stufe",
+      "backend": "Backend",
+      "language": "Sprache",
+      "status": "Status"
+    },
+    "empty": {
+      "title": "Keine Benachrichtigungen",
+      "description": "Es wurden noch keine Erinnerungen versendet."
+    },
+    "days": "{{n}} Tage",
+    "status": {
+      "sent": "Gesendet",
+      "failed": "Fehler"
+    },
+    "actions": {
+      "retry": "Erneut senden",
+      "showError": "Fehler anzeigen"
+    },
+    "pagination": {
+      "summary": "{{count}} Einträge · Seite {{page}}/{{total}}",
+      "prev": "Zurück",
+      "next": "Weiter"
+    }
+  },
+  "runs": {
+    "title": "Läufe",
+    "description": "Historie aller Scheduler-Durchläufe.",
+    "actions": {
+      "dryRun": "Probelauf",
+      "runNow": "Jetzt ausführen"
+    },
+    "toast": {
+      "completed": "Lauf abgeschlossen: {{count}} gesendet"
+    },
+    "columns": {
+      "time": "Zeitpunkt",
+      "status": "Status",
+      "trigger": "Auslöser",
+      "checked": "Geprüft",
+      "sent": "Gesendet",
+      "failed": "Fehler",
+      "duration": "Dauer"
+    },
+    "empty": {
+      "title": "Keine Läufe",
+      "description": "Starten Sie den ersten Lauf über den Button oben."
+    },
+    "dryRunBadge": "Probelauf",
+    "trigger": {
+      "manual": "Manuell",
+      "scheduled": "Geplant"
+    },
+    "noDetailLog": "Kein Detail-Log.",
+    "pagination": {
+      "summary": "{{count}} Läufe · Seite {{page}}/{{total}}",
+      "prev": "Zurück",
+      "next": "Weiter"
+    }
+  },
+  "backendStatus": {
+    "runStatus": {
+      "success": "Erfolgreich",
+      "partial": "Teilweise",
+      "error": "Fehler",
+      "running": "Läuft"
+    },
+    "graph": {
+      "connected": "Graph verbunden",
+      "notConfigured": "Graph nicht konfiguriert"
+    },
+    "mail": {
+      "configured": "Mail: {{backend}}",
+      "notConfigured": "Mail nicht konfiguriert"
+    },
+    "nextRun": "Nächster Lauf:",
+    "lastRun": "Letzter Lauf:"
+  },
+  "settingsPage": {
+    "tabs": {
+      "graph": "Graph",
+      "sso": "SSO",
+      "mail": "E-Mail",
+      "schedule": "Zeitplan",
+      "policy": "Passwort-Policy",
+      "branding": "Branding",
+      "template": "Vorlage",
+      "general": "Allgemein"
+    },
+    "header": {
+      "title": "Einstellungen",
+      "description": "Verbindung, Versand, Zeitplan und Erscheinungsbild."
+    },
+    "toast": {
+      "saved": "Gespeichert"
+    }
+  },
+  "graphTab": {
+    "toast": {
+      "connectionSuccess": "Verbindung erfolgreich",
+      "connectedMissingPermissions": "Verbunden, aber Berechtigungen fehlen",
+      "connectionFailed": "Verbindung fehlgeschlagen"
+    },
+    "graph": {
+      "title": "Microsoft Graph",
+      "description": "App-Registrierung (Client-Credentials-Flow) für Lesen der Benutzer und Mailversand.",
+      "testButton": "Verbindung testen",
+      "saveButton": "Speichern",
+      "tenantId": "Tenant-ID",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret",
+      "clientSecretHint": "Gesetzt — leer lassen, um beizubehalten."
+    },
+    "group": {
+      "title": "Sync-Umfang (Benutzergruppe)",
+      "description": "Nur Mitglieder einer Entra-Gruppe synchronisieren und auf Passwortablauf prüfen — statt aller Tenant-Benutzer. Leer lassen = alle Benutzer.",
+      "saveButton": "Speichern",
+      "objectIdLabel": "Gruppen-Objekt-ID",
+      "objectIdHint": "Entra → Gruppen → gewünschte Gruppe → Objekt-ID kopieren. Verschachtelte Gruppen werden aufgelöst (transitive Mitglieder).",
+      "objectIdPlaceholder": "z. B. 00000000-0000-0000-0000-000000000000",
+      "permWarning": {
+        "title": "Zusätzliche Berechtigung nötig:",
+        "text1": "Zum Lesen der Gruppenmitglieder braucht die App-Registrierung die Anwendungsberechtigung",
+        "text2": "(Microsoft Graph, mit Administratorzustimmung) — zusätzlich zu den drei Standard-Rechten. Ohne sie schlägt der Sync mit „403 / Insufficient privileges“ fehl."
+      },
+      "template": {
+        "heading": "Vorlage: dynamische Gruppe (erfasst Mitglieder automatisch)",
+        "intro1": "In Entra unter",
+        "introGroupsNew": "Gruppen → Neue Gruppe",
+        "intro2": "den Mitgliedschaftstyp",
+        "introDynamicUser": "Dynamischer Benutzer",
+        "intro3": "wählen (benötigt Entra ID P1) und bei",
+        "introEditRule": "Dynamische Abfrage → Regel-Syntax bearbeiten",
+        "intro4": "eine der folgenden Vorlagen einfügen.",
+        "rule1Title": "1 · Basisregel — direkt einsetzbar, keine Platzhalter",
+        "rule1Desc": "Erfasst nur aktive, lizenzierte Benutzer. Shared Mailboxes (ohne Lizenz) und deaktivierte Konten fallen automatisch heraus.",
+        "rule2Title": "2 · Vorlage mit Platzhaltern — für Produktiv anpassen",
+        "rule2Desc1": "Zusätzlich auf eine Domain und/oder Abteilung einschränken. Ersetze die",
+        "rule2Desc2": "-Platzhalter durch deine echten Werte:",
+        "placeholderDomain": "→ deine E-Mail-Domain",
+        "placeholderDept1": "→ Wert des Feldes",
+        "placeholderDept2": "— oder diese Zeile ganz weglassen",
+        "static1": "Alternativ funktioniert auch eine",
+        "staticGroup": "statische Gruppe",
+        "static2": ", in die du die zu prüfenden Benutzer manuell aufnimmst. Der Abgleich erfolgt beim nächsten Sync."
+      }
+    }
+  },
+  "ssoTab": {
+    "defaultButtonLabel": "Mit Microsoft anmelden",
+    "title": "SSO — Anmeldung mit Microsoft",
+    "description": "Nutzt dieselbe App-Registrierung wie Graph. Nur Mitglieder der angegebenen Entra-Gruppe dürfen sich per SSO anmelden.",
+    "saveButton": "Speichern",
+    "enable": {
+      "title": "SSO aktivieren",
+      "description": "Blendet auf der Login-Seite den Microsoft-Button ein."
+    },
+    "publicUrl": {
+      "label": "Öffentliche App-URL (Domain)",
+      "hint": "z. B. https://domain.example.com — bestimmt die SSO-Redirect-URI und die Links in E-Mails. Leer = lokale Adresse."
+    },
+    "adminGroup": {
+      "label": "Admin-Gruppen-Objekt-ID",
+      "hint": "Entra → Gruppen → gewünschte Gruppe → Objekt-ID."
+    },
+    "buttonLabel": {
+      "label": "Button-Beschriftung"
+    },
+    "setup": {
+      "heading": "In der App-Registrierung zusätzlich einrichten:",
+      "step1a": "Plattform",
+      "step1b": "mit Redirect-URI:",
+      "step2a": "Unter „Authentifizierung“ die",
+      "step2IdToken": "ID-Token",
+      "step2b": "aktivieren.",
+      "step3a": "Im",
+      "step3Manifest": "Manifest",
+      "step3b": "auf",
+      "step3c": "setzen (liefert die Gruppen im Token).",
+      "step4a": "Für den",
+      "step4Sync": "SSO-Benutzer-Sync",
+      "step4b": "(Gruppenmitglieder lesen) unter",
+      "step4ApiPerms": "API-Berechtigungen",
+      "step4c": "die",
+      "step4AppPerm": "Anwendungsberechtigung",
+      "step4d": "hinzufügen und",
+      "step4Consent": "Administratorzustimmung erteilen",
+      "step4e": ". Ohne sie schlägt der Sync mit „403 / Insufficient privileges“ fehl.",
+      "photoNote1": "Profilbilder der SSO-Benutzer werden über die bereits benötigte Berechtigung",
+      "photoNote2": "geladen — eine zusätzliche API-Berechtigung ist dafür nicht nötig."
+    }
+  },
+  "generalTab": {
+    "toast": {
+      "checkDisabled": "Update-Prüfung ist deaktiviert.",
+      "updateAvailable": "Update verfügbar: {{version}}",
+      "upToDate": "Sie verwenden die neueste Version.",
+      "checkFailed": "Prüfung fehlgeschlagen."
+    },
+    "version": {
+      "title": "Version & Updates",
+      "description": "Installierte Version und Update-Hinweise.",
+      "saveButton": "Speichern",
+      "installed": "Installiert: {{version}}",
+      "newAvailableSuffix": " · neu verfügbar: {{version}}",
+      "newerReleaseAvailable": "Ein neueres Release ist verfügbar.",
+      "viewRelease": "Release ansehen",
+      "checkNow": "Jetzt prüfen"
+    },
+    "autoCheck": {
+      "title": "Automatisch auf Updates prüfen",
+      "description": "Vergleicht periodisch mit dem neuesten GitHub-Release und zeigt bei neuerer Version ein Hinweis-Fenster. Ruft dazu die öffentliche GitHub-API auf."
+    }
+  },
+  "entraGuide": {
+    "copied": "Kopiert",
+    "title": "Entra-App-Registrierung — Schritt für Schritt",
+    "openEntra": "Entra öffnen",
+    "permissionsHeading": "Benötigte Application-Berechtigungen",
+    "optionalBadge": "Optional",
+    "copyAriaLabel": "{{name}} kopieren",
+    "importantBadge": "Wichtig",
+    "importantNote1": "Es müssen",
+    "importantAppPerms": "Anwendungsberechtigungen",
+    "importantNote2": "(nicht „Delegiert“) sein, und die",
+    "importantConsent": "Administratorzustimmung",
+    "importantNote3": "muss erteilt werden — sonst schlägt der Sync fehl.",
+    "permissions": {
+      "userReadAll": "Benutzer, UPN, letzte Passwortänderung lesen",
+      "domainReadAll": "Passwort-Gültigkeitsdauer der Domain ermitteln",
+      "mailSend": "Erinnerungs-E-Mails über Graph versenden",
+      "groupMemberReadAll": "Nur bei Sync-Gruppe & SSO — Gruppenmitglieder lesen"
+    },
+    "steps": {
+      "step1": "Öffnen Sie das Entra-Admin-Center → „App-Registrierungen“ → „Neue Registrierung“.",
+      "step2": "Vergeben Sie einen Namen (z. B. „PwNotify“) und registrieren Sie die App (nur dieser Tenant).",
+      "step3": "Kopieren Sie auf der Übersicht die „Anwendungs-(Client-)ID“ und die „Verzeichnis-(Mandanten-)ID“.",
+      "step4": "Unter „Zertifikate & Geheimnisse“ → „Neuer geheimer Clientschlüssel“ erstellen und den Wert sofort kopieren.",
+      "step5": "Unter „API-Berechtigungen“ die Application-Permissions hinzufügen (Microsoft Graph → Anwendungsberechtigungen). GroupMember.Read.All nur, wenn Sie eine Sync-Gruppe oder SSO nutzen.",
+      "step6": "Auf „Administratorzustimmung erteilen“ klicken — die Status-Spalte muss grün sein."
+    }
+  },
+  "mailTab": {
+    "title": "E-Mail-Versand",
+    "description": "Backend, Absender und Empfänger-Strategie.",
+    "save": "Speichern",
+    "fields": {
+      "backend": "Backend",
+      "from": "Absenderadresse",
+      "strategy": "Empfänger-Strategie",
+      "smtpHost": "SMTP-Host",
+      "port": "Port",
+      "user": "Benutzer",
+      "password": "Passwort",
+      "tlsMode": "TLS-Modus"
+    },
+    "backends": {
+      "graph": "Microsoft Graph",
+      "smtp": "SMTP"
+    },
+    "passwordHint": "Gesetzt — leer lassen zum Beibehalten.",
+    "strategies": {
+      "primary": "Nur primäre Mailbox",
+      "alternate": "Nur Alternativadresse",
+      "both": "Beide (primär + alternativ)",
+      "alternate_fallback_primary": "Alternativ, sonst primär"
+    },
+    "tls": {
+      "starttls": "STARTTLS",
+      "ssl": "SSL/TLS",
+      "none": "Keine"
+    },
+    "test": {
+      "title": "Test-Mail senden",
+      "placeholder": "empfaenger@example.com",
+      "send": "Senden",
+      "sent": "Test-Mail an {{to}} gesendet"
+    }
+  },
+  "scheduleTab": {
+    "title": "Zeitplan",
+    "description": "Wann PwNotify prüft und wie gestaffelt erinnert wird.",
+    "save": "Speichern",
+    "cron": {
+      "label": "Cron-Ausdruck",
+      "hint": "5 Felder: Minute Stunde Tag Monat Wochentag"
+    },
+    "timezone": "Zeitzone",
+    "nextRuns": "Nächste 5 Ausführungen",
+    "invalidCron": "Ungültiger Cron-Ausdruck",
+    "reminderLevels": "Reminder-Stufen (Tage vor Ablauf)",
+    "dayChip": "{{n}} T",
+    "remove": "Entfernen",
+    "daysPlaceholder": "+ Tage",
+    "dryRun": {
+      "title": "Probelauf-Modus (Dry-Run)",
+      "description": "Alles berechnen und protokollieren, aber keine Mails versenden."
+    }
+  },
+  "policyTab": {
+    "save": "Speichern",
+    "remove": "Entfernen",
+    "passwordPolicy": {
+      "title": "Passwort-Policy",
+      "description": "Gültigkeitsdauer aus der Domain-Konfiguration erkennen oder manuell setzen."
+    },
+    "autoDetect": {
+      "title": "Automatische Erkennung",
+      "description": "Liest <code>passwordValidityPeriodInDays</code> aus den Entra-Domains."
+    },
+    "manualValidity": {
+      "label": "Manuelle Gültigkeitsdauer (Tage)",
+      "hint": "Setzen, wenn Passwörter im Tenant nie ablaufen — sonst gibt es kein Ablaufdatum. Überschreibt die Auto-Erkennung.",
+      "placeholder": "z. B. 90"
+    },
+    "shared": {
+      "title": "Shared Mailboxes",
+      "description": "Erkannte Shared/Room/Equipment-Postfächer werden aus der Benutzerliste ausgeblendet (eigene Ansicht in der Status-Auswahl) und nicht benachrichtigt. Greift beim nächsten Sync."
+    },
+    "detectUnlicensed": {
+      "title": "Automatisch erkennen (Postfach ohne Lizenz)",
+      "description": "Konto mit Postfach, aber ohne zugewiesene Lizenz → Shared Mailbox. Zuverlässig, da normale Benutzer für ein Postfach eine Lizenz brauchen."
+    },
+    "patterns": {
+      "label": "Zusätzliche Muster (optional, Glob z. B. noreply@*)",
+      "hint": "Manueller Override — greift zusätzlich zur automatischen Erkennung.",
+      "placeholder": "+ Muster"
+    }
+  },
+  "brandingTab": {
+    "title": "Branding",
+    "description": "Erscheinungsbild in App, Login und E-Mails.",
+    "save": "Speichern",
+    "remove": "Entfernen",
+    "uploaded": "Hochgeladen",
+    "removed": "Entfernt — Standard aktiv.",
+    "appName": "App-Name",
+    "companyName": "Firmenname",
+    "primaryColor": {
+      "label": "Primärfarbe",
+      "hint": "Setzt das Farbschema der gesamten App inkl. Diagramme.",
+      "pick": "Farbe wählen",
+      "resetTitle": "Auf Standardfarbe zurücksetzen",
+      "resetAria": "Farbe zurücksetzen"
+    },
+    "resetUrl": {
+      "label": "Passwort-Reset-URL",
+      "hint": "Ziel des Buttons in der E-Mail."
+    },
+    "logo": {
+      "title": "Logo",
+      "default": "Standard-Logo aktiv",
+      "upload": "Logo hochladen"
+    },
+    "favicon": {
+      "title": "Favicon",
+      "default": "Standard-Favicon aktiv",
+      "upload": "Favicon hochladen"
+    }
+  },
+  "templateTab": {
+    "save": "Speichern",
+    "resetToDefault": "Auf Standard zurücksetzen",
+    "resetSuccess": "Auf Standard zurückgesetzt",
+    "language": {
+      "title": "Sprache der Benachrichtigung",
+      "description": "Legt fest, welche Sprachvorlage ein Empfänger erhält — unabhängig davon, welche Vorlage du unten gerade bearbeitest."
+    },
+    "perUser": {
+      "title": "Sprache pro Benutzer",
+      "description": "Nutzt die in Entra hinterlegte Sprache (<code>preferredLanguage</code>) des Benutzers. Ohne hinterlegte Sprache greift die Standardsprache."
+    },
+    "defaultLang": {
+      "label": "Standardsprache",
+      "hint": "Fallback, bzw. für alle, wenn Sprache pro Benutzer deaktiviert ist."
+    },
+    "langOptions": {
+      "de": "Deutsch",
+      "en": "English"
+    },
+    "template": {
+      "title": "E-Mail-Vorlage",
+      "description": "Betreff und HTML mit Live-Vorschau. Mehrsprachig (DE/EN)."
+    },
+    "subject": "Betreff",
+    "placeholders": "Platzhalter:",
+    "html": "HTML",
+    "livePreview": "Live-Vorschau",
+    "previewTitle": "Vorschau"
+  },
+  "setup": {
+    "title": "Ersteinrichtung",
+    "subtitle": "In wenigen Schritten einsatzbereit.",
+    "stepper": {
+      "db": "Datenbank",
+      "admin": "Administrator",
+      "graph": "Microsoft Graph",
+      "mail": "E-Mail",
+      "done": "Fertig"
+    },
+    "db": {
+      "title": "Datenbank",
+      "description": "Verbindung prüfen und Schema initialisieren.",
+      "statusConnection": "Verbindung zur PostgreSQL-Datenbank",
+      "statusSchema": "Datenbankschema (Migrationen)",
+      "migrateButton": "Migrationen anwenden",
+      "nextButton": "Weiter",
+      "initialized": "Datenbank initialisiert"
+    },
+    "admin": {
+      "title": "Administrator anlegen",
+      "description": "Dieses Konto verwaltet PwNotify.",
+      "firstName": "Vorname",
+      "lastName": "Nachname",
+      "username": "Benutzername",
+      "password": "Passwort (mind. 10 Zeichen)",
+      "confirmPassword": "Passwort bestätigen",
+      "submitButton": "Konto erstellen & weiter",
+      "passwordTooShort": "Passwort mind. 10 Zeichen",
+      "passwordMismatch": "Passwörter stimmen nicht überein",
+      "created": "Administrator angelegt"
+    },
+    "graph": {
+      "title": "Microsoft Graph verbinden",
+      "description": "Ohne diese Verbindung kann PwNotify keine Benutzer lesen oder Mails senden.",
+      "tenantId": "Verzeichnis-(Mandanten-)ID",
+      "clientId": "Anwendungs-(Client-)ID",
+      "clientSecret": "Geheimer Clientschlüssel",
+      "testButton": "Speichern & Verbindung testen",
+      "testSuccess": "Graph-Verbindung erfolgreich",
+      "testWarning": "Verbunden, aber Berechtigungen fehlen",
+      "testFailed": "Verbindung fehlgeschlagen",
+      "optionalTitle": "Optionale Einstellungen",
+      "optionalDescription": "Alles hier ist optional und lässt sich später in den Einstellungen ändern.",
+      "publicUrlLabel": "Öffentliche App-URL (Domain)",
+      "publicUrlHint": "Für Links in E-Mails und den SSO-Redirect. Leer lassen = interne URL verwenden.",
+      "groupLabel": "Sync-Umfang: Gruppen-Objekt-ID",
+      "groupHint": "Nur Mitglieder dieser Entra-Gruppe synchronisieren. Leer lassen = alle Benutzer. Benötigt GroupMember.Read.All.",
+      "ssoToggleTitle": "Microsoft-SSO-Anmeldung aktivieren",
+      "ssoToggleDescription": "Login per Microsoft-Konto — nutzt dieselbe App-Registrierung. Benötigt GroupMember.Read.All und den groups-Claim im Token.",
+      "ssoGroupLabel": "Admin-Gruppen-Objekt-ID",
+      "ssoGroupHint": "Nur Mitglieder dieser Gruppe dürfen sich per SSO anmelden.",
+      "ssoLabelLabel": "Button-Beschriftung",
+      "ssoDefaultLabel": "Mit Microsoft anmelden",
+      "redirectHint": "Diese Redirect-URI in der Entra-App-Registrierung (Plattform Web) hinterlegen:",
+      "nextButton": "Weiter"
+    },
+    "mail": {
+      "title": "E-Mail-Versand",
+      "description": "Wie sollen Erinnerungen versendet werden?",
+      "backendLabel": "Backend",
+      "backendGraph": "Microsoft Graph (sendMail)",
+      "backendSmtp": "SMTP-Server",
+      "fromLabel": "Absenderadresse",
+      "smtpHost": "SMTP-Host",
+      "smtpPort": "Port",
+      "smtpUser": "Benutzer",
+      "smtpPass": "Passwort",
+      "testLabel": "Optional: Test-Mail senden",
+      "testPlaceholder": "ihre.adresse@example.com",
+      "sendButton": "Senden",
+      "testSent": "Test-Mail an {{to}} gesendet",
+      "skipButton": "Überspringen",
+      "saveButton": "Speichern & weiter",
+      "saved": "Mail-Einstellungen gespeichert"
+    },
+    "done": {
+      "heading": "Alles bereit!",
+      "description": "PwNotify ist eingerichtet. Der Erst-Sync läuft automatisch — Benutzer und SSO-Benutzer werden geladen. Es werden noch keine E-Mails versendet; das übernimmt der Zeitplan.",
+      "syncing": "Erst-Sync läuft…",
+      "syncDone": "Erst-Sync abgeschlossen",
+      "dashboardButton": "Zum Dashboard"
+    },
+    "result": {
+      "connected": "Verbindung hergestellt",
+      "failed": "Verbindung fehlgeschlagen",
+      "missing": "— fehlt / kein Admin-Consent"
+    }
+  },
+  "users": {
+    "title": "Benutzer",
+    "description": "Alle Entra-ID-Benutzer und ihr Passwort-Ablaufstatus.",
+    "sync": "Sync",
+    "export": "Export",
+    "exportCsv": "Als CSV",
+    "exportXlsx": "Als XLSX",
+    "runStarted": "Lauf gestartet",
+    "searchPlaceholder": "Name, UPN oder Mail suchen…",
+    "columnsAria": "Spalten",
+    "columnsLabel": "Spalten",
+    "columns": {
+      "mail": "Primär-Mail",
+      "otherMails": "Alternativ-Mail",
+      "lastPasswordChange": "Zuletzt geändert",
+      "expiryDate": "Ablaufdatum",
+      "accountEnabled": "Konto"
+    },
+    "status": {
+      "all": "Alle Status",
+      "ok": "OK (> 14 T)",
+      "soon": "Bald (≤ 7 T)",
+      "expired": "Abgelaufen",
+      "never": "Kein Ablauf",
+      "excluded": "Ausgeschlossen"
+    },
+    "selectedCount": "{{n}} ausgewählt",
+    "notify": "Erinnerung senden",
+    "exclude": "Ausschliessen",
+    "include": "Einschliessen",
+    "clearSelection": "Aufheben",
+    "selectAll": "Alle auswählen",
+    "select": "Auswählen",
+    "colName": "Name",
+    "colUpn": "UPN",
+    "colMail": "Primär-Mail",
+    "colOtherMails": "Alt.-Mail",
+    "colChanged": "Geändert",
+    "colExpiry": "Ablauf",
+    "colDaysLeft": "Rest",
+    "colAccount": "Konto",
+    "shared": "Shared",
+    "excludedBadge": "ausgeschlossen",
+    "active": "Aktiv",
+    "disabled": "Deaktiviert",
+    "emptyTitle": "Keine Benutzer",
+    "emptyDescription": "Starten Sie einen Sync, um Benutzer aus Entra ID zu laden.",
+    "pagination": "{{total}} Benutzer · Seite {{page}}/{{totalPages}}",
+    "prev": "Zurück",
+    "next": "Weiter"
+  },
+  "statusBadge": {
+    "days": "{{n}} T",
+    "daysOver": "{{n}} T über"
+  }
+}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/page-header'
@@ -19,13 +20,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { translateError } from '@/lib/errors'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import type { AdminUser, AdminUsers } from '@/lib/types'
 import { initials } from '@/lib/utils'
 
 export default function AccessPage() {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const { user: me } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
@@ -43,7 +46,7 @@ export default function AccessPage() {
       toast.success(r.message)
       void qc.invalidateQueries({ queryKey: ['admin-users'] })
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   const sync = useMutation({
@@ -52,23 +55,20 @@ export default function AccessPage() {
       toast.success(r.message)
       void qc.invalidateQueries({ queryKey: ['admin-users'] })
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   return (
     <div>
-      <PageHeader
-        title="Benutzerverwaltung"
-        description="Lokale Konten und per SSO berechtigte Konten."
-      />
+      <PageHeader title={t('access.title')} description={t('access.description')} />
 
       <Tabs defaultValue="local">
         <TabsList>
           <TabsTrigger value="local">
-            <KeyRound className="size-4" /> Lokale Benutzer
+            <KeyRound className="size-4" /> {t('access.tabLocal')}
           </TabsTrigger>
           <TabsTrigger value="sso">
-            <ShieldCheck className="size-4" /> SSO-Benutzer
+            <ShieldCheck className="size-4" /> {t('access.tabSso')}
           </TabsTrigger>
         </TabsList>
 
@@ -76,7 +76,7 @@ export default function AccessPage() {
         <TabsContent value="local">
           <div className="mb-3 flex justify-end">
             <Button onClick={() => setCreateOpen(true)}>
-              <UserPlus /> Lokaler Benutzer
+              <UserPlus /> {t('access.newLocalUser')}
             </Button>
           </div>
           <Card className="overflow-hidden">
@@ -84,10 +84,10 @@ export default function AccessPage() {
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Benutzername</th>
-                    <th className="px-4 py-3 font-medium">Letzte Anmeldung</th>
-                    <th className="px-4 py-3 font-medium">Erstellt</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colName')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colUsername')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colCreated')}</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -119,7 +119,7 @@ export default function AccessPage() {
         <TabsContent value="sso">
           <div className="mb-3 flex justify-end">
             <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
-              <RefreshCw className="size-3.5" /> Mit Entra-Gruppe synchronisieren
+              <RefreshCw className="size-3.5" /> {t('access.syncEntra')}
             </Button>
           </div>
           <Card className="overflow-hidden">
@@ -127,10 +127,10 @@ export default function AccessPage() {
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">UPN</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Letzte Anmeldung</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colName')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colUpn')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colStatus')}</th>
+                    <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -144,7 +144,7 @@ export default function AccessPage() {
                   ) : data && data.sso.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="text-muted-foreground px-4 py-8 text-center">
-                        Keine SSO-Benutzer. Synchronisieren, sobald SSO aktiv ist.
+                        {t('access.noSsoUsers')}
                       </td>
                     </tr>
                   ) : (
@@ -184,6 +184,7 @@ function UserRow({
   canDelete: boolean
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-2.5">
@@ -192,7 +193,7 @@ function UserRow({
             {initials(u.display_name || u.username)}
           </span>
           <span className="font-medium">{u.display_name || '—'}</span>
-          {isSelf && <Badge variant="secondary">Sie</Badge>}
+          {isSelf && <Badge variant="secondary">{t('access.you')}</Badge>}
         </div>
       </td>
       <td className="text-muted-foreground max-w-[260px] truncate px-4 py-2.5 font-mono text-xs">
@@ -202,7 +203,7 @@ function UserRow({
         <td className="px-4 py-2.5">
           <span className="inline-flex items-center gap-1.5 text-xs">
             <StatusDot status={u.is_active ? 'ok' : 'disabled'} />
-            {u.is_active ? 'Aktiv' : 'Deaktiviert'}
+            {u.is_active ? t('access.statusActive') : t('access.statusDisabled')}
           </span>
         </td>
       )}
@@ -214,10 +215,8 @@ function UserRow({
           size="icon"
           disabled={!canDelete}
           onClick={onDelete}
-          aria-label="Löschen"
-          title={
-            !canDelete ? 'Letzter Benutzer / eigenes Konto kann nicht gelöscht werden' : 'Löschen'
-          }
+          aria-label={t('access.delete')}
+          title={!canDelete ? t('access.cannotDelete') : t('access.delete')}
         >
           <Trash2 className="text-danger size-4" />
         </Button>
@@ -233,6 +232,7 @@ function CreateDialog({
   open: boolean
   onOpenChange: (o: boolean) => void
 }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -247,7 +247,7 @@ function CreateDialog({
         display_name: `${firstName} ${lastName}`.trim() || null,
       }),
     onSuccess: () => {
-      toast.success('Benutzer erstellt')
+      toast.success(t('access.userCreated'))
       void qc.invalidateQueries({ queryKey: ['admin-users'] })
       setFirstName('')
       setLastName('')
@@ -255,32 +255,32 @@ function CreateDialog({
       setPassword('')
       onOpenChange(false)
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Fehler'),
+    onError: (e) => toast.error(translateError(e)),
   })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Lokalen Benutzer erstellen</DialogTitle>
+          <DialogTitle>{t('access.createTitle')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Vorname</Label>
+              <Label>{t('access.firstName')}</Label>
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Nachname</Label>
+              <Label>{t('access.lastName')}</Label>
               <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Benutzername</Label>
+            <Label>{t('access.username')}</Label>
             <Input value={username} onChange={(e) => setUsername(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Passwort (mind. 10 Zeichen)</Label>
+            <Label>{t('access.passwordLabel')}</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
@@ -290,7 +290,7 @@ function CreateDialog({
             loading={create.isPending}
             disabled={username.length < 3 || password.length < 10}
           >
-            Erstellen
+            {t('access.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

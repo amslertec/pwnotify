@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Check, Database, KeyRound, Loader2, Mail, PartyPopper, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -17,20 +18,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { translateError } from '@/lib/errors'
 import type { GraphTestResult, SetupStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const STEPS = [
-  { key: 'db', label: 'Datenbank', icon: Database },
-  { key: 'admin', label: 'Administrator', icon: KeyRound },
-  { key: 'graph', label: 'Microsoft Graph', icon: ShieldCheck },
-  { key: 'mail', label: 'E-Mail', icon: Mail },
-  { key: 'done', label: 'Fertig', icon: PartyPopper },
+  { key: 'db', labelKey: 'setup.stepper.db', icon: Database },
+  { key: 'admin', labelKey: 'setup.stepper.admin', icon: KeyRound },
+  { key: 'graph', labelKey: 'setup.stepper.graph', icon: ShieldCheck },
+  { key: 'mail', labelKey: 'setup.stepper.mail', icon: Mail },
+  { key: 'done', labelKey: 'setup.stepper.done', icon: PartyPopper },
 ]
 
 export default function SetupPage() {
+  const { t } = useTranslation()
   const [step, setStep] = useState(0)
   const navigate = useNavigate()
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1))
@@ -40,8 +43,8 @@ export default function SetupPage() {
       <div className="mx-auto w-full max-w-2xl px-4">
         <div className="mb-8 flex flex-col items-center text-center">
           <Logo />
-          <h1 className="font-display mt-4 text-2xl font-semibold">Ersteinrichtung</h1>
-          <p className="text-muted-foreground mt-1 text-sm">In wenigen Schritten einsatzbereit.</p>
+          <h1 className="font-display mt-4 text-2xl font-semibold">{t('setup.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('setup.subtitle')}</p>
         </div>
 
         {/* Stepper */}
@@ -65,7 +68,7 @@ export default function SetupPage() {
                     i === step ? 'text-foreground font-medium' : 'text-muted-foreground',
                   )}
                 >
-                  {s.label}
+                  {t(s.labelKey)}
                 </span>
               </div>
               {i < STEPS.length - 1 && (
@@ -88,6 +91,7 @@ export default function SetupPage() {
 }
 
 function DatabaseStep({ onNext }: { onNext: () => void }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<{ connected: boolean; migrated: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -108,11 +112,11 @@ function DatabaseStep({ onNext }: { onNext: () => void }) {
     try {
       const res = await api.post<{ migrated: boolean }>('/setup/database/migrate')
       if (res.migrated) {
-        toast.success('Datenbank initialisiert')
+        toast.success(t('setup.db.initialized'))
         await check()
       }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Migration fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setBusy(false)
     }
@@ -120,21 +124,21 @@ function DatabaseStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-5">
-      <StepHeading title="Datenbank" description="Verbindung prüfen und Schema initialisieren." />
+      <StepHeading title={t('setup.db.title')} description={t('setup.db.description')} />
       <div className="space-y-2">
-        <StatusRow ok={status?.connected} label="Verbindung zur PostgreSQL-Datenbank" busy={busy} />
-        <StatusRow ok={status?.migrated} label="Datenbankschema (Migrationen)" busy={busy} />
+        <StatusRow ok={status?.connected} label={t('setup.db.statusConnection')} busy={busy} />
+        <StatusRow ok={status?.migrated} label={t('setup.db.statusSchema')} busy={busy} />
       </div>
       <div className="flex justify-between">
         {status && !status.migrated ? (
           <Button onClick={migrate} loading={busy}>
-            Migrationen anwenden
+            {t('setup.db.migrateButton')}
           </Button>
         ) : (
           <span />
         )}
         <Button onClick={onNext} disabled={!status?.connected || !status?.migrated}>
-          Weiter
+          {t('setup.db.nextButton')}
         </Button>
       </div>
     </div>
@@ -142,6 +146,7 @@ function DatabaseStep({ onNext }: { onNext: () => void }) {
 }
 
 function AdminStep({ onNext }: { onNext: () => void }) {
+  const { t } = useTranslation()
   const { refresh } = useAuth()
   const qc = useQueryClient()
   const [firstName, setFirstName] = useState('')
@@ -152,8 +157,8 @@ function AdminStep({ onNext }: { onNext: () => void }) {
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    if (password.length < 10) return toast.error('Passwort mind. 10 Zeichen')
-    if (password !== confirm) return toast.error('Passwörter stimmen nicht überein')
+    if (password.length < 10) return toast.error(t('setup.admin.passwordTooShort'))
+    if (password !== confirm) return toast.error(t('setup.admin.passwordMismatch'))
     setBusy(true)
     try {
       const display_name = `${firstName} ${lastName}`.trim() || null
@@ -166,10 +171,10 @@ function AdminStep({ onNext }: { onNext: () => void }) {
         old ? { ...old, needs_setup: false, has_admin: true } : old,
       )
       await qc.invalidateQueries({ queryKey: ['setup-status'] })
-      toast.success('Administrator angelegt')
+      toast.success(t('setup.admin.created'))
       onNext()
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Anlegen fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setBusy(false)
     }
@@ -177,27 +182,27 @@ function AdminStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-5">
-      <StepHeading title="Administrator anlegen" description="Dieses Konto verwaltet PwNotify." />
+      <StepHeading title={t('setup.admin.title')} description={t('setup.admin.description')} />
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Vorname">
+        <Field label={t('setup.admin.firstName')}>
           <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus />
         </Field>
-        <Field label="Nachname">
+        <Field label={t('setup.admin.lastName')}>
           <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
         </Field>
-        <Field label="Benutzername" className="sm:col-span-2">
+        <Field label={t('setup.admin.username')} className="sm:col-span-2">
           <Input value={username} onChange={(e) => setUsername(e.target.value)} />
         </Field>
-        <Field label="Passwort (mind. 10 Zeichen)">
+        <Field label={t('setup.admin.password')}>
           <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <Field label="Passwort bestätigen">
+        <Field label={t('setup.admin.confirmPassword')}>
           <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </Field>
       </div>
       <div className="flex justify-end">
         <Button onClick={submit} loading={busy} disabled={!username || !password}>
-          Konto erstellen & weiter
+          {t('setup.admin.submitButton')}
         </Button>
       </div>
     </div>
@@ -205,6 +210,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
 }
 
 function GraphStep({ onNext }: { onNext: () => void }) {
+  const { t } = useTranslation()
   const [tenant, setTenant] = useState('')
   const [clientId, setClientId] = useState('')
   const [secret, setSecret] = useState('')
@@ -216,7 +222,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
   const [group, setGroup] = useState('')
   const [ssoEnabled, setSsoEnabled] = useState(false)
   const [ssoGroup, setSsoGroup] = useState('')
-  const [ssoLabel, setSsoLabel] = useState('Mit Microsoft anmelden')
+  const [ssoLabel, setSsoLabel] = useState(t('setup.graph.ssoDefaultLabel'))
 
   const saveTest = async () => {
     setBusy(true)
@@ -232,14 +238,14 @@ function GraphStep({ onNext }: { onNext: () => void }) {
       const res = await api.post<GraphTestResult>('/settings/graph/test', {})
       setResult(res)
       if (res.connected && res.missing_permissions.length === 0) {
-        toast.success('Graph-Verbindung erfolgreich')
+        toast.success(t('setup.graph.testSuccess'))
       } else if (res.connected) {
-        toast.warning('Verbunden, aber Berechtigungen fehlen')
+        toast.warning(t('setup.graph.testWarning'))
       } else {
-        toast.error(res.error ?? 'Verbindung fehlgeschlagen')
+        toast.error(res.error ?? t('setup.graph.testFailed'))
       }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Test fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setBusy(false)
     }
@@ -254,12 +260,12 @@ function GraphStep({ onNext }: { onNext: () => void }) {
           'sync.group_id': group.trim(),
           'oidc.enabled': ssoEnabled,
           'oidc.admin_group_id': ssoGroup.trim(),
-          'oidc.button_label': ssoLabel.trim() || 'Mit Microsoft anmelden',
+          'oidc.button_label': ssoLabel.trim() || t('setup.graph.ssoDefaultLabel'),
         },
       })
       onNext()
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Speichern fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setBusy(false)
     }
@@ -270,23 +276,20 @@ function GraphStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-5">
-      <StepHeading
-        title="Microsoft Graph verbinden"
-        description="Ohne diese Verbindung kann PwNotify keine Benutzer lesen oder Mails senden."
-      />
+      <StepHeading title={t('setup.graph.title')} description={t('setup.graph.description')} />
       <EntraGuide />
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Verzeichnis-(Mandanten-)ID" className="sm:col-span-2">
+        <Field label={t('setup.graph.tenantId')} className="sm:col-span-2">
           <Input
             value={tenant}
             onChange={(e) => setTenant(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
           />
         </Field>
-        <Field label="Anwendungs-(Client-)ID" className="sm:col-span-2">
+        <Field label={t('setup.graph.clientId')} className="sm:col-span-2">
           <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
         </Field>
-        <Field label="Geheimer Clientschlüssel" className="sm:col-span-2">
+        <Field label={t('setup.graph.clientSecret')} className="sm:col-span-2">
           <Input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} />
         </Field>
       </div>
@@ -300,23 +303,18 @@ function GraphStep({ onNext }: { onNext: () => void }) {
           loading={busy}
           disabled={!tenant || !clientId || !secret}
         >
-          Speichern & Verbindung testen
+          {t('setup.graph.testButton')}
         </Button>
       </div>
 
       {/* Optionale Einstellungen */}
       <div className="border-border space-y-4 rounded-lg border p-4">
         <div>
-          <p className="text-sm font-medium">Optionale Einstellungen</p>
-          <p className="text-muted-foreground text-xs">
-            Alles hier ist optional und lässt sich später in den Einstellungen ändern.
-          </p>
+          <p className="text-sm font-medium">{t('setup.graph.optionalTitle')}</p>
+          <p className="text-muted-foreground text-xs">{t('setup.graph.optionalDescription')}</p>
         </div>
 
-        <Field
-          label="Öffentliche App-URL (Domain)"
-          hint="Für Links in E-Mails und den SSO-Redirect. Leer lassen = interne URL verwenden."
-        >
+        <Field label={t('setup.graph.publicUrlLabel')} hint={t('setup.graph.publicUrlHint')}>
           <Input
             value={publicUrl}
             onChange={(e) => setPublicUrl(e.target.value)}
@@ -324,10 +322,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
           />
         </Field>
 
-        <Field
-          label="Sync-Umfang: Gruppen-Objekt-ID"
-          hint="Nur Mitglieder dieser Entra-Gruppe synchronisieren. Leer lassen = alle Benutzer. Benötigt GroupMember.Read.All."
-        >
+        <Field label={t('setup.graph.groupLabel')} hint={t('setup.graph.groupHint')}>
           <Input
             value={group}
             onChange={(e) => setGroup(e.target.value)}
@@ -338,21 +333,15 @@ function GraphStep({ onNext }: { onNext: () => void }) {
 
         <div className="border-border flex items-center justify-between rounded-md border p-3">
           <div className="pr-3">
-            <p className="text-sm font-medium">Microsoft-SSO-Anmeldung aktivieren</p>
-            <p className="text-muted-foreground text-xs">
-              Login per Microsoft-Konto — nutzt dieselbe App-Registrierung. Benötigt
-              GroupMember.Read.All und den groups-Claim im Token.
-            </p>
+            <p className="text-sm font-medium">{t('setup.graph.ssoToggleTitle')}</p>
+            <p className="text-muted-foreground text-xs">{t('setup.graph.ssoToggleDescription')}</p>
           </div>
           <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
         </div>
 
         {ssoEnabled && (
           <div className="grid gap-3">
-            <Field
-              label="Admin-Gruppen-Objekt-ID"
-              hint="Nur Mitglieder dieser Gruppe dürfen sich per SSO anmelden."
-            >
+            <Field label={t('setup.graph.ssoGroupLabel')} hint={t('setup.graph.ssoGroupHint')}>
               <Input
                 value={ssoGroup}
                 onChange={(e) => setSsoGroup(e.target.value)}
@@ -360,11 +349,11 @@ function GraphStep({ onNext }: { onNext: () => void }) {
                 className="font-mono"
               />
             </Field>
-            <Field label="Button-Beschriftung">
+            <Field label={t('setup.graph.ssoLabelLabel')}>
               <Input value={ssoLabel} onChange={(e) => setSsoLabel(e.target.value)} />
             </Field>
             <div className="text-muted-foreground bg-muted/40 rounded-md p-3 text-xs">
-              Diese Redirect-URI in der Entra-App-Registrierung (Plattform Web) hinterlegen:{' '}
+              {t('setup.graph.redirectHint')}{' '}
               <code className="bg-card rounded px-1 py-0.5 font-mono break-all">{redirectUri}</code>
             </div>
           </div>
@@ -373,7 +362,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
 
       <div className="flex justify-end">
         <Button onClick={proceed} loading={busy} disabled={!result?.connected}>
-          Weiter
+          {t('setup.graph.nextButton')}
         </Button>
       </div>
     </div>
@@ -381,6 +370,7 @@ function GraphStep({ onNext }: { onNext: () => void }) {
 }
 
 function MailStep({ onNext }: { onNext: () => void }) {
+  const { t } = useTranslation()
   const [backend, setBackend] = useState('graph')
   const [from, setFrom] = useState('')
   const [smtpHost, setSmtpHost] = useState('')
@@ -412,9 +402,9 @@ function MailStep({ onNext }: { onNext: () => void }) {
     try {
       await save()
       await api.post('/settings/mail/test', { to: testTo, locale: 'de' })
-      toast.success(`Test-Mail an ${testTo} gesendet`)
+      toast.success(t('setup.mail.testSent', { to: testTo }))
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Versand fehlgeschlagen')
+      toast.error(translateError(e))
     } finally {
       setBusy(false)
     }
@@ -422,20 +412,20 @@ function MailStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-5">
-      <StepHeading title="E-Mail-Versand" description="Wie sollen Erinnerungen versendet werden?" />
+      <StepHeading title={t('setup.mail.title')} description={t('setup.mail.description')} />
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Backend">
+        <Field label={t('setup.mail.backendLabel')}>
           <Select value={backend} onValueChange={setBackend}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="graph">Microsoft Graph (sendMail)</SelectItem>
-              <SelectItem value="smtp">SMTP-Server</SelectItem>
+              <SelectItem value="graph">{t('setup.mail.backendGraph')}</SelectItem>
+              <SelectItem value="smtp">{t('setup.mail.backendSmtp')}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Absenderadresse">
+        <Field label={t('setup.mail.fromLabel')}>
           <Input
             value={from}
             onChange={(e) => setFrom(e.target.value)}
@@ -444,16 +434,16 @@ function MailStep({ onNext }: { onNext: () => void }) {
         </Field>
         {backend === 'smtp' && (
           <>
-            <Field label="SMTP-Host">
+            <Field label={t('setup.mail.smtpHost')}>
               <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
             </Field>
-            <Field label="Port">
+            <Field label={t('setup.mail.smtpPort')}>
               <Input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
             </Field>
-            <Field label="Benutzer">
+            <Field label={t('setup.mail.smtpUser')}>
               <Input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
             </Field>
-            <Field label="Passwort">
+            <Field label={t('setup.mail.smtpPass')}>
               <Input
                 type="password"
                 value={smtpPass}
@@ -465,15 +455,15 @@ function MailStep({ onNext }: { onNext: () => void }) {
       </div>
 
       <div className="border-border bg-muted/40 rounded-lg border p-4">
-        <Label className="text-xs">Optional: Test-Mail senden</Label>
+        <Label className="text-xs">{t('setup.mail.testLabel')}</Label>
         <div className="mt-2 flex gap-2">
           <Input
             value={testTo}
             onChange={(e) => setTestTo(e.target.value)}
-            placeholder="ihre.adresse@example.com"
+            placeholder={t('setup.mail.testPlaceholder')}
           />
           <Button variant="outline" onClick={sendTest} loading={busy} disabled={!testTo || !from}>
-            Senden
+            {t('setup.mail.sendButton')}
           </Button>
         </div>
       </div>
@@ -486,17 +476,17 @@ function MailStep({ onNext }: { onNext: () => void }) {
             onNext()
           }}
         >
-          Überspringen
+          {t('setup.mail.skipButton')}
         </Button>
         <Button
           onClick={async () => {
             await save()
-            toast.success('Mail-Einstellungen gespeichert')
+            toast.success(t('setup.mail.saved'))
             onNext()
           }}
           disabled={!from}
         >
-          Speichern & weiter
+          {t('setup.mail.saveButton')}
         </Button>
       </div>
     </div>
@@ -504,6 +494,7 @@ function MailStep({ onNext }: { onNext: () => void }) {
 }
 
 function DoneStep({ onFinish }: { onFinish: () => void }) {
+  const { t } = useTranslation()
   const [syncing, setSyncing] = useState(true)
 
   // Erst-Sync automatisch starten: Benutzer (dry-run -> befüllen ohne Mailversand)
@@ -534,24 +525,21 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
         <PartyPopper className="size-7" />
       </div>
       <div>
-        <h2 className="font-display text-xl font-semibold">Alles bereit!</h2>
-        <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-          PwNotify ist eingerichtet. Der Erst-Sync läuft automatisch — Benutzer und SSO-Benutzer
-          werden geladen. Es werden noch keine E-Mails versendet; das übernimmt der Zeitplan.
-        </p>
+        <h2 className="font-display text-xl font-semibold">{t('setup.done.heading')}</h2>
+        <p className="text-muted-foreground mt-1 max-w-sm text-sm">{t('setup.done.description')}</p>
       </div>
       <div className="text-muted-foreground flex items-center gap-2 text-sm">
         {syncing ? (
           <>
-            <Loader2 className="size-4 animate-spin" /> Erst-Sync läuft…
+            <Loader2 className="size-4 animate-spin" /> {t('setup.done.syncing')}
           </>
         ) : (
           <>
-            <Check className="text-success size-4" /> Erst-Sync abgeschlossen
+            <Check className="text-success size-4" /> {t('setup.done.syncDone')}
           </>
         )}
       </div>
-      <Button onClick={onFinish}>Zum Dashboard</Button>
+      <Button onClick={onFinish}>{t('setup.done.dashboardButton')}</Button>
     </div>
   )
 }
@@ -604,6 +592,7 @@ function StatusRow({ ok, label, busy }: { ok?: boolean; label: string; busy?: bo
 }
 
 export function GraphResultCard({ result }: { result: GraphTestResult }) {
+  const { t } = useTranslation()
   return (
     <div
       className={cn(
@@ -612,7 +601,7 @@ export function GraphResultCard({ result }: { result: GraphTestResult }) {
       )}
     >
       <p className="text-sm font-medium">
-        {result.connected ? 'Verbindung hergestellt' : 'Verbindung fehlgeschlagen'}
+        {result.connected ? t('setup.result.connected') : t('setup.result.failed')}
       </p>
       {result.error && <p className="text-danger mt-1 text-xs">{result.error}</p>}
       {result.connected && (
@@ -627,7 +616,7 @@ export function GraphResultCard({ result }: { result: GraphTestResult }) {
                   <span className="border-danger size-3.5 rounded-full border" />
                 )}
                 <code className="font-mono">{p}</code>
-                {!granted && <span className="text-danger">— fehlt / kein Admin-Consent</span>}
+                {!granted && <span className="text-danger">{t('setup.result.missing')}</span>}
               </div>
             )
           })}

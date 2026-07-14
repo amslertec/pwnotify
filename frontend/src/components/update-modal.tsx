@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from './ui/button'
 import { api } from '@/lib/api'
@@ -12,6 +13,7 @@ const ACK_KEY = 'pwnotify-update-ack'
  *  existiert. Muss aktiv bestätigt werden (kein Wegklicken) und zeigt die Release-Notes.
  *  Pro Version einmal bestätigbar; bei noch neuerer Version erscheint es erneut. */
 export function UpdateModal() {
+  const { t } = useTranslation()
   const { data } = useQuery({
     queryKey: ['version'],
     queryFn: () => api.get<VersionInfo>('/version'),
@@ -44,18 +46,17 @@ export function UpdateModal() {
           </div>
           <div className="min-w-0">
             <h2 id="update-modal-title" className="font-display text-lg font-semibold">
-              Update verfügbar
+              {t('update.title')}
             </h2>
             <p className="text-muted-foreground text-sm">
-              Neue Version <strong className="text-foreground">{data.latest}</strong> · installiert:{' '}
-              {data.current}
+              {t('update.subtitle', { latest: data.latest, current: data.current })}
             </p>
           </div>
         </div>
 
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium">
-            {data.release_name || 'Änderungen in diesem Release'}
+            {data.release_name || t('update.changesHeading')}
           </p>
           <div className="border-border bg-muted/30 max-h-72 overflow-y-auto rounded-lg border p-4">
             {data.notes ? (
@@ -63,9 +64,7 @@ export function UpdateModal() {
                 {data.notes}
               </pre>
             ) : (
-              <p className="text-muted-foreground text-sm">
-                Keine Detailinformationen zum Release verfügbar.
-              </p>
+              <p className="text-muted-foreground text-sm">{t('update.noNotes')}</p>
             )}
           </div>
           <a
@@ -74,12 +73,12 @@ export function UpdateModal() {
             rel="noreferrer"
             className="text-primary mt-2 inline-block text-sm font-medium underline underline-offset-2"
           >
-            Vollständige Release-Details auf GitHub
+            {t('update.releaseDetails')}
           </a>
         </div>
 
         <div className="mt-6 flex justify-end">
-          <Button onClick={confirm}>Gelesen &amp; verstanden</Button>
+          <Button onClick={confirm}>{t('update.acknowledge')}</Button>
         </div>
       </div>
     </div>

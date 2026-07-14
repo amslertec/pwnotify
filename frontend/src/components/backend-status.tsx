@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Clock, History, Wifi } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from './ui/skeleton'
 import { api } from '@/lib/api'
@@ -7,6 +8,7 @@ import { fmtCountdown } from '@/lib/format'
 import type { DashboardData } from '@/lib/types'
 
 export function RunStatusPill({ status }: { status: string }) {
+  const { t } = useTranslation()
   const map: Record<string, string> = {
     success: 'var(--status-ok)',
     partial: 'var(--status-warn)',
@@ -14,10 +16,10 @@ export function RunStatusPill({ status }: { status: string }) {
     running: 'var(--color-primary)',
   }
   const label: Record<string, string> = {
-    success: 'Erfolgreich',
-    partial: 'Teilweise',
-    error: 'Fehler',
-    running: 'Läuft',
+    success: t('backendStatus.runStatus.success'),
+    partial: t('backendStatus.runStatus.partial'),
+    error: t('backendStatus.runStatus.error'),
+    running: t('backendStatus.runStatus.running'),
   }
   const color = map[status] ?? 'var(--status-never)'
   return (
@@ -45,6 +47,7 @@ function Indicator({ ok, label }: { ok?: boolean; label: string }) {
 
 /** Statusleiste: Graph-/Mail-Verbindung, nächster & letzter Lauf. Lädt selbst. */
 export function BackendStatusBar() {
+  const { t } = useTranslation()
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardData>('/dashboard'),
@@ -59,21 +62,30 @@ export function BackendStatusBar() {
     <div className="border-border bg-card flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-4 py-3 text-sm">
       <div className="flex items-center gap-2">
         <Wifi className="text-muted-foreground size-4" />
-        <Indicator ok={graphOk} label={graphOk ? 'Graph verbunden' : 'Graph nicht konfiguriert'} />
+        <Indicator
+          ok={graphOk}
+          label={
+            graphOk ? t('backendStatus.graph.connected') : t('backendStatus.graph.notConfigured')
+          }
+        />
       </div>
       <Indicator
         ok={mailOk}
-        label={mailOk ? `Mail: ${data?.backends.mail_backend}` : 'Mail nicht konfiguriert'}
+        label={
+          mailOk
+            ? t('backendStatus.mail.configured', { backend: data?.backends.mail_backend })
+            : t('backendStatus.mail.notConfigured')
+        }
       />
       <div className="text-muted-foreground flex items-center gap-2">
         <Clock className="size-4" />
-        Nächster Lauf:{' '}
+        {t('backendStatus.nextRun')}{' '}
         <span className="text-foreground font-medium">{fmtCountdown(data?.next_run)}</span>
       </div>
       {data?.last_run && (
         <div className="text-muted-foreground ml-auto flex items-center gap-2">
           <History className="size-4" />
-          Letzter Lauf: <RunStatusPill status={data.last_run.status} />
+          {t('backendStatus.lastRun')} <RunStatusPill status={data.last_run.status} />
         </div>
       )}
     </div>

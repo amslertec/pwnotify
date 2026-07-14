@@ -43,8 +43,8 @@ services:
 
   app:
     # Von Docker Hub. Für unveränderliche Deployments per Digest pinnen, z. B.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.4@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.4}
+    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.5@sha256:<digest>
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.5}
     pull_policy: always
     depends_on:
       db:

@@ -112,7 +112,7 @@ class GraphClient:
         )
         if "access_token" not in result:
             desc = result.get("error_description", result.get("error", "unbekannter Fehler"))
-            raise GraphError(f"Token-Abruf fehlgeschlagen: {desc}")
+            raise GraphError(desc, code="graph_token_failed")
         self._token = result["access_token"]
         self._token_exp = now + dt.timedelta(seconds=int(result.get("expires_in", 3600)))
         return self._token
@@ -149,7 +149,9 @@ class GraphClient:
         if resp.status_code >= 500:
             raise _RetryableStatusError(2.0)
         if resp.status_code >= 400:
-            raise GraphError(f"Graph {resp.status_code}: {resp.text[:300]}", status_code=502)
+            raise GraphError(
+                f"{resp.status_code}: {resp.text[:300]}", status_code=502, code="graph_error"
+            )
         return resp
 
     # -- Public API ---------------------------------------------------------- #

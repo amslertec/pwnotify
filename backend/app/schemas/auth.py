@@ -18,10 +18,15 @@ class UserOut(BaseModel):
     display_name: str | None = None
     is_sso: bool = False
     role: str
+    language: str = "de"
     last_login_at: dt.datetime | None = None
     has_avatar: bool = False
     # Datei-Änderungszeit als Cache-Buster -> neues Profilbild erscheint sofort.
     avatar_version: int = 0
+
+
+class LanguageUpdate(BaseModel):
+    language: str = Field(pattern="^(de|en)$")
 
 
 class AdminUserOut(BaseModel):
