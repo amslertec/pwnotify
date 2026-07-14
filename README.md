@@ -124,7 +124,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.1.8`.
+`amslertec/pwnotify:0.1.9`.
 
 ### From source (development)
 

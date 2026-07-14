@@ -218,7 +218,10 @@
     "roleAdmin": "Administrator",
     "roleAuditor": "Auditor",
     "changeRole": "Change role",
-    "roleChanged": "Role updated"
+    "roleChanged": "Role updated",
+    "roleAdmins": "Administrators",
+    "roleAuditors": "Auditors",
+    "emptyRole": "No users in this role."
   },
   "account": {
     "avatarTitle": "Profile picture",

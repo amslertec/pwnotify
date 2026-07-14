@@ -218,7 +218,10 @@
     "roleAdmin": "Administrator",
     "roleAuditor": "Auditor",
     "changeRole": "Rolle ändern",
-    "roleChanged": "Rolle aktualisiert"
+    "roleChanged": "Rolle aktualisiert",
+    "roleAdmins": "Administratoren",
+    "roleAuditors": "Auditoren",
+    "emptyRole": "Keine Benutzer in dieser Rolle."
   },
   "account": {
     "avatarTitle": "Profilbild",

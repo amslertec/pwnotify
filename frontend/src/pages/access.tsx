@@ -34,6 +34,9 @@ import { fmtDate, fmtRelative } from '@/lib/format'
 import type { AdminUser, AdminUsers } from '@/lib/types'
 import { initials } from '@/lib/utils'
 
+const byRole = (list: AdminUser[] | undefined, role: string) =>
+  (list ?? []).filter((u) => u.role === role)
+
 export default function AccessPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -80,7 +83,7 @@ export default function AccessPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Lokale Benutzer */}
+        {/* Lokale Benutzer — je Rolle eine Tabelle */}
         <TabsContent value="local">
           {isAdmin && (
             <div className="mb-3 flex justify-end">
@@ -89,44 +92,29 @@ export default function AccessPage() {
               </Button>
             </div>
           )}
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                    <th className="px-4 py-3 font-medium">{t('access.colName')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colUsername')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colCreated')}</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-border divide-y">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={5} className="p-4">
-                        <Skeleton className="h-8 w-full" />
-                      </td>
-                    </tr>
-                  ) : (
-                    data?.local.map((u) => (
-                      <UserRow
-                        key={u.id}
-                        u={u}
-                        isAdmin={isAdmin}
-                        isSelf={u.id === me?.id}
-                        canDelete={isAdmin && total > 1 && u.id !== me?.id}
-                        onDelete={() => del.mutate(u.id)}
-                      />
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <div className="space-y-6">
+            <RoleSection
+              titleKey="access.roleAdmins"
+              users={byRole(data?.local, 'admin')}
+              isLoading={isLoading}
+              isAdmin={isAdmin}
+              meId={me?.id}
+              total={total}
+              onDelete={(id) => del.mutate(id)}
+            />
+            <RoleSection
+              titleKey="access.roleAuditors"
+              users={byRole(data?.local, 'auditor')}
+              isLoading={isLoading}
+              isAdmin={isAdmin}
+              meId={me?.id}
+              total={total}
+              onDelete={(id) => del.mutate(id)}
+            />
+          </div>
         </TabsContent>
 
-        {/* SSO-Benutzer */}
+        {/* SSO-Benutzer — je Rolle eine Tabelle */}
         <TabsContent value="sso">
           {isAdmin && (
             <div className="mb-3 flex justify-end">
@@ -135,52 +123,114 @@ export default function AccessPage() {
               </Button>
             </div>
           )}
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                    <th className="px-4 py-3 font-medium">{t('access.colName')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colUpn')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colStatus')}</th>
-                    <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-border divide-y">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={5} className="p-4">
-                        <Skeleton className="h-8 w-full" />
-                      </td>
-                    </tr>
-                  ) : data && data.sso.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-muted-foreground px-4 py-8 text-center">
-                        {t('access.noSsoUsers')}
-                      </td>
-                    </tr>
-                  ) : (
-                    data?.sso.map((u) => (
-                      <UserRow
-                        key={u.id}
-                        u={u}
-                        sso
-                        isAdmin={isAdmin}
-                        isSelf={u.id === me?.id}
-                        canDelete={isAdmin && total > 1 && u.id !== me?.id}
-                        onDelete={() => del.mutate(u.id)}
-                      />
-                    ))
-                  )}
-                </tbody>
-              </table>
+          {!isLoading && (data?.sso.length ?? 0) === 0 ? (
+            <Card className="overflow-hidden">
+              <p className="text-muted-foreground px-4 py-8 text-center text-sm">
+                {t('access.noSsoUsers')}
+              </p>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              <RoleSection
+                titleKey="access.roleAdmins"
+                users={byRole(data?.sso, 'admin')}
+                sso
+                isLoading={isLoading}
+                isAdmin={isAdmin}
+                meId={me?.id}
+                total={total}
+                onDelete={(id) => del.mutate(id)}
+              />
+              <RoleSection
+                titleKey="access.roleAuditors"
+                users={byRole(data?.sso, 'auditor')}
+                sso
+                isLoading={isLoading}
+                isAdmin={isAdmin}
+                meId={me?.id}
+                total={total}
+                onDelete={(id) => del.mutate(id)}
+              />
             </div>
-          </Card>
+          )}
         </TabsContent>
       </Tabs>
 
       <CreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </div>
+  )
+}
+
+function RoleSection({
+  titleKey,
+  users,
+  sso,
+  isLoading,
+  isAdmin,
+  meId,
+  total,
+  onDelete,
+}: {
+  titleKey: string
+  users: AdminUser[]
+  sso?: boolean
+  isLoading: boolean
+  isAdmin: boolean
+  meId: number | undefined
+  total: number
+  onDelete: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+        {t(titleKey)} <span className="text-muted-foreground/60">({users.length})</span>
+      </h3>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
+                <th className="px-4 py-3 font-medium">{t('access.colName')}</th>
+                <th className="px-4 py-3 font-medium">
+                  {sso ? t('access.colUpn') : t('access.colUsername')}
+                </th>
+                {sso && <th className="px-4 py-3 font-medium">{t('access.colStatus')}</th>}
+                <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
+                {!sso && <th className="px-4 py-3 font-medium">{t('access.colCreated')}</th>}
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-border divide-y">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="p-4">
+                    <Skeleton className="h-8 w-full" />
+                  </td>
+                </tr>
+              ) : users.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-muted-foreground px-4 py-6 text-center">
+                    {t('access.emptyRole')}
+                  </td>
+                </tr>
+              ) : (
+                users.map((u) => (
+                  <UserRow
+                    key={u.id}
+                    u={u}
+                    sso={sso}
+                    isAdmin={isAdmin}
+                    isSelf={u.id === meId}
+                    canDelete={isAdmin && total > 1 && u.id !== meId}
+                    onDelete={() => onDelete(u.id)}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   )
 }
@@ -213,12 +263,6 @@ function UserRow({
     onError: (e) => toast.error(translateError(e)),
   })
 
-  const roleBadge = (
-    <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
-      {u.role === 'admin' ? t('access.roleAdmin') : t('access.roleAuditor')}
-    </Badge>
-  )
-
   return (
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-2.5">
@@ -227,7 +271,6 @@ function UserRow({
             {initials(u.display_name || u.username)}
           </span>
           <span className="font-medium">{u.display_name || '—'}</span>
-          {!sso && roleBadge}
           {isSelf && <Badge variant="secondary">{t('access.you')}</Badge>}
         </div>
       </td>

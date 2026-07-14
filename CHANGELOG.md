@@ -4,6 +4,18 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] — 2026-07-14
+
+### Fixed
+
+- User management now shows the role for **SSO users** too (previously only local users
+  had a role indicator).
+
+### Changed
+
+- User management groups accounts **by role**: separate Administrators and Auditors tables
+  in both the local and the SSO tab.
+
 ## [0.1.8] — 2026-07-14
 
 ### Added
@@ -159,6 +171,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.9
 [0.1.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.8
 [0.1.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.7
 [0.1.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.6
