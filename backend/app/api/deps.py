@@ -1,0 +1,83 @@
+"""FastAPI-Dependencies: DB-Session, Auth-Guard, Settings, Rate-Limiter, Cookies."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+import jwt
+from fastapi import Depends, Request, Response
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..core.config import get_settings
+from ..core.errors import AuthError
+from ..core.security import TokenPair, decode_token
+from ..db.session import get_session
+from ..models.user import AppUser
+from ..repositories import user_repo
+from ..services.settings_service import SettingsService
+
+ACCESS_COOKIE = "pwnotify_access"
+REFRESH_COOKIE = "pwnotify_refresh"
+
+limiter = Limiter(key_func=get_remote_address)
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_settings_service(session: SessionDep) -> SettingsService:
+    return SettingsService(session)
+
+
+SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
+
+
+async def get_current_user(request: Request, session: SessionDep) -> AppUser:
+    token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise AuthError("Nicht angemeldet.")
+    try:
+        payload = decode_token(token, expected_type="access")
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthError("Sitzung abgelaufen.", code="token_expired") from exc
+    except jwt.PyJWTError as exc:
+        raise AuthError("Ungültiges Token.") from exc
+    user = await user_repo.get(session, int(payload["sub"]))
+    if user is None or not user.is_active:
+        raise AuthError("Konto nicht verfügbar.")
+    return user
+
+
+CurrentUser = Annotated[AppUser, Depends(get_current_user)]
+
+
+def _cookie_kwargs() -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "httponly": True,
+        "samesite": "strict",
+        "secure": settings.cookie_secure,
+        "path": "/",
+    }
+
+
+def set_auth_cookies(response: Response, pair: TokenPair) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        ACCESS_COOKIE,
+        pair.access_token,
+        max_age=settings.access_token_ttl_min * 60,
+        **_cookie_kwargs(),  # type: ignore[arg-type]
+    )
+    response.set_cookie(
+        REFRESH_COOKIE,
+        pair.refresh_token,
+        max_age=settings.refresh_token_ttl_days * 86400,
+        **_cookie_kwargs(),  # type: ignore[arg-type]
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")

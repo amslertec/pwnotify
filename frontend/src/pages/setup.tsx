@@ -1,0 +1,493 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { Check, Database, KeyRound, Loader2, Mail, PartyPopper, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+
+import { EntraGuide } from '@/components/entra-guide'
+import { Logo } from '@/components/logo'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { api, ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import type { GraphTestResult } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+const STEPS = [
+  { key: 'db', label: 'Datenbank', icon: Database },
+  { key: 'admin', label: 'Administrator', icon: KeyRound },
+  { key: 'graph', label: 'Microsoft Graph', icon: ShieldCheck },
+  { key: 'mail', label: 'E-Mail', icon: Mail },
+  { key: 'done', label: 'Fertig', icon: PartyPopper },
+]
+
+export default function SetupPage() {
+  const [step, setStep] = useState(0)
+  const navigate = useNavigate()
+  const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1))
+
+  return (
+    <div className="bg-muted/30 min-h-full py-10">
+      <div className="mx-auto w-full max-w-2xl px-4">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <Logo />
+          <h1 className="font-display mt-4 text-2xl font-semibold">Ersteinrichtung</h1>
+          <p className="text-muted-foreground mt-1 text-sm">In wenigen Schritten einsatzbereit.</p>
+        </div>
+
+        {/* Stepper */}
+        <ol className="mb-8 flex items-center justify-between">
+          {STEPS.map((s, i) => (
+            <li key={s.key} className="flex flex-1 items-center">
+              <div className="flex flex-col items-center gap-1.5">
+                <span
+                  className={cn(
+                    'grid size-9 place-items-center rounded-full border-2 transition-colors',
+                    i < step && 'border-primary bg-primary text-primary-foreground',
+                    i === step && 'border-primary text-primary',
+                    i > step && 'border-border text-muted-foreground',
+                  )}
+                >
+                  {i < step ? <Check className="size-4" /> : <s.icon className="size-4" />}
+                </span>
+                <span
+                  className={cn(
+                    'hidden text-xs sm:block',
+                    i === step ? 'text-foreground font-medium' : 'text-muted-foreground',
+                  )}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={cn('mx-2 h-0.5 flex-1', i < step ? 'bg-primary' : 'bg-border')} />
+              )}
+            </li>
+          ))}
+        </ol>
+
+        <div className="border-border bg-card rounded-xl border p-6 shadow-sm">
+          {step === 0 && <DatabaseStep onNext={next} />}
+          {step === 1 && <AdminStep onNext={next} />}
+          {step === 2 && <GraphStep onNext={next} />}
+          {step === 3 && <MailStep onNext={next} />}
+          {step === 4 && <DoneStep onFinish={() => navigate('/')} />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DatabaseStep({ onNext }: { onNext: () => void }) {
+  const [status, setStatus] = useState<{ connected: boolean; migrated: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const check = async () => {
+    setBusy(true)
+    try {
+      setStatus(await api.post('/setup/database/test'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  useEffect(() => {
+    void check()
+  }, [])
+
+  const migrate = async () => {
+    setBusy(true)
+    try {
+      const res = await api.post<{ migrated: boolean }>('/setup/database/migrate')
+      if (res.migrated) {
+        toast.success('Datenbank initialisiert')
+        await check()
+      }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Migration fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <StepHeading title="Datenbank" description="Verbindung prüfen und Schema initialisieren." />
+      <div className="space-y-2">
+        <StatusRow ok={status?.connected} label="Verbindung zur PostgreSQL-Datenbank" busy={busy} />
+        <StatusRow ok={status?.migrated} label="Datenbankschema (Migrationen)" busy={busy} />
+      </div>
+      <div className="flex justify-between">
+        {status && !status.migrated ? (
+          <Button onClick={migrate} loading={busy}>
+            Migrationen anwenden
+          </Button>
+        ) : (
+          <span />
+        )}
+        <Button onClick={onNext} disabled={!status?.connected || !status?.migrated}>
+          Weiter
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AdminStep({ onNext }: { onNext: () => void }) {
+  const { refresh } = useAuth()
+  const qc = useQueryClient()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (password.length < 10) return toast.error('Passwort mind. 10 Zeichen')
+    if (password !== confirm) return toast.error('Passwörter stimmen nicht überein')
+    setBusy(true)
+    try {
+      const display_name = `${firstName} ${lastName}`.trim() || null
+      await api.post('/setup/admin', { username, password, display_name })
+      await refresh()
+      await qc.invalidateQueries({ queryKey: ['setup-status'] })
+      toast.success('Administrator angelegt')
+      onNext()
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Anlegen fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <StepHeading title="Administrator anlegen" description="Dieses Konto verwaltet PwNotify." />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Vorname">
+          <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus />
+        </Field>
+        <Field label="Nachname">
+          <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+        </Field>
+        <Field label="Benutzername" className="sm:col-span-2">
+          <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+        </Field>
+        <Field label="Passwort (mind. 10 Zeichen)">
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        <Field label="Passwort bestätigen">
+          <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex justify-end">
+        <Button onClick={submit} loading={busy} disabled={!username || !password}>
+          Konto erstellen & weiter
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function GraphStep({ onNext }: { onNext: () => void }) {
+  const [tenant, setTenant] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<GraphTestResult | null>(null)
+
+  const saveTest = async () => {
+    setBusy(true)
+    setResult(null)
+    try {
+      await api.put('/settings', {
+        values: {
+          'graph.tenant_id': tenant,
+          'graph.client_id': clientId,
+          'graph.client_secret': secret,
+        },
+      })
+      const res = await api.post<GraphTestResult>('/settings/graph/test', {})
+      setResult(res)
+      if (res.connected && res.missing_permissions.length === 0) {
+        toast.success('Graph-Verbindung erfolgreich')
+      } else if (res.connected) {
+        toast.warning('Verbunden, aber Berechtigungen fehlen')
+      } else {
+        toast.error(res.error ?? 'Verbindung fehlgeschlagen')
+      }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Test fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <StepHeading
+        title="Microsoft Graph verbinden"
+        description="Ohne diese Verbindung kann PwNotify keine Benutzer lesen oder Mails senden."
+      />
+      <EntraGuide />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Verzeichnis-(Mandanten-)ID" className="sm:col-span-2">
+          <Input
+            value={tenant}
+            onChange={(e) => setTenant(e.target.value)}
+            placeholder="00000000-0000-0000-0000-000000000000"
+          />
+        </Field>
+        <Field label="Anwendungs-(Client-)ID" className="sm:col-span-2">
+          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+        </Field>
+        <Field label="Geheimer Clientschlüssel" className="sm:col-span-2">
+          <Input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} />
+        </Field>
+      </div>
+
+      {result && <GraphResultCard result={result} />}
+
+      <div className="flex justify-between">
+        <Button
+          variant="outline"
+          onClick={saveTest}
+          loading={busy}
+          disabled={!tenant || !clientId || !secret}
+        >
+          Speichern & Verbindung testen
+        </Button>
+        <Button onClick={onNext} disabled={!result?.connected}>
+          Weiter
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function MailStep({ onNext }: { onNext: () => void }) {
+  const [backend, setBackend] = useState('graph')
+  const [from, setFrom] = useState('')
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState('587')
+  const [smtpUser, setSmtpUser] = useState('')
+  const [smtpPass, setSmtpPass] = useState('')
+  const [testTo, setTestTo] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    await api.put('/settings', {
+      values: {
+        'mail.backend': backend,
+        'mail.from': from,
+        ...(backend === 'smtp'
+          ? {
+              'mail.smtp_host': smtpHost,
+              'mail.smtp_port': Number(smtpPort),
+              'mail.smtp_username': smtpUser,
+              'mail.smtp_password': smtpPass,
+            }
+          : {}),
+      },
+    })
+  }
+
+  const sendTest = async () => {
+    setBusy(true)
+    try {
+      await save()
+      await api.post('/settings/mail/test', { to: testTo, locale: 'de' })
+      toast.success(`Test-Mail an ${testTo} gesendet`)
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Versand fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <StepHeading title="E-Mail-Versand" description="Wie sollen Erinnerungen versendet werden?" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Backend">
+          <Select value={backend} onValueChange={setBackend}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="graph">Microsoft Graph (sendMail)</SelectItem>
+              <SelectItem value="smtp">SMTP-Server</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Absenderadresse">
+          <Input
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            placeholder="noreply@example.com"
+          />
+        </Field>
+        {backend === 'smtp' && (
+          <>
+            <Field label="SMTP-Host">
+              <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+            </Field>
+            <Field label="Port">
+              <Input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+            </Field>
+            <Field label="Benutzer">
+              <Input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+            </Field>
+            <Field label="Passwort">
+              <Input
+                type="password"
+                value={smtpPass}
+                onChange={(e) => setSmtpPass(e.target.value)}
+              />
+            </Field>
+          </>
+        )}
+      </div>
+
+      <div className="border-border bg-muted/40 rounded-lg border p-4">
+        <Label className="text-xs">Optional: Test-Mail senden</Label>
+        <div className="mt-2 flex gap-2">
+          <Input
+            value={testTo}
+            onChange={(e) => setTestTo(e.target.value)}
+            placeholder="ihre.adresse@example.com"
+          />
+          <Button variant="outline" onClick={sendTest} loading={busy} disabled={!testTo || !from}>
+            Senden
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          onClick={async () => {
+            await save()
+            onNext()
+          }}
+        >
+          Überspringen
+        </Button>
+        <Button
+          onClick={async () => {
+            await save()
+            toast.success('Mail-Einstellungen gespeichert')
+            onNext()
+          }}
+          disabled={!from}
+        >
+          Speichern & weiter
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function DoneStep({ onFinish }: { onFinish: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-4 py-6 text-center">
+      <div className="bg-success/15 text-success grid size-14 place-items-center rounded-2xl">
+        <PartyPopper className="size-7" />
+      </div>
+      <div>
+        <h2 className="font-display text-xl font-semibold">Alles bereit!</h2>
+        <p className="text-muted-foreground mt-1 max-w-sm text-sm">
+          PwNotify ist eingerichtet. Sie können jetzt den ersten Sync starten und den Zeitplan in
+          den Einstellungen anpassen.
+        </p>
+      </div>
+      <Button onClick={onFinish}>Zum Dashboard</Button>
+    </div>
+  )
+}
+
+/* ---- kleine Helfer ---- */
+function StepHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="font-display text-lg font-semibold">{title}</h2>
+      <p className="text-muted-foreground mt-1 text-sm">{description}</p>
+    </div>
+  )
+}
+
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      <Label>{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function StatusRow({ ok, label, busy }: { ok?: boolean; label: string; busy?: boolean }) {
+  return (
+    <div className="border-border bg-card flex items-center gap-3 rounded-lg border px-4 py-3">
+      {busy && ok === undefined ? (
+        <Loader2 className="text-muted-foreground size-5 animate-spin" />
+      ) : ok ? (
+        <span className="bg-success grid size-5 place-items-center rounded-full text-white">
+          <Check className="size-3.5" />
+        </span>
+      ) : (
+        <span className="border-danger size-5 rounded-full border-2" />
+      )}
+      <span className="text-sm">{label}</span>
+    </div>
+  )
+}
+
+export function GraphResultCard({ result }: { result: GraphTestResult }) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border p-4',
+        result.connected ? 'border-success/40 bg-success/5' : 'border-danger/40 bg-danger/5',
+      )}
+    >
+      <p className="text-sm font-medium">
+        {result.connected ? 'Verbindung hergestellt' : 'Verbindung fehlgeschlagen'}
+      </p>
+      {result.error && <p className="text-danger mt-1 text-xs">{result.error}</p>}
+      {result.connected && (
+        <div className="mt-3 space-y-1.5">
+          {['User.Read.All', 'Domain.Read.All', 'Mail.Send'].map((p) => {
+            const granted = result.granted_permissions.includes(p)
+            return (
+              <div key={p} className="flex items-center gap-2 text-xs">
+                {granted ? (
+                  <Check className="text-success size-3.5" />
+                ) : (
+                  <span className="border-danger size-3.5 rounded-full border" />
+                )}
+                <code className="font-mono">{p}</code>
+                {!granted && <span className="text-danger">— fehlt / kein Admin-Consent</span>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

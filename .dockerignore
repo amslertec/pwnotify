@@ -1,0 +1,58 @@
+# ---- VCS / CI ----
+.git
+.gitignore
+.github
+.gitattributes
+
+# ---- Docs & meta (nicht ins Image) ----
+*.md
+!README.md
+docs
+logos
+LICENSE
+CHANGELOG.md
+SECURITY.md
+VERSIONS.md
+PLAN.md
+
+# ---- Python ----
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+backend/tests
+**/htmlcov
+**/.coverage
+**/coverage.xml
+
+# ---- Node / Frontend ----
+**/node_modules
+frontend/dist
+frontend/.vite
+**/npm-debug.log*
+**/pnpm-debug.log*
+
+# ---- Env / Secrets ----
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/secret.key
+data
+pgdata
+
+# ---- Editor / OS ----
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- Docker / Compose (nicht in Build-Context nötig) ----
+docker-compose*.yml
+Makefile

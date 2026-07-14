@@ -1,0 +1,14 @@
+{
+  "name": "PwNotify",
+  "short_name": "PwNotify",
+  "description": "Benachrichtigt Microsoft-Entra-ID-Benutzer vor Passwortablauf.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#4F46E5",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

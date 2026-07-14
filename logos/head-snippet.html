@@ -1,0 +1,28 @@
+<!-- ===== PwNotify — in den <head> einfügen ===== -->
+
+<!-- Tab-Favicon: SVG schaltet automatisch light/dark, PNG als Fallback -->
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png">
+
+<!-- iOS Homescreen -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+<!-- PWA / Android -->
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#4F46E5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0F19" media="(prefers-color-scheme: dark)">
+
+
+<!-- ===== App-Logo im UI (schaltet per CSS mit dem Theme) ===== -->
+<!--
+  <img src="/logo-light.svg" alt="PwNotify" class="logo-light">
+  <img src="/logo-dark.svg"  alt="PwNotify" class="logo-dark">
+
+  .logo-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    .logo-light { display: none; }
+    .logo-dark  { display: block; }
+  }
+  Für Icon-only im UI: icon-light.svg / icon-dark.svg analog.
+-->

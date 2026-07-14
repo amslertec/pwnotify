@@ -1,0 +1,11 @@
+<svg width="240" height="64" viewBox="0 0 240 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(0,8) scale(2)">
+    <path d="M12 3.5A8.5 8.5 0 0 1 20.5 12" stroke="#FBBF24" stroke-width="2" stroke-linecap="round"></path>
+    <path d="M20.5 12A8.5 8.5 0 1 1 12 3.5" stroke="#818CF8" stroke-width="2" stroke-linecap="round"></path>
+    <circle cx="12" cy="10" r="1.9" fill="#818CF8"></circle>
+    <path d="M10.6 11.2 9.8 15.4h4.4L13.4 11.2z" fill="#818CF8"></path>
+  </g>
+  <text x="62" y="42" font-family="&#39;Space Grotesk&#39;,&#39;Segoe UI&#39;,system-ui,sans-serif" font-size="34" font-weight="600" letter-spacing="-0.8">
+    <tspan fill="#818CF8">Pw</tspan><tspan fill="#F1F5F9">Notify</tspan>
+  </text>
+</svg>

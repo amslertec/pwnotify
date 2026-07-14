@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="de" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Tab-Favicon: SVG schaltet automatisch light/dark, PNG als Fallback -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#4F46E5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0B0F19" media="(prefers-color-scheme: dark)" />
+
+    <title>PwNotify</title>
+
+    <!-- FOUC-Schutz: Theme vor dem Rendern setzen -->
+    <script>
+      ;(function () {
+        try {
+          var t = localStorage.getItem('pwnotify-theme') || 'system'
+          var dark =
+            t === 'dark' ||
+            (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+        } catch (e) {}
+      })()
+    </script>
+
+    <!-- Branding vor dem Rendern anwenden (Primärfarbe + Favicon), unabhängig von React -->
+    <script>
+      ;(function () {
+        try {
+          var xhr = new XMLHttpRequest()
+          xhr.open('GET', '/api/branding?_=' + Date.now(), false)
+          xhr.setRequestHeader('Cache-Control', 'no-cache')
+          xhr.send()
+          if (xhr.status === 200) {
+            var b = JSON.parse(xhr.responseText)
+            window.__BRANDING__ = b
+            if (b.primary_color) {
+              document.documentElement.style.setProperty('--primary', b.primary_color)
+              document.documentElement.style.setProperty('--ring', b.primary_color)
+            }
+            if (b.app_name) document.title = b.app_name
+            if (b.has_favicon) {
+              var old = document.querySelectorAll('link[rel~="icon"]')
+              for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i])
+              var l = document.createElement('link')
+              l.rel = 'icon'
+              l.id = 'pwnotify-dynamic-favicon'
+              l.href = '/api/branding/favicon?v=' + (b.favicon_version || 0)
+              document.head.appendChild(l)
+            }
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body class="h-full">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

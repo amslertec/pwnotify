@@ -1,0 +1,106 @@
+import {
+  Bell,
+  History,
+  LayoutDashboard,
+  PanelLeftClose,
+  Settings,
+  UserCog,
+  Users,
+} from 'lucide-react'
+import { NavLink } from 'react-router-dom'
+
+import { Logo } from '../logo'
+import { Button } from '../ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { cn } from '@/lib/utils'
+
+const NAV = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/users', label: 'Benutzer', icon: Users, end: false },
+  { to: '/notifications', label: 'Benachrichtigungen', icon: Bell, end: false },
+  { to: '/runs', label: 'Läufe', icon: History, end: false },
+  { to: '/access', label: 'Benutzerverwaltung', icon: UserCog, end: false },
+  { to: '/settings', label: 'Einstellungen', icon: Settings, end: false },
+]
+
+export function Sidebar({
+  collapsed,
+  onToggle,
+  onNavigate,
+}: {
+  collapsed: boolean
+  onToggle?: () => void
+  onNavigate?: () => void
+}) {
+  return (
+    <aside
+      className={cn(
+        'border-sidebar-border bg-sidebar flex h-full flex-col border-r transition-[width] duration-200',
+        collapsed ? 'w-16' : 'w-64',
+      )}
+    >
+      <div
+        className={cn(
+          'border-sidebar-border flex h-16 items-center border-b px-4',
+          collapsed ? 'justify-center' : 'justify-between',
+        )}
+      >
+        <NavLink to="/" aria-label="Zum Dashboard" className="rounded-md">
+          <Logo collapsed={collapsed} />
+        </NavLink>
+        {!collapsed && onToggle && (
+          <Button variant="ghost" size="icon" onClick={onToggle} aria-label="Sidebar einklappen">
+            <PanelLeftClose className="size-4" />
+          </Button>
+        )}
+      </div>
+
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        {NAV.map((item) => {
+          const link = (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                cn(
+                  'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  collapsed && 'justify-center px-0',
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-sidebar-foreground hover:bg-muted/70 hover:text-foreground',
+                )
+              }
+            >
+              <item.icon className="size-[1.15rem] shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </NavLink>
+          )
+          return collapsed ? (
+            <Tooltip key={item.to}>
+              <TooltipTrigger asChild>{link}</TooltipTrigger>
+              <TooltipContent side="right">{item.label}</TooltipContent>
+            </Tooltip>
+          ) : (
+            link
+          )
+        })}
+      </nav>
+
+      {collapsed && onToggle && (
+        <div className="border-sidebar-border border-t p-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="mx-auto"
+            aria-label="Sidebar ausklappen"
+          >
+            <PanelLeftClose className="size-4 rotate-180" />
+          </Button>
+        </div>
+      )}
+    </aside>
+  )
+}
