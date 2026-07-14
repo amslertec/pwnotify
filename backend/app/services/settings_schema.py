@@ -32,6 +32,11 @@ SETTINGS: dict[str, SettingSpec] = {
     "app.public_url": SettingSpec(""),
     # Prüft periodisch das neueste GitHub-Release und zeigt bei neuerer Version einen Hinweis.
     "app.update_check": SettingSpec(True),
+    # ---- Admin-Benachrichtigungen (Digest + Fehler-Alert) ----
+    "alerts.enabled": SettingSpec(False),
+    "alerts.recipients": SettingSpec([]),  # Liste von E-Mail-Adressen
+    "alerts.digest": SettingSpec(True),  # Zusammenfassung nach jedem geplanten Lauf
+    "alerts.on_failure": SettingSpec(True),  # sofortiger Alert bei fehlgeschlagenem Lauf/Versand
     # ---- Graph / Entra ----
     "graph.tenant_id": SettingSpec(""),
     "graph.client_id": SettingSpec(""),

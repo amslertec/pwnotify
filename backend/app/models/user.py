@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, String, Text
 from sqlmodel import Field, SQLModel
 
 from ._base import utcnow
@@ -24,6 +24,12 @@ class AppUser(SQLModel, table=True):
     language: str = Field(
         default="de", sa_column=Column(String(8), nullable=False, server_default="de")
     )
+
+    # 2FA (TOTP) — nur lokale Konten. Secret Fernet-verschlüsselt at-rest.
+    totp_secret: str | None = Field(default=None, sa_column=Column(String(255)))
+    totp_enabled: bool = Field(default=False)
+    # Recovery-Codes: JSON-Array von SHA-256-Hex-Hashes ungenutzter Codes.
+    recovery_codes: str | None = Field(default=None, sa_column=Column(Text))
 
     failed_login_count: int = Field(default=0)
     locked_until: dt.datetime | None = Field(

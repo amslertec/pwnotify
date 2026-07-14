@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate } from '@/lib/format'
 import type { EntraUser, Page } from '@/lib/types'
@@ -54,6 +55,7 @@ const STATUS_OPTIONS = [
 
 export default function UsersPage() {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -133,9 +135,11 @@ export default function UsersPage() {
         description={t('users.description')}
         actions={
           <>
-            <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
-              <RefreshCw /> {t('users.sync')}
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
+                <RefreshCw /> {t('users.sync')}
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
@@ -204,7 +208,7 @@ export default function UsersPage() {
       </div>
 
       {/* Bulk-Leiste */}
-      {selected.size > 0 && (
+      {isAdmin && selected.size > 0 && (
         <div className="border-primary/30 bg-primary/5 mb-3 flex items-center gap-3 rounded-lg border px-4 py-2 text-sm">
           <span className="font-medium">{t('users.selectedCount', { n: selected.size })}</span>
           <Button

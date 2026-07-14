@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from ..core.logging import get_logger
 from ..models.run import Run
 from ..repositories import entra_repo, exclusion_repo, run_repo
+from . import alerts
 from .graph import GraphClient, GraphConfig
 from .graph.sync import sync_users
 from .mail import build_sender
@@ -168,4 +169,9 @@ async def execute_run(
             skipped=skipped,
             dry_run=dry_run,
         )
+        # Admin-Digest / Fehler-Alert (best effort — beeinflusst den Lauf nie).
+        try:
+            await alerts.maybe_send_run_alert(session, settings, run, base_url)
+        except Exception as exc:
+            log.warning("run_alert_failed", error=str(exc))
         return run

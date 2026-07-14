@@ -45,6 +45,8 @@
 | python-multipart | 0.0.32 | 2026-07-13 | Logo/Favicon-Upload |
 | email-validator | 2.3.0 | 2026-07-13 | |
 | tzdata | 2026.3 | 2026-07-13 | Zeitzonen-DB — Chainguard/distroless enthalten **keine** System-tzdata; `zoneinfo` fällt auf dieses Paket zurück (APScheduler-Timezones). |
+| pyotp | 2.10.0 | 2026-07-14 | TOTP-2FA für lokale Konten |
+| qrcode | 8.2 | 2026-07-14 | QR-Code (nutzt vorhandenes Pillow) |
 | **dev:** ruff | 0.15.21 | 2026-07-13 | Lint+Format |
 | **dev:** mypy | 2.3.0 | 2026-07-13 | strict |
 | **dev:** pytest | 9.1.1 | 2026-07-13 | |

@@ -1,6 +1,6 @@
 [project]
 name = "pwnotify"
-version = "0.1.6"
+version = "0.1.7"
 description = "Password Expiry Notification Tool für Microsoft Entra ID (Azure AD)."
 readme = "../README.md"
 requires-python = ">=3.14,<3.15"
@@ -36,6 +36,9 @@ dependencies = [
   "tzdata==2026.3",
   # Auto-Trimmen hochgeladener Logos (transparente Ränder entfernen)
   "pillow==12.3.0",
+  # 2FA (TOTP) für lokale Konten + QR-Code-Erzeugung (nutzt Pillow)
+  "pyotp==2.10.0",
+  "qrcode==8.2",
 ]
 
 [dependency-groups]

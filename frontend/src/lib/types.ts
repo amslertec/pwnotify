@@ -5,9 +5,21 @@ export interface User {
   is_sso: boolean
   role: string
   language: string
+  two_factor_enabled: boolean
   last_login_at: string | null
   has_avatar: boolean
   avatar_version: number
+}
+
+export interface LoginResponse {
+  two_factor_required: boolean
+  user: User | null
+}
+
+export interface TwoFactorSetup {
+  otpauth_uri: string
+  qr_png: string
+  secret: string
 }
 
 export interface VersionInfo {

@@ -6,8 +6,10 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import type { Settings } from '@/lib/types'
+import { AlertsTab } from '@/components/settings/alerts-tab'
 import { BrandingTab } from '@/components/settings/branding-tab'
 import { GeneralTab } from '@/components/settings/general-tab'
 import { GraphTab } from '@/components/settings/graph-tab'
@@ -29,6 +31,7 @@ const TABS = [
   { value: 'mail', labelKey: 'settingsPage.tabs.mail' },
   { value: 'schedule', labelKey: 'settingsPage.tabs.schedule' },
   { value: 'policy', labelKey: 'settingsPage.tabs.policy' },
+  { value: 'alerts', labelKey: 'settingsPage.tabs.alerts' },
   { value: 'branding', labelKey: 'settingsPage.tabs.branding' },
   { value: 'template', labelKey: 'settingsPage.tabs.template' },
   { value: 'general', labelKey: 'settingsPage.tabs.general' },
@@ -36,6 +39,7 @@ const TABS = [
 
 export default function SettingsPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') ?? 'graph'
@@ -71,6 +75,11 @@ export default function SettingsPage() {
         title={t('settingsPage.header.title')}
         description={t('settingsPage.header.description')}
       />
+      {user?.role !== 'admin' && (
+        <div className="border-border bg-muted/40 text-muted-foreground mb-4 rounded-lg border px-4 py-3 text-sm">
+          {t('settingsPage.readOnlyNotice')}
+        </div>
+      )}
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v })}>
         <div className="overflow-x-auto pb-1">
           <TabsList>
@@ -98,6 +107,9 @@ export default function SettingsPage() {
             </TabsContent>
             <TabsContent value="policy">
               <PolicyTab {...tabProps} />
+            </TabsContent>
+            <TabsContent value="alerts">
+              <AlertsTab {...tabProps} />
             </TabsContent>
             <TabsContent value="branding">
               <BrandingTab {...tabProps} />

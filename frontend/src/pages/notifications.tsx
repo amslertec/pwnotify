@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDateTime } from '@/lib/format'
 import type { Notification, Page } from '@/lib/types'
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils'
 
 export default function NotificationsPage() {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
   const qc = useQueryClient()
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
@@ -139,14 +141,16 @@ export default function NotificationsPage() {
                         <td className="px-4 py-2.5">
                           {n.status === 'failed' && (
                             <div className="flex justify-end gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => retry.mutate(n.id)}
-                                aria-label={t('notifications.actions.retry')}
-                              >
-                                <RotateCw className="size-3.5" />
-                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => retry.mutate(n.id)}
+                                  aria-label={t('notifications.actions.retry')}
+                                >
+                                  <RotateCw className="size-3.5" />
+                                </Button>
+                              )}
                               {n.error && (
                                 <Button
                                   size="sm"

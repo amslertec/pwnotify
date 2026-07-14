@@ -27,8 +27,11 @@ alternate (SSPR) address, or both. Self-hosted, hardened, and driven by a modern
   account from the sidebar.
 - **PWA** — installable to the home screen; a mobile install hint (with iOS/Android steps)
   appears on phones and disappears once installed.
-- **Security** — Argon2id logins, rotating JWT cookies, rate limiting, Fernet-encrypted
-  secrets at rest, dark/light theme, WCAG-AA, keyboard navigation.
+- **Admin alerts** — optional digest after each scheduled run and immediate failure alerts
+  to a configurable recipient list.
+- **Security** — Argon2id logins, **TOTP two-factor auth** (with recovery codes) for local
+  accounts, **roles** (admin / read-only auditor), rotating JWT cookies, rate limiting,
+  Fernet-encrypted secrets at rest, dark/light theme, WCAG-AA, keyboard navigation.
 - **Compliance** — Chainguard base, non-root, read-only FS, **0 known HIGH/CRITICAL CVEs**,
   multi-arch, SBOM + provenance.
 
@@ -121,7 +124,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.1.6`.
+`amslertec/pwnotify:0.1.7`.
 
 ### From source (development)
 

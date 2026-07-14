@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     is_sso: bool = False
     role: str
     language: str = "de"
+    two_factor_enabled: bool = False
     last_login_at: dt.datetime | None = None
     has_avatar: bool = False
     # Datei-Änderungszeit als Cache-Buster -> neues Profilbild erscheint sofort.
@@ -27,6 +28,25 @@ class UserOut(BaseModel):
 
 class LanguageUpdate(BaseModel):
     language: str = Field(pattern="^(de|en)$")
+
+
+class LoginResponse(BaseModel):
+    two_factor_required: bool = False
+    user: UserOut | None = None
+
+
+class TwoFactorCode(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+
+
+class TwoFactorSetupOut(BaseModel):
+    otpauth_uri: str
+    qr_png: str
+    secret: str
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str]
 
 
 class AdminUserOut(BaseModel):
@@ -44,6 +64,11 @@ class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=150)
     password: str = Field(min_length=10, max_length=1024)
     display_name: str | None = Field(default=None, max_length=320)
+    role: str = Field(default="admin", pattern="^(admin|auditor)$")
+
+
+class RoleUpdate(BaseModel):
+    role: str = Field(pattern="^(admin|auditor)$")
 
 
 class SessionOut(BaseModel):

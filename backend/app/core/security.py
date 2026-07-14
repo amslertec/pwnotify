@@ -95,6 +95,18 @@ def create_refresh_token(subject: str, *, jti: str | None = None) -> tuple[str, 
     return jwt.encode(payload, _signing_key(), algorithm=_ALG), token_jti, exp
 
 
+def create_2fa_token(subject: str) -> str:
+    """Kurzlebiger Zwischen-Token nach Passwort-OK, vor 2FA-Code (Typ '2fa', 5 min)."""
+    exp = _now() + dt.timedelta(minutes=5)
+    payload = {
+        "sub": subject,
+        "type": "2fa",
+        "iat": int(_now().timestamp()),
+        "exp": int(exp.timestamp()),
+    }
+    return jwt.encode(payload, _signing_key(), algorithm=_ALG)
+
+
 def issue_token_pair(subject: str) -> TokenPair:
     access, a_exp = create_access_token(subject)
     refresh, jti, r_exp = create_refresh_token(subject)

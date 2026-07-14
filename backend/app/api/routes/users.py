@@ -17,7 +17,7 @@ from ...schemas.common import Message, Page
 from ...schemas.entities import EntraUserDetail, EntraUserOut
 from ...services.mail import build_sender
 from ...services.notifier import notify_user
-from ..deps import CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -142,7 +142,7 @@ async def get_user(_: CurrentUser, user_id: int, session: SessionDep) -> EntraUs
 
 @router.post("/{user_id}/exclude", response_model=Message)
 async def set_exclude(
-    _: CurrentUser, user_id: int, body: ExcludeRequest, session: SessionDep
+    _: AdminUser, user_id: int, body: ExcludeRequest, session: SessionDep
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
@@ -152,9 +152,7 @@ async def set_exclude(
 
 
 @router.post("/{user_id}/notify", response_model=Message)
-async def notify_now(
-    _: CurrentUser, user_id: int, session: SessionDep, svc: SettingsDep
-) -> Message:
+async def notify_now(_: AdminUser, user_id: int, session: SessionDep, svc: SettingsDep) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -180,7 +178,7 @@ async def notify_now(
 
 
 @router.post("/bulk", response_model=Message)
-async def bulk(_: CurrentUser, body: BulkRequest, session: SessionDep, svc: SettingsDep) -> Message:
+async def bulk(_: AdminUser, body: BulkRequest, session: SessionDep, svc: SettingsDep) -> Message:
     if body.action in ("exclude", "include"):
         for uid in body.ids:
             await entra_repo.set_excluded(session, uid, body.action == "exclude")

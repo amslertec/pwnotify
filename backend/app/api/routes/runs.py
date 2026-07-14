@@ -10,7 +10,7 @@ from ...repositories import run_repo
 from ...schemas.common import Page
 from ...schemas.entities import RunDetail, RunOut
 from ...services.scheduler import get_scheduler
-from ..deps import CurrentUser, SessionDep
+from ..deps import AdminUser, CurrentUser, SessionDep
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -44,6 +44,6 @@ async def get_run(_: CurrentUser, run_id: int, session: SessionDep) -> RunDetail
 
 
 @router.post("/trigger", response_model=RunDetail)
-async def trigger(_: CurrentUser, body: TriggerRequest) -> RunDetail:
+async def trigger(_: AdminUser, body: TriggerRequest) -> RunDetail:
     run = await get_scheduler().trigger_now(dry_run_override=body.dry_run)
     return RunDetail.model_validate(run, from_attributes=True)

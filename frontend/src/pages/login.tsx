@@ -36,12 +36,15 @@ function MicrosoftIcon() {
 }
 
 export default function LoginPage() {
-  const { user, login } = useAuth()
+  const { user, login, verify2fa } = useAuth()
   const { branding } = useBranding()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [email, setEmail] = useState('')
+  const [twoFactor, setTwoFactor] = useState(false)
+  const [code, setCode] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
   const { data: setup } = useQuery({
     queryKey: ['setup-status'],
@@ -70,10 +73,23 @@ export default function LoginPage() {
 
   const onSubmit = async (values: FormValues) => {
     try {
-      await login(values.username, values.password)
+      const res = await login(values.username, values.password)
+      if (res.two_factor_required) setTwoFactor(true)
+      else navigate('/')
+    } catch (e) {
+      toast.error(translateError(e))
+    }
+  }
+
+  const submit2fa = async () => {
+    setVerifying(true)
+    try {
+      await verify2fa(code.trim())
       navigate('/')
     } catch (e) {
       toast.error(translateError(e))
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -127,8 +143,36 @@ export default function LoginPage() {
             {t('login.signInPrompt', { app: branding.app_name })}
           </p>
 
+          {/* 2FA-Schritt */}
+          {twoFactor && (
+            <div className="mt-8 space-y-4">
+              <p className="text-muted-foreground text-sm">{t('login.twoFactorPrompt')}</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="tfa">{t('login.codeLabel')}</Label>
+                <Input
+                  id="tfa"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder={t('login.codePlaceholder')}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submit2fa()}
+                />
+              </div>
+              <Button
+                className="w-full"
+                loading={verifying}
+                onClick={submit2fa}
+                disabled={!code.trim()}
+              >
+                {t('login.verifyButton')}
+              </Button>
+              <p className="text-muted-foreground text-xs">{t('login.recoveryHint')}</p>
+            </div>
+          )}
+
           {/* SSO-Block */}
-          {ssoEnabled && (
+          {!twoFactor && ssoEnabled && (
             <div className="mt-8 space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="email">{t('login.emailLabel')}</Label>
@@ -163,7 +207,7 @@ export default function LoginPage() {
           )}
 
           {/* Lokaler Login */}
-          {localVisible && (
+          {!twoFactor && localVisible && (
             <form
               onSubmit={handleSubmit(onSubmit)}
               className={

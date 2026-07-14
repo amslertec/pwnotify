@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...schemas.common import Message
-from ..deps import CurrentUser, SettingsDep
+from ..deps import AdminUser, SettingsDep
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -112,14 +112,14 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
 
 
 @router.post("/logo", response_model=Message)
-async def upload_logo(_: CurrentUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
+async def upload_logo(_: AdminUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
     path = await _save_upload(file, "logo", trim=True)
     await svc.set("branding.logo_path", path)
     return Message(message="Logo gespeichert.")
 
 
 @router.post("/favicon", response_model=Message)
-async def upload_favicon(_: CurrentUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
+async def upload_favicon(_: AdminUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
     path = await _save_upload(file, "favicon")
     await svc.set("branding.favicon_path", path)
     return Message(message="Favicon gespeichert.")
@@ -132,13 +132,13 @@ async def _clear_upload(svc: SettingsDep, key: str, stem: str) -> None:
 
 
 @router.delete("/logo", response_model=Message)
-async def delete_logo(_: CurrentUser, svc: SettingsDep) -> Message:
+async def delete_logo(_: AdminUser, svc: SettingsDep) -> Message:
     await _clear_upload(svc, "branding.logo_path", "logo")
     return Message(message="Logo entfernt — Standard aktiv.")
 
 
 @router.delete("/favicon", response_model=Message)
-async def delete_favicon(_: CurrentUser, svc: SettingsDep) -> Message:
+async def delete_favicon(_: AdminUser, svc: SettingsDep) -> Message:
     await _clear_upload(svc, "branding.favicon_path", "favicon")
     return Message(message="Favicon entfernt — Standard aktiv.")
 

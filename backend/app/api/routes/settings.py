@@ -25,7 +25,7 @@ from ...services.scheduler import compute_next_runs, get_scheduler
 from ...services.settings_schema import SETTINGS
 from ...services.settings_service import effective_base_url
 from ...services.templating import render, sample_context
-from ..deps import CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -36,7 +36,7 @@ async def get_all(_: CurrentUser, svc: SettingsDep) -> dict[str, Any]:
 
 
 @router.put("", response_model=dict)
-async def update(_: CurrentUser, body: SettingsUpdate, svc: SettingsDep) -> dict[str, Any]:
+async def update(_: AdminUser, body: SettingsUpdate, svc: SettingsDep) -> dict[str, Any]:
     await svc.set_many(body.values)
     # Bei Schedule-Änderungen den laufenden Job neu planen.
     if any(k.startswith("schedule.") for k in body.values):
@@ -46,7 +46,7 @@ async def update(_: CurrentUser, body: SettingsUpdate, svc: SettingsDep) -> dict
 
 
 @router.post("/graph/test", response_model=GraphTestResult)
-async def graph_test(_: CurrentUser, body: GraphTestRequest, svc: SettingsDep) -> GraphTestResult:
+async def graph_test(_: AdminUser, body: GraphTestRequest, svc: SettingsDep) -> GraphTestResult:
     settings = await svc.get_all()
     result = await test_graph(
         settings,
@@ -59,7 +59,7 @@ async def graph_test(_: CurrentUser, body: GraphTestRequest, svc: SettingsDep) -
 
 
 @router.post("/mail/test", response_model=Message)
-async def mail_test(_: CurrentUser, body: MailTestRequest, svc: SettingsDep) -> Message:
+async def mail_test(_: AdminUser, body: MailTestRequest, svc: SettingsDep) -> Message:
     settings = await svc.get_all()
     await send_test_mail(
         settings, to=body.to, locale=body.locale, base_url=effective_base_url(settings)
@@ -90,7 +90,7 @@ async def template_preview(
 
 
 @router.post("/template/reset", response_model=dict)
-async def template_reset(_: CurrentUser, svc: SettingsDep) -> dict[str, Any]:
+async def template_reset(_: AdminUser, svc: SettingsDep) -> dict[str, Any]:
     defaults = {k: spec.default for k, spec in SETTINGS.items() if k.startswith("template.")}
     await svc.set_many(defaults)
     return await svc.get_public()
@@ -104,7 +104,7 @@ async def list_exclusions(_: CurrentUser, session: SessionDep) -> list[Exclusion
 
 
 @router.post("/exclusions", response_model=ExclusionOut)
-async def add_exclusion(_: CurrentUser, body: dict[str, str], session: SessionDep) -> ExclusionOut:
+async def add_exclusion(_: AdminUser, body: dict[str, str], session: SessionDep) -> ExclusionOut:
     exc = await exclusion_repo.add(
         session,
         kind=body.get("kind", "user"),
@@ -115,6 +115,6 @@ async def add_exclusion(_: CurrentUser, body: dict[str, str], session: SessionDe
 
 
 @router.delete("/exclusions/{exclusion_id}", response_model=Message)
-async def delete_exclusion(_: CurrentUser, exclusion_id: int, session: SessionDep) -> Message:
+async def delete_exclusion(_: AdminUser, exclusion_id: int, session: SessionDep) -> Message:
     await exclusion_repo.delete(session, exclusion_id)
     return Message(message="Ausschluss entfernt.")

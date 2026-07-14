@@ -48,6 +48,24 @@
       "step2": "„App installieren“ bzw. „Zum Startbildschirm“ wählen"
     }
   },
+  "twofa": {
+    "title": "Zwei-Faktor-Authentifizierung",
+    "description": "Zusätzlicher Schutz beim Login mit einer Authenticator-App.",
+    "inactive": "Nicht aktiviert.",
+    "active": "Aktiviert.",
+    "setup": "Einrichten",
+    "scanPrompt": "Scannen Sie den QR-Code mit Ihrer Authenticator-App:",
+    "manualEntry": "Oder manuell eingeben:",
+    "codePlaceholder": "6-stelliger Code",
+    "activate": "Aktivieren",
+    "disable": "Deaktivieren",
+    "disablePrompt": "Geben Sie einen aktuellen Code (oder Recovery-Code) ein, um 2FA zu deaktivieren.",
+    "enabled": "Zwei-Faktor-Authentifizierung aktiviert",
+    "disabled": "Zwei-Faktor-Authentifizierung deaktiviert",
+    "recoveryHeading": "Recovery-Codes",
+    "recoveryWarning": "Sicher aufbewahren — jeder Code funktioniert einmal. Sie werden nur jetzt angezeigt.",
+    "recoveryDone": "Habe ich gespeichert"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "users": "Benutzer",
@@ -79,7 +97,12 @@
     "brandHeadline": "Passwort-Ablauf im Blick behalten.",
     "brandSubtext": "Automatische, gestaffelte Erinnerungen für Ihre Microsoft-Entra-ID-Benutzer — bevor das Kennwort abläuft.",
     "ssoDenied": "Kein Zugriff — nicht Mitglied der Admin-Gruppe.",
-    "ssoError": "Microsoft-Anmeldung fehlgeschlagen."
+    "ssoError": "Microsoft-Anmeldung fehlgeschlagen.",
+    "twoFactorPrompt": "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.",
+    "codeLabel": "Bestätigungscode",
+    "codePlaceholder": "123456",
+    "verifyButton": "Bestätigen",
+    "recoveryHint": "Kein Zugriff auf die App? Verwenden Sie einen Ihrer Recovery-Codes."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -156,7 +179,14 @@
     "smtp_no_host": "Kein SMTP-Host konfiguriert.",
     "mail_no_sender": "Keine Absenderadresse konfiguriert (mail.from).",
     "smtp_send_failed": "SMTP-Versand fehlgeschlagen: {{detail}}",
-    "template_error": "Vorlagen-Fehler: {{detail}}"
+    "template_error": "Vorlagen-Fehler: {{detail}}",
+    "admin_required": "Nur mit Administratorrechten möglich.",
+    "invalid_2fa_code": "Ungültiger 2FA-Code.",
+    "twofa_session_missing": "Keine 2FA-Sitzung. Bitte erneut anmelden.",
+    "twofa_expired": "2FA-Sitzung abgelaufen. Bitte erneut anmelden.",
+    "twofa_local_only": "2FA ist nur für lokale Konten verfügbar.",
+    "twofa_not_started": "2FA-Einrichtung nicht gestartet.",
+    "cannot_demote_self": "Sie können sich nicht selbst die Administratorrolle entziehen."
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -183,7 +213,12 @@
     "username": "Benutzername",
     "passwordLabel": "Passwort (mind. 10 Zeichen)",
     "create": "Erstellen",
-    "userCreated": "Benutzer erstellt"
+    "userCreated": "Benutzer erstellt",
+    "roleLabel": "Rolle",
+    "roleAdmin": "Administrator",
+    "roleAuditor": "Auditor",
+    "changeRole": "Rolle ändern",
+    "roleChanged": "Rolle aktualisiert"
   },
   "account": {
     "avatarTitle": "Profilbild",
@@ -316,7 +351,8 @@
       "policy": "Passwort-Policy",
       "branding": "Branding",
       "template": "Vorlage",
-      "general": "Allgemein"
+      "general": "Allgemein",
+      "alerts": "Benachrichtigungen"
     },
     "header": {
       "title": "Einstellungen",
@@ -324,7 +360,8 @@
     },
     "toast": {
       "saved": "Gespeichert"
-    }
+    },
+    "readOnlyNotice": "Als Auditor haben Sie nur Lesezugriff auf die Einstellungen. Änderungen können nur Administratoren speichern."
   },
   "graphTab": {
     "toast": {
@@ -762,5 +799,28 @@
   "statusBadge": {
     "days": "{{n}} T",
     "daysOver": "{{n}} T über"
+  },
+  "alertsTab": {
+    "title": "Admin-Benachrichtigungen",
+    "description": "Benachrichtige ausgewählte E-Mail-Adressen über geplante Läufe und Fehler. Die Empfänger sind reine E-Mail-Adressen und unabhängig von Login-Konten.",
+    "save": "Speichern",
+    "remove": "Entfernen",
+    "enabled": {
+      "title": "Admin-Benachrichtigungen aktivieren",
+      "description": "Ist diese Option deaktiviert, werden keine Admin-Benachrichtigungen versendet."
+    },
+    "recipients": {
+      "label": "Empfänger",
+      "hint": "E-Mail-Adressen, die Benachrichtigungen erhalten. Unabhängig von Login-Konten. Hinzufügen mit Enter, entfernen über das X.",
+      "placeholder": "name@firma.ch"
+    },
+    "digest": {
+      "title": "Zusammenfassung nach jedem geplanten Lauf",
+      "description": "Sende nach jedem geplanten Lauf eine Zusammenfassung an die Empfänger."
+    },
+    "onFailure": {
+      "title": "Sofort-Alarm bei fehlgeschlagenem Lauf/Versand",
+      "description": "Benachrichtige die Empfänger sofort, wenn ein Lauf oder ein Versand fehlschlägt."
+    }
   }
 }

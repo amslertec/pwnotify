@@ -11,7 +11,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import get_settings
-from ..core.errors import AuthError
+from ..core.errors import AuthError, ForbiddenError
 from ..core.security import TokenPair, decode_token
 from ..db.session import get_session
 from ..models.user import AppUser
@@ -20,6 +20,7 @@ from ..services.settings_service import SettingsService
 
 ACCESS_COOKIE = "pwnotify_access"
 REFRESH_COOKIE = "pwnotify_refresh"
+TWOFA_COOKIE = "pwnotify_2fa"
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -52,6 +53,16 @@ async def get_current_user(request: Request, session: SessionDep) -> AppUser:
 CurrentUser = Annotated[AppUser, Depends(get_current_user)]
 
 
+async def require_admin(user: CurrentUser) -> AppUser:
+    """Schreibzugriff nur für Admins. Auditoren (read-only) -> 403."""
+    if user.role != "admin":
+        raise ForbiddenError("Nur mit Administratorrechten möglich.", code="admin_required")
+    return user
+
+
+AdminUser = Annotated[AppUser, Depends(require_admin)]
+
+
 def _cookie_kwargs() -> dict[str, object]:
     settings = get_settings()
     return {
@@ -81,3 +92,11 @@ def set_auth_cookies(response: Response, pair: TokenPair) -> None:
 def clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
+
+
+def set_2fa_cookie(response: Response, token: str) -> None:
+    response.set_cookie(TWOFA_COOKIE, token, max_age=300, **_cookie_kwargs())  # type: ignore[arg-type]
+
+
+def clear_2fa_cookie(response: Response) -> None:
+    response.delete_cookie(TWOFA_COOKIE, path="/")

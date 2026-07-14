@@ -48,6 +48,24 @@
       "step2": "Choose “Install app” or “Add to Home screen”"
     }
   },
+  "twofa": {
+    "title": "Two-factor authentication",
+    "description": "Extra sign-in protection with an authenticator app.",
+    "inactive": "Not enabled.",
+    "active": "Enabled.",
+    "setup": "Set up",
+    "scanPrompt": "Scan the QR code with your authenticator app:",
+    "manualEntry": "Or enter manually:",
+    "codePlaceholder": "6-digit code",
+    "activate": "Activate",
+    "disable": "Disable",
+    "disablePrompt": "Enter a current code (or recovery code) to disable 2FA.",
+    "enabled": "Two-factor authentication enabled",
+    "disabled": "Two-factor authentication disabled",
+    "recoveryHeading": "Recovery codes",
+    "recoveryWarning": "Store these safely — each code works once. They are only shown now.",
+    "recoveryDone": "I've saved them"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "users": "Users",
@@ -79,7 +97,12 @@
     "brandHeadline": "Stay on top of password expiry.",
     "brandSubtext": "Automatic, staged reminders for your Microsoft Entra ID users — before the password expires.",
     "ssoDenied": "No access — not a member of the admin group.",
-    "ssoError": "Microsoft sign-in failed."
+    "ssoError": "Microsoft sign-in failed.",
+    "twoFactorPrompt": "Enter the 6-digit code from your authenticator app.",
+    "codeLabel": "Verification code",
+    "codePlaceholder": "123456",
+    "verifyButton": "Verify",
+    "recoveryHint": "No access to the app? Use one of your recovery codes."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -156,7 +179,14 @@
     "smtp_no_host": "No SMTP host configured.",
     "mail_no_sender": "No sender address configured (mail.from).",
     "smtp_send_failed": "SMTP send failed: {{detail}}",
-    "template_error": "Template error: {{detail}}"
+    "template_error": "Template error: {{detail}}",
+    "admin_required": "Requires administrator rights.",
+    "invalid_2fa_code": "Invalid 2FA code.",
+    "twofa_session_missing": "No 2FA session. Please sign in again.",
+    "twofa_expired": "2FA session expired. Please sign in again.",
+    "twofa_local_only": "2FA is only available for local accounts.",
+    "twofa_not_started": "2FA setup not started.",
+    "cannot_demote_self": "You cannot remove your own administrator role."
   },
   "access": {
     "title": "User management",
@@ -183,7 +213,12 @@
     "username": "Username",
     "passwordLabel": "Password (min. 10 characters)",
     "create": "Create",
-    "userCreated": "User created"
+    "userCreated": "User created",
+    "roleLabel": "Role",
+    "roleAdmin": "Administrator",
+    "roleAuditor": "Auditor",
+    "changeRole": "Change role",
+    "roleChanged": "Role updated"
   },
   "account": {
     "avatarTitle": "Profile picture",
@@ -316,7 +351,8 @@
       "policy": "Password policy",
       "branding": "Branding",
       "template": "Template",
-      "general": "General"
+      "general": "General",
+      "alerts": "Notifications"
     },
     "header": {
       "title": "Settings",
@@ -324,7 +360,8 @@
     },
     "toast": {
       "saved": "Saved"
-    }
+    },
+    "readOnlyNotice": "As an auditor you have read-only access to the settings. Only administrators can save changes."
   },
   "graphTab": {
     "toast": {
@@ -762,5 +799,28 @@
   "statusBadge": {
     "days": "{{n}} d",
     "daysOver": "{{n}} d over"
+  },
+  "alertsTab": {
+    "title": "Admin notifications",
+    "description": "Notify selected email addresses about scheduled runs and failures. Recipients are plain email addresses and independent of login accounts.",
+    "save": "Save",
+    "remove": "Remove",
+    "enabled": {
+      "title": "Enable admin notifications",
+      "description": "When disabled, no admin notifications are sent."
+    },
+    "recipients": {
+      "label": "Recipients",
+      "hint": "Email addresses that receive notifications. Independent of login accounts. Add with Enter, remove via the X.",
+      "placeholder": "name@company.com"
+    },
+    "digest": {
+      "title": "Summary after each scheduled run",
+      "description": "Send a summary to the recipients after each scheduled run."
+    },
+    "onFailure": {
+      "title": "Immediate alert on failed run/delivery",
+      "description": "Notify recipients immediately when a run or a delivery fails."
+    }
   }
 }

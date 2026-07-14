@@ -2,13 +2,14 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 import { api, ApiError, onAuthExpired } from './api'
-import type { User } from './types'
+import type { LoginResponse, User } from './types'
 import { setLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n'
 
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string) => Promise<LoginResponse>
+  verify2fa: (code: string) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -49,9 +50,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.language])
 
-  const login = async (username: string, password: string) => {
-    const u = await api.post<User>('/auth/login', { username, password })
-    setUser(u)
+  const login = async (username: string, password: string): Promise<LoginResponse> => {
+    const res = await api.post<LoginResponse>('/auth/login', { username, password })
+    if (!res.two_factor_required && res.user) setUser(res.user)
+    return res
+  }
+
+  const verify2fa = async (code: string) => {
+    const res = await api.post<LoginResponse>('/auth/2fa/verify', { code })
+    if (res.user) setUser(res.user)
   }
 
   const logout = async () => {
@@ -65,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, verify2fa, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   )

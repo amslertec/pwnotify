@@ -8,6 +8,7 @@ import { UserAvatar } from '../user-avatar'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Field, Section } from './section'
+import { TwoFactorSection } from './two-factor-section'
 import { api, uploadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
@@ -168,6 +169,8 @@ export function AccountTab() {
           </div>
         </Section>
       )}
+
+      <TwoFactorSection />
 
       <Section
         title={t('account.sessionsTitle')}

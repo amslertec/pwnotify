@@ -18,6 +18,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
@@ -31,6 +38,7 @@ export default function AccessPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { user: me } = useAuth()
+  const isAdmin = me?.role === 'admin'
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -74,11 +82,13 @@ export default function AccessPage() {
 
         {/* Lokale Benutzer */}
         <TabsContent value="local">
-          <div className="mb-3 flex justify-end">
-            <Button onClick={() => setCreateOpen(true)}>
-              <UserPlus /> {t('access.newLocalUser')}
-            </Button>
-          </div>
+          {isAdmin && (
+            <div className="mb-3 flex justify-end">
+              <Button onClick={() => setCreateOpen(true)}>
+                <UserPlus /> {t('access.newLocalUser')}
+              </Button>
+            </div>
+          )}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-sm">
@@ -103,8 +113,9 @@ export default function AccessPage() {
                       <UserRow
                         key={u.id}
                         u={u}
+                        isAdmin={isAdmin}
                         isSelf={u.id === me?.id}
-                        canDelete={total > 1 && u.id !== me?.id}
+                        canDelete={isAdmin && total > 1 && u.id !== me?.id}
                         onDelete={() => del.mutate(u.id)}
                       />
                     ))
@@ -117,11 +128,13 @@ export default function AccessPage() {
 
         {/* SSO-Benutzer */}
         <TabsContent value="sso">
-          <div className="mb-3 flex justify-end">
-            <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
-              <RefreshCw className="size-3.5" /> {t('access.syncEntra')}
-            </Button>
-          </div>
+          {isAdmin && (
+            <div className="mb-3 flex justify-end">
+              <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
+                <RefreshCw className="size-3.5" /> {t('access.syncEntra')}
+              </Button>
+            </div>
+          )}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-sm">
@@ -153,8 +166,9 @@ export default function AccessPage() {
                         key={u.id}
                         u={u}
                         sso
+                        isAdmin={isAdmin}
                         isSelf={u.id === me?.id}
-                        canDelete={total > 1 && u.id !== me?.id}
+                        canDelete={isAdmin && total > 1 && u.id !== me?.id}
                         onDelete={() => del.mutate(u.id)}
                       />
                     ))
@@ -174,17 +188,37 @@ export default function AccessPage() {
 function UserRow({
   u,
   sso,
+  isAdmin,
   isSelf,
   canDelete,
   onDelete,
 }: {
   u: AdminUser
   sso?: boolean
+  isAdmin: boolean
   isSelf: boolean
   canDelete: boolean
   onDelete: () => void
 }) {
   const { t } = useTranslation()
+  const qc = useQueryClient()
+
+  const roleMut = useMutation({
+    mutationFn: (role: string) =>
+      api.post<{ message: string }>(`/admin/users/${u.id}/role`, { role }),
+    onSuccess: () => {
+      toast.success(t('access.roleChanged'))
+      void qc.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (e) => toast.error(translateError(e)),
+  })
+
+  const roleBadge = (
+    <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
+      {u.role === 'admin' ? t('access.roleAdmin') : t('access.roleAuditor')}
+    </Badge>
+  )
+
   return (
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-2.5">
@@ -193,6 +227,7 @@ function UserRow({
             {initials(u.display_name || u.username)}
           </span>
           <span className="font-medium">{u.display_name || '—'}</span>
+          {!sso && roleBadge}
           {isSelf && <Badge variant="secondary">{t('access.you')}</Badge>}
         </div>
       </td>
@@ -209,17 +244,36 @@ function UserRow({
       )}
       <td className="text-muted-foreground px-4 py-2.5">{fmtRelative(u.last_login_at)}</td>
       {!sso && <td className="text-muted-foreground px-4 py-2.5">{fmtDate(u.created_at)}</td>}
-      <td className="px-4 py-2.5 text-right">
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={!canDelete}
-          onClick={onDelete}
-          aria-label={t('access.delete')}
-          title={!canDelete ? t('access.cannotDelete') : t('access.delete')}
-        >
-          <Trash2 className="text-danger size-4" />
-        </Button>
+      <td className="px-4 py-2.5">
+        <div className="flex items-center justify-end gap-2">
+          {!sso && isAdmin && (
+            <Select
+              value={u.role}
+              onValueChange={(role) => roleMut.mutate(role)}
+              disabled={roleMut.isPending}
+            >
+              <SelectTrigger className="h-8 w-36" aria-label={t('access.changeRole')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">{t('access.roleAdmin')}</SelectItem>
+                <SelectItem value="auditor">{t('access.roleAuditor')}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={!canDelete}
+              onClick={onDelete}
+              aria-label={t('access.delete')}
+              title={!canDelete ? t('access.cannotDelete') : t('access.delete')}
+            >
+              <Trash2 className="text-danger size-4" />
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -238,12 +292,14 @@ function CreateDialog({
   const [lastName, setLastName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState('admin')
 
   const create = useMutation({
     mutationFn: () =>
       api.post('/admin/users', {
         username,
         password,
+        role,
         display_name: `${firstName} ${lastName}`.trim() || null,
       }),
     onSuccess: () => {
@@ -253,6 +309,7 @@ function CreateDialog({
       setLastName('')
       setUsername('')
       setPassword('')
+      setRole('admin')
       onOpenChange(false)
     },
     onError: (e) => toast.error(translateError(e)),
@@ -282,6 +339,18 @@ function CreateDialog({
           <div className="space-y-1.5">
             <Label>{t('access.passwordLabel')}</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('access.roleLabel')}</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">{t('access.roleAdmin')}</SelectItem>
+                <SelectItem value="auditor">{t('access.roleAuditor')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

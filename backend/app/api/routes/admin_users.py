@@ -7,9 +7,9 @@ from fastapi import APIRouter
 from ...core.errors import ConflictError, NotFoundError
 from ...core.security import hash_password
 from ...repositories import user_repo
-from ...schemas.auth import AdminUserCreate, AdminUserOut
+from ...schemas.auth import AdminUserCreate, AdminUserOut, RoleUpdate
 from ...schemas.common import Message
-from ..deps import CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
@@ -25,7 +25,7 @@ async def list_users(_: CurrentUser, session: SessionDep) -> dict[str, list[Admi
 
 
 @router.post("", response_model=AdminUserOut)
-async def create_local(_: CurrentUser, body: AdminUserCreate, session: SessionDep) -> AdminUserOut:
+async def create_local(_: AdminUser, body: AdminUserCreate, session: SessionDep) -> AdminUserOut:
     existing = await user_repo.get_by_username(session, body.username)
     if existing is not None:
         raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
@@ -34,13 +34,33 @@ async def create_local(_: CurrentUser, body: AdminUserCreate, session: SessionDe
         username=body.username,
         password_hash=hash_password(body.password),
         display_name=body.display_name,
+        role=body.role,
         is_sso=False,
     )
     return AdminUserOut.model_validate(user, from_attributes=True)
 
 
+@router.post("/{user_id}/role", response_model=AdminUserOut)
+async def set_role(
+    admin: AdminUser, user_id: int, body: RoleUpdate, session: SessionDep
+) -> AdminUserOut:
+    target = await user_repo.get(session, user_id)
+    if target is None:
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
+    # Sich selbst nicht die Admin-Rechte entziehen (sonst niemand mehr Admin).
+    if target.id == admin.id and body.role != "admin":
+        raise ConflictError(
+            "Sie können sich nicht selbst die Administratorrolle entziehen.",
+            code="cannot_demote_self",
+        )
+    target.role = body.role
+    await session.commit()
+    await session.refresh(target)
+    return AdminUserOut.model_validate(target, from_attributes=True)
+
+
 @router.delete("/{user_id}", response_model=Message)
-async def delete_user(user: CurrentUser, user_id: int, session: SessionDep) -> Message:
+async def delete_user(user: AdminUser, user_id: int, session: SessionDep) -> Message:
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -56,7 +76,7 @@ async def delete_user(user: CurrentUser, user_id: int, session: SessionDep) -> M
 
 
 @router.post("/sso/sync", response_model=Message)
-async def sync_sso(_: CurrentUser, session: SessionDep, svc: SettingsDep) -> Message:
+async def sync_sso(_: AdminUser, session: SessionDep, svc: SettingsDep) -> Message:
     from ...services import oidc
 
     settings = await svc.get_all()

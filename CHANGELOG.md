@@ -4,6 +4,24 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] — 2026-07-14
+
+### Added
+
+- **Two-factor authentication (TOTP)** for local accounts: enrol via QR code on the profile
+  page, one-time recovery codes, and a two-step sign-in. Secrets are Fernet-encrypted at
+  rest (`pyotp`, `qrcode`).
+- **Roles**: `admin` (full) and read-only `auditor`. All write endpoints require admin
+  (`RequireAdmin`); the UI hides write actions for auditors. Role is selectable when creating
+  a local user and changeable in user management.
+- **Admin notifications**: an optional digest after each scheduled run plus immediate
+  failure alerts, sent to a configurable recipient list (bilingual DE/EN email).
+
+### Database
+
+- Migration adds `app_user.totp_secret`, `totp_enabled`, `recovery_codes` (runs automatically
+  on start).
+
 ## [0.1.6] — 2026-07-14
 
 ### Added
@@ -126,6 +144,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.7
 [0.1.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.6
 [0.1.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.5
 [0.1.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.4

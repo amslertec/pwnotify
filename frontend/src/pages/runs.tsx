@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDateTime, fmtDuration } from '@/lib/format'
 import type { Page, Run, RunDetail } from '@/lib/types'
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils'
 
 export default function RunsPage() {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
@@ -48,18 +50,20 @@ export default function RunsPage() {
         title={t('runs.title')}
         description={t('runs.description')}
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => trigger.mutate(true)}
-              loading={trigger.isPending}
-            >
-              {t('runs.actions.dryRun')}
-            </Button>
-            <Button onClick={() => trigger.mutate(false)} loading={trigger.isPending}>
-              <Play /> {t('runs.actions.runNow')}
-            </Button>
-          </>
+          isAdmin ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => trigger.mutate(true)}
+                loading={trigger.isPending}
+              >
+                {t('runs.actions.dryRun')}
+              </Button>
+              <Button onClick={() => trigger.mutate(false)} loading={trigger.isPending}>
+                <Play /> {t('runs.actions.runNow')}
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
