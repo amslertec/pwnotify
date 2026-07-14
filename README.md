@@ -30,11 +30,13 @@ alternate (SSPR) address, or both. Self-hosted, hardened, and driven by a modern
 
 ## Screenshots
 
-> _Placeholder — add screenshots to `docs/screenshots/` and reference them here._
->
-> | Dashboard | Users | Setup wizard |
-> |---|---|---|
-> | `docs/screenshots/dashboard.png` | `docs/screenshots/users.png` | `docs/screenshots/setup.png` |
+**Dashboard**
+
+![PwNotify dashboard](docs/screenshots/dashboard.png)
+
+**Users**
+
+![PwNotify users table](docs/screenshots/users.png)
 
 ## Requirements
 
