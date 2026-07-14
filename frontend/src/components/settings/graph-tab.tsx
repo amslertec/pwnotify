@@ -20,19 +20,21 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const [result, setResult] = useState<GraphTestResult | null>(null)
   const secretSet = settings['graph.client_secret'] === MASK_MARKER
 
-  const onSave = () =>
+  // Jeder Speichern-Button speichert NUR die Felder seines eigenen Abschnitts.
+  const saveGraph = () =>
     save({
       'graph.tenant_id': tenant,
       'graph.client_id': clientId,
-      'sync.group_id': group.trim(),
       ...(secret ? { 'graph.client_secret': secret } : {}),
     })
+
+  const saveGroup = () => save({ 'sync.group_id': group.trim() })
 
   const test = async () => {
     setTesting(true)
     setResult(null)
     try {
-      await onSave()
+      await saveGraph()
       const res = await api.post<GraphTestResult>('/settings/graph/test', {})
       setResult(res)
       if (res.connected && res.missing_permissions.length === 0)
@@ -56,7 +58,7 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
             <Button variant="outline" onClick={test} loading={testing}>
               Verbindung testen
             </Button>
-            <Button onClick={onSave} loading={saving}>
+            <Button onClick={saveGraph} loading={saving}>
               Speichern
             </Button>
           </>
@@ -89,7 +91,7 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
         title="Sync-Umfang (Benutzergruppe)"
         description="Nur Mitglieder einer Entra-Gruppe synchronisieren und auf Passwortablauf prüfen — statt aller Tenant-Benutzer. Leer lassen = alle Benutzer."
         footer={
-          <Button onClick={onSave} loading={saving}>
+          <Button onClick={saveGroup} loading={saving}>
             Speichern
           </Button>
         }

@@ -4,6 +4,30 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-07-14
+
+### Added
+
+- **Group-scoped sync** — optionally restrict the Graph sync to members of one Entra group
+  (`sync.group_id`), so only relevant users are checked and shared mailboxes / disabled
+  accounts are excluded at the source. Settings → Graph carries a dynamic-group rule
+  template. Reading group members needs the `GroupMember.Read.All` application permission.
+- **Profile avatars** — SSO users show their Microsoft Entra photo (fetched via the existing
+  `User.Read.All` permission and cached); local users can upload an avatar on the profile
+  page (auto-cropped to a square). Shown in the top-right menu.
+- **Logo handling** — uploaded logos are auto-trimmed of transparent borders and normalised
+  to a Hi-DPI height; the sidebar logo links to the dashboard.
+
+### Fixed
+
+- **Setup wizard** no longer bounces back to its first step after completion — the cached
+  setup status is updated immediately when the admin is created, so the guard routes to the
+  dashboard.
+- **Settings → Graph** — the "Microsoft Graph" and "Sync-Umfang" sections now each save only
+  their own fields instead of persisting both at once.
+- Removed the obsolete "Shared Mailboxes" and "Deaktiviert" filters from the users table
+  (group-scoped sync makes them redundant).
+
 ## [0.1.0] — 2026-07-13
 
 Initial release.
@@ -42,4 +66,5 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.1
 [0.1.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.0

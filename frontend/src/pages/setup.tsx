@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import type { GraphTestResult } from '@/lib/types'
+import type { GraphTestResult, SetupStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const STEPS = [
@@ -158,6 +158,12 @@ function AdminStep({ onNext }: { onNext: () => void }) {
       const display_name = `${firstName} ${lastName}`.trim() || null
       await api.post('/setup/admin', { username, password, display_name })
       await refresh()
+      // Cache SOFORT korrigieren (nicht nur invalidieren): ab jetzt existiert ein Admin,
+      // also needs_setup=false. Sonst liest der Router-Guard beim Abschluss den alten
+      // gecachten true-Wert und leitet zurück auf /setup.
+      qc.setQueryData<SetupStatus>(['setup-status'], (old) =>
+        old ? { ...old, needs_setup: false, has_admin: true } : old,
+      )
       await qc.invalidateQueries({ queryKey: ['setup-status'] })
       toast.success('Administrator angelegt')
       onNext()
