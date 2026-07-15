@@ -13,6 +13,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reload control, so this restores it. Deliberately inactive in a normal browser tab, where
   the reload button and the browser's own pull-to-refresh already exist. Localized (DE/EN).
 
+### Security
+
+- Base image digests updated to Chainguard `python 3.14.6-r3`, which fixes **CVE-2026-11940**
+  (HIGH — `tarfile.extractall()` filter bypass). The image is back to 0 known HIGH/CRITICAL CVEs.
+
 ## [0.1.9] — 2026-07-14
 
 ### Fixed
