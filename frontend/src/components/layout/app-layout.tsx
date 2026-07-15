@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
+import { PullToRefresh } from '../pull-to-refresh'
 import { UpdateModal } from '../update-modal'
 import { Sheet, SheetContent } from '../ui/sheet'
 import { Sidebar } from './sidebar'
@@ -36,11 +37,11 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto">
+        <PullToRefresh>
           <div className="mx-auto max-w-[1400px] p-4 md:p-6 lg:p-8">
             <Outlet />
           </div>
-        </main>
+        </PullToRefresh>
       </div>
     </div>
   )

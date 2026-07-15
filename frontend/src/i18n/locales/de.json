@@ -48,6 +48,11 @@
       "step2": "„App installieren“ bzw. „Zum Startbildschirm“ wählen"
     }
   },
+  "pull": {
+    "idle": "Zum Aktualisieren ziehen",
+    "release": "Loslassen zum Aktualisieren",
+    "refreshing": "Wird aktualisiert …"
+  },
   "twofa": {
     "title": "Zwei-Faktor-Authentifizierung",
     "description": "Zusätzlicher Schutz beim Login mit einer Authenticator-App.",

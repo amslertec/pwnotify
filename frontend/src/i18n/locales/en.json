@@ -48,6 +48,11 @@
       "step2": "Choose “Install app” or “Add to Home screen”"
     }
   },
+  "pull": {
+    "idle": "Pull to refresh",
+    "release": "Release to refresh",
+    "refreshing": "Refreshing …"
+  },
   "twofa": {
     "title": "Two-factor authentication",
     "description": "Extra sign-in protection with an authenticator app.",

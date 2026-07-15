@@ -4,6 +4,15 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] — 2026-07-15
+
+### Added
+
+- **Pull-to-refresh** in the installed PWA: pulling down from the top of the page reloads it,
+  with a drag indicator and a threshold before it triggers. Standalone mode has no browser
+  reload control, so this restores it. Deliberately inactive in a normal browser tab, where
+  the reload button and the browser's own pull-to-refresh already exist. Localized (DE/EN).
+
 ## [0.1.9] — 2026-07-14
 
 ### Fixed
@@ -171,6 +180,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.10]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.10
 [0.1.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.9
 [0.1.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.8
 [0.1.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.7
