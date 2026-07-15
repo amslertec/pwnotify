@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from ...core.errors import ConflictError, NotFoundError
 from ...core.security import hash_password
 from ...repositories import user_repo
 from ...schemas.auth import AdminUserCreate, AdminUserOut, RoleUpdate
 from ...schemas.common import Message
+from ...services import audit
 from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -25,7 +26,9 @@ async def list_users(_: CurrentUser, session: SessionDep) -> dict[str, list[Admi
 
 
 @router.post("", response_model=AdminUserOut)
-async def create_local(_: AdminUser, body: AdminUserCreate, session: SessionDep) -> AdminUserOut:
+async def create_local(
+    request: Request, admin: AdminUser, body: AdminUserCreate, session: SessionDep
+) -> AdminUserOut:
     existing = await user_repo.get_by_username(session, body.username)
     if existing is not None:
         raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
@@ -37,12 +40,21 @@ async def create_local(_: AdminUser, body: AdminUserCreate, session: SessionDep)
         role=body.role,
         is_sso=False,
     )
+    await audit.record(
+        session,
+        action=audit.USER_CREATED,
+        actor=admin,
+        target=body.username,
+        request=request,
+        detail={"role": body.role, "sso": False},
+    )
+    await session.commit()
     return AdminUserOut.model_validate(user, from_attributes=True)
 
 
 @router.post("/{user_id}/role", response_model=AdminUserOut)
 async def set_role(
-    admin: AdminUser, user_id: int, body: RoleUpdate, session: SessionDep
+    request: Request, admin: AdminUser, user_id: int, body: RoleUpdate, session: SessionDep
 ) -> AdminUserOut:
     target = await user_repo.get(session, user_id)
     if target is None:
@@ -53,14 +65,25 @@ async def set_role(
             "Sie können sich nicht selbst die Administratorrolle entziehen.",
             code="cannot_demote_self",
         )
+    vorher = target.role
     target.role = body.role
+    await audit.record(
+        session,
+        action=audit.USER_ROLE_CHANGED,
+        actor=admin,
+        target=target.username,
+        request=request,
+        detail={"from": vorher, "to": body.role, "sso": target.is_sso},
+    )
     await session.commit()
     await session.refresh(target)
     return AdminUserOut.model_validate(target, from_attributes=True)
 
 
 @router.delete("/{user_id}", response_model=Message)
-async def delete_user(user: AdminUser, user_id: int, session: SessionDep) -> Message:
+async def delete_user(
+    request: Request, user: AdminUser, user_id: int, session: SessionDep
+) -> Message:
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -71,6 +94,15 @@ async def delete_user(user: AdminUser, user_id: int, session: SessionDep) -> Mes
         raise ConflictError(
             "Sie können Ihr eigenes Konto nicht löschen.", code="cannot_delete_self"
         )
+    await audit.record(
+        session,
+        action=audit.USER_DELETED,
+        actor=user,
+        target=target.username,
+        request=request,
+        detail={"role": target.role, "sso": target.is_sso},
+    )
+    await session.commit()
     await user_repo.delete(session, user_id)
     return Message(message="Benutzer gelöscht.")
 

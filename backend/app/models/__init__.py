@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .audit import AuditLog
 from .entra import EntraUser, Exclusion
 from .notification import NotificationLog
 from .run import Run
@@ -10,6 +11,7 @@ from .user import AppUser, UserSession
 
 __all__ = [
     "AppUser",
+    "AuditLog",
     "EntraUser",
     "Exclusion",
     "NotificationLog",

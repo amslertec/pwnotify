@@ -52,7 +52,7 @@ from ...schemas.auth import (
     UserOut,
 )
 from ...schemas.common import Message
-from ...services import oidc
+from ...services import audit, oidc
 from ...services.graph import GraphClient, GraphConfig
 from ...services.settings_service import SettingsService, effective_base_url
 from ..deps import (
@@ -150,6 +150,13 @@ async def _complete_login(
     request: Request, response: Response, session: SessionDep, user: AppUser
 ) -> LoginResponse:
     """Volltoken ausstellen + Sitzung anlegen (nach Passwort bzw. 2FA-Code)."""
+    await audit.record(
+        session,
+        action=audit.LOGIN_SUCCESS,
+        actor=user,
+        request=request,
+        detail={"sso": user.is_sso, "two_factor": user.totp_enabled},
+    )
     user.last_login_at = utcnow()
     await user_repo.prune_sessions(session, user.id)  # type: ignore[arg-type]
     pair = issue_token_pair(str(user.id))
@@ -176,6 +183,15 @@ async def login(
     now = utcnow()
 
     if user and user.locked_until and user.locked_until > now:
+        await audit.record(
+            session,
+            action=audit.LOGIN_BLOCKED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "account_locked", "locked_until": user.locked_until.isoformat()},
+        )
+        await session.commit()
         raise AuthError(
             "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
         )
@@ -188,9 +204,27 @@ async def login(
                 max_failures=_settings.login_max_failures,
                 lockout_min=_settings.login_lockout_min,
             )
-            await session.commit()
             if locked:
                 log.warning("account_locked", username=user.username, factor="password")
+                await audit.record(
+                    session,
+                    action=audit.ACCOUNT_LOCKED,
+                    actor=user,
+                    request=request,
+                    detail={"factor": "password", "lockout_min": _settings.login_lockout_min},
+                )
+        # Auch der unbekannte Benutzername wird protokolliert — genau daran erkennt man
+        # später ein Durchprobieren von Konten.
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor=user,
+            actor_username=body.username if user is None else None,
+            outcome="failure",
+            request=request,
+            detail={"reason": "invalid_credentials"},
+        )
+        await session.commit()
         raise AuthError("Ungültiger Benutzername oder Passwort.", code="invalid_credentials")
 
     # Passwort ok
@@ -258,6 +292,22 @@ async def two_factor_verify(
         if locked:
             clear_2fa_cookie(response)
             log.warning("account_locked", username=user.username, factor="2fa")
+            await audit.record(
+                session,
+                action=audit.ACCOUNT_LOCKED,
+                actor=user,
+                request=request,
+                detail={"factor": "2fa", "lockout_min": _settings.login_lockout_min},
+            )
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "invalid_2fa_code"},
+        )
+        await session.commit()
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
 
     reset_failed_attempts(user)
@@ -326,6 +376,9 @@ async def logout(request: Request, response: Response, session: SessionDep) -> M
             # Beim Abmelden die Sitzung entfernen, nicht nur widerrufen: sie soll weder
             # in der Sitzungsliste noch als Datensatz zurückbleiben.
             await user_repo.delete_session_by_jti(session, payload["jti"])
+            actor = await user_repo.get(session, int(payload["sub"]))
+            await audit.record(session, action=audit.LOGOUT, actor=actor, request=request)
+            await session.commit()
         except jwt.PyJWTError:
             pass
     clear_auth_cookies(response)
@@ -425,6 +478,14 @@ async def revoke_other_sessions(
         with contextlib.suppress(jwt.PyJWTError):
             current_jti = decode_token(token, expected_type="refresh").get("jti")
     n = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
+    await audit.record(
+        session,
+        action=audit.SESSIONS_REVOKED,
+        actor=user,
+        request=request,
+        detail={"count": n},
+    )
+    await session.commit()
     return Message(message=f"{n} andere Sitzung(en) abgemeldet.")
 
 
@@ -448,6 +509,13 @@ async def change_password(
             current_jti = decode_token(token, expected_type="refresh").get("jti")
     revoked = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
 
+    await audit.record(
+        session,
+        action=audit.PASSWORD_CHANGED,
+        actor=user,
+        request=request,
+        detail={"sessions_revoked": revoked},
+    )
     await session.commit()
     log.info("password_changed", username=user.username, sessions_revoked=revoked)
     if revoked:
@@ -472,7 +540,7 @@ async def two_factor_setup(user: CurrentUser, session: SessionDep) -> TwoFactorS
 
 @router.post("/2fa/enable", response_model=RecoveryCodesOut)
 async def two_factor_enable(
-    body: TwoFactorCode, user: CurrentUser, session: SessionDep
+    request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
 ) -> RecoveryCodesOut:
     if user.is_sso or not user.totp_secret:
         raise PwNotifyError("2FA-Einrichtung nicht gestartet.", code="twofa_not_started")
@@ -482,13 +550,14 @@ async def two_factor_enable(
     user.totp_enabled = True
     user.recovery_codes = json.dumps(hashes)
     user.updated_at = utcnow()
+    await audit.record(session, action=audit.TWOFA_ENABLED, actor=user, request=request)
     await session.commit()
     return RecoveryCodesOut(recovery_codes=codes)
 
 
 @router.post("/2fa/disable", response_model=UserOut)
 async def two_factor_disable(
-    body: TwoFactorCode, user: CurrentUser, session: SessionDep
+    request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
 ) -> UserOut:
     if not user.totp_enabled:
         return _user_out(user)
@@ -501,6 +570,8 @@ async def two_factor_disable(
     user.totp_secret = None
     user.recovery_codes = None
     user.updated_at = utcnow()
+    # Das Abschalten des zweiten Faktors ist ein Angriffsziel — es muss nachvollziehbar sein.
+    await audit.record(session, action=audit.TWOFA_DISABLED, actor=user, request=request)
     await session.commit()
     await session.refresh(user)
     return _user_out(user)

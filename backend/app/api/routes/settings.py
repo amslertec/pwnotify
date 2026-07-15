@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from ...repositories import exclusion_repo
 from ...schemas.common import Message
@@ -20,9 +20,10 @@ from ...schemas.settings import (
     TemplatePreviewRequest,
     TemplatePreviewResult,
 )
+from ...services import audit
 from ...services.connectivity import send_test_mail, test_graph
 from ...services.scheduler import compute_next_runs, get_scheduler
-from ...services.settings_schema import SETTINGS
+from ...services.settings_schema import MASK, SETTINGS
 from ...services.settings_service import effective_base_url
 from ...services.templating import render, sample_context
 from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
@@ -36,8 +37,42 @@ async def get_all(_: CurrentUser, svc: SettingsDep) -> dict[str, Any]:
 
 
 @router.put("", response_model=dict)
-async def update(_: AdminUser, body: SettingsUpdate, svc: SettingsDep) -> dict[str, Any]:
+async def update(
+    request: Request,
+    admin: AdminUser,
+    body: SettingsUpdate,
+    svc: SettingsDep,
+    session: SessionDep,
+) -> dict[str, Any]:
     await svc.set_many(body.values)
+
+    # Protokolliert werden die geänderten SCHLÜSSEL, niemals ihre Werte — sonst stünden
+    # Graph- und SMTP-Secrets im Klartext im Protokoll. Secret-Änderungen bekommen einen
+    # eigenen Eintrag, weil sie sicherheitsrelevanter sind als eine Cron-Anpassung.
+    # Der Masken-Marker heisst "unverändert" und zählt daher nicht als Änderung.
+    geaendert = sorted(k for k in body.values if k in SETTINGS)
+    secrets = sorted(
+        k for k in geaendert if SETTINGS[k].secret and body.values[k] not in (MASK, None, "")
+    )
+    if secrets:
+        await audit.record(
+            session,
+            action=audit.SECRET_CHANGED,
+            actor=admin,
+            request=request,
+            detail={"keys": secrets},
+        )
+    normale = [k for k in geaendert if k not in secrets]
+    if normale:
+        await audit.record(
+            session,
+            action=audit.SETTINGS_CHANGED,
+            actor=admin,
+            request=request,
+            detail={"keys": normale},
+        )
+    await session.commit()
+
     # Bei Schedule-Änderungen den laufenden Job neu planen.
     if any(k.startswith("schedule.") for k in body.values):
         with contextlib.suppress(RuntimeError):

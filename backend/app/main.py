@@ -21,6 +21,7 @@ from . import __version__
 from .api.deps import limiter
 from .api.routes import (
     admin_users,
+    audit,
     auth,
     branding,
     dashboard,
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
 
     api = [
         auth.router,
+        audit.router,
         setup.router,
         users.router,
         admin_users.router,
