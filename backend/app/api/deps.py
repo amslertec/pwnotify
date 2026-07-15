@@ -53,6 +53,35 @@ async def get_current_user(request: Request, session: SessionDep) -> AppUser:
 CurrentUser = Annotated[AppUser, Depends(get_current_user)]
 
 
+async def get_enrolling_user(request: Request, session: SessionDep) -> AppUser:
+    """Benutzer aus der normalen Sitzung ODER aus dem 2FA-Zwischentoken.
+
+    Nur für die 2FA-Einrichtung. Bei aktiver 2FA-Pflicht stellt der Login bewusst noch
+    keine Sitzung aus — ohne diesen Weg käme man nicht mehr an die Einrichtung heran und
+    sässe fest. Der Zwischentoken lebt 5 Minuten und erlaubt ausschliesslich Einrichten
+    und Aktivieren; alle anderen Endpunkte verlangen weiterhin ein Access-Token.
+    """
+    if request.cookies.get(ACCESS_COOKIE):
+        return await get_current_user(request, session)
+
+    token = request.cookies.get(TWOFA_COOKIE)
+    if not token:
+        raise AuthError("Nicht angemeldet.", code="not_authenticated")
+    try:
+        payload = decode_token(token, expected_type="2fa")
+    except jwt.PyJWTError as exc:
+        raise AuthError(
+            "2FA-Sitzung abgelaufen. Bitte erneut anmelden.", code="twofa_expired"
+        ) from exc
+    user = await user_repo.get(session, int(payload["sub"]))
+    if user is None or not user.is_active:
+        raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
+    return user
+
+
+EnrollingUser = Annotated[AppUser, Depends(get_enrolling_user)]
+
+
 async def require_admin(user: CurrentUser) -> AppUser:
     """Schreibzugriff nur für Admins. Auditoren (read-only) -> 403."""
     if user.role != "admin":

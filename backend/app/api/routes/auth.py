@@ -57,9 +57,11 @@ from ...services import audit, oidc
 from ...services.graph import GraphClient, GraphConfig
 from ...services.settings_service import SettingsService, effective_base_url
 from ..deps import (
+    ACCESS_COOKIE,
     REFRESH_COOKIE,
     TWOFA_COOKIE,
     CurrentUser,
+    EnrollingUser,
     SessionDep,
     clear_2fa_cookie,
     clear_auth_cookies,
@@ -238,6 +240,15 @@ async def login(
         await session.commit()
         set_2fa_cookie(response, create_2fa_token(str(user.id)))
         return LoginResponse(two_factor_required=True)
+
+    # 2FA-Pflicht, aber noch nicht eingerichtet: ebenfalls keine volle Sitzung. Der
+    # 2fa-Cookie erlaubt genau zwei Dinge — einrichten und aktivieren. Erst danach gibt
+    # es Tokens. Eine Sitzung auszustellen und die Oberfläche hinterher zu sperren wäre
+    # schwächer: Das Access-Token wäre bereits gültig.
+    if not user.is_sso and await SettingsService(session).get("auth.require_2fa"):
+        await session.commit()
+        set_2fa_cookie(response, create_2fa_token(str(user.id)))
+        return LoginResponse(two_factor_setup_required=True)
 
     return await _complete_login(request, response, session, user)
 
@@ -545,7 +556,7 @@ async def change_password(
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)
 @limiter.limit(_settings.login_rate_limit)
 async def two_factor_setup(
-    request: Request, user: CurrentUser, session: SessionDep
+    request: Request, user: EnrollingUser, session: SessionDep
 ) -> TwoFactorSetupOut:
     if user.is_sso:
         raise PwNotifyError("2FA ist nur für lokale Konten verfügbar.", code="twofa_local_only")
@@ -560,7 +571,11 @@ async def two_factor_setup(
 @router.post("/2fa/enable", response_model=RecoveryCodesOut)
 @limiter.limit(_settings.login_rate_limit)
 async def two_factor_enable(
-    request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
+    request: Request,
+    response: Response,
+    body: TwoFactorCode,
+    user: EnrollingUser,
+    session: SessionDep,
 ) -> RecoveryCodesOut:
     if user.is_sso or not user.totp_secret:
         raise PwNotifyError("2FA-Einrichtung nicht gestartet.", code="twofa_not_started")
@@ -571,7 +586,14 @@ async def two_factor_enable(
     user.recovery_codes = json.dumps(hashes)
     user.updated_at = utcnow()
     await audit.record(session, action=audit.TWOFA_ENABLED, actor=user, request=request)
-    await session.commit()
+
+    # Kam der Aufruf über den 2FA-Zwischentoken (erzwungene Einrichtung), fehlt noch die
+    # Sitzung — jetzt ist sie verdient. Der Zwischentoken wird ungültig.
+    if not request.cookies.get(ACCESS_COOKIE):
+        clear_2fa_cookie(response)
+        await _complete_login(request, response, session, user)
+    else:
+        await session.commit()
     return RecoveryCodesOut(recovery_codes=codes)
 
 

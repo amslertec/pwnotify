@@ -15,6 +15,8 @@ export interface User {
 
 export interface LoginResponse {
   two_factor_required: boolean
+  /** 2FA ist Pflicht, aber noch nicht eingerichtet — es gibt noch keine Sitzung. */
+  two_factor_setup_required: boolean
   user: User | null
 }
 

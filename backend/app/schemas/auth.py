@@ -36,6 +36,9 @@ class LanguageUpdate(BaseModel):
 
 class LoginResponse(BaseModel):
     two_factor_required: bool = False
+    # 2FA ist Pflicht, aber noch nicht eingerichtet: Es gibt bewusst noch keine Sitzung —
+    # der Weg führt direkt in die Einrichtung, erst danach werden Tokens ausgestellt.
+    two_factor_setup_required: bool = False
     user: UserOut | None = None
 
 

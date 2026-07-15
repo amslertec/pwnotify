@@ -166,7 +166,15 @@
     "codePlaceholder": "123456",
     "verifyButton": "Verify",
     "recoveryHint": "No access to the app? Use one of your recovery codes.",
-    "idleLogout": "You were signed out automatically due to inactivity."
+    "idleLogout": "You were signed out automatically due to inactivity.",
+    "enroll": {
+      "prompt": "Two-factor authentication is required for this account. Please set it up now — scan the code with your authenticator app.",
+      "manual": "If you cannot scan, enter this key manually:",
+      "activateButton": "Enable 2FA and sign in",
+      "recoveryTitle": "Recovery codes",
+      "recoveryHint": "Keep these codes somewhere safe. Each works exactly once and replaces your authenticator app if you lose access to it. They are shown this one time only.",
+      "continueButton": "Continue to the app"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -567,6 +575,13 @@
       "logDaysHint": "The history holds UPNs and recipient addresses. 0 = keep forever.",
       "auditDays": "Delete audit log after (days)",
       "auditDaysHint": "Compliance usually wants an unbroken history — only set this if a deletion deadline applies. 0 = keep forever."
+    },
+    "security": {
+      "title": "Sign-in security",
+      "description": "Applies to local accounts. SSO accounts are exempt — their two-factor authentication is handled by Microsoft Entra.",
+      "saveButton": "Save",
+      "require2fa": "Require two-factor authentication",
+      "require2faHint": "Local accounts without 2FA must set it up at their next sign-in. Until then no session is created: after the password, the path leads straight into enrolment. Existing sessions continue until they expire."
     }
   },
   "entraGuide": {

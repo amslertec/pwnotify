@@ -16,7 +16,7 @@ import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { IDLE_LOGOUT_FLAG, useAuth } from '@/lib/auth'
 import { useBranding } from '@/components/branding-provider'
-import type { AuthConfig, SetupStatus } from '@/lib/types'
+import type { AuthConfig, SetupStatus, TwoFactorSetup } from '@/lib/types'
 
 const schema = z.object({
   username: z.string().min(1, 'validation.usernameRequired'),
@@ -36,13 +36,17 @@ function MicrosoftIcon() {
 }
 
 export default function LoginPage() {
-  const { user, login, verify2fa } = useAuth()
+  const { user, login, verify2fa, refresh } = useAuth()
   const { branding } = useBranding()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [email, setEmail] = useState('')
   const [twoFactor, setTwoFactor] = useState(false)
+  // 2FA ist Pflicht, aber noch nicht eingerichtet -> Einrichtung direkt hier, es gibt
+  // noch keine Sitzung. Ohne diesen Schritt käme man nirgends hin.
+  const [enroll, setEnroll] = useState<TwoFactorSetup | null>(null)
+  const [recovery, setRecovery] = useState<string[] | null>(null)
   const [code, setCode] = useState('')
   const [verifying, setVerifying] = useState(false)
 
@@ -80,9 +84,28 @@ export default function LoginPage() {
     try {
       const res = await login(values.username, values.password)
       if (res.two_factor_required) setTwoFactor(true)
-      else navigate('/')
+      else if (res.two_factor_setup_required) {
+        // Der 2FA-Zwischentoken erlaubt genau das: einrichten.
+        setEnroll(await api.post<TwoFactorSetup>('/auth/2fa/setup'))
+      } else navigate('/')
     } catch (e) {
       toast.error(translateError(e))
+    }
+  }
+
+  const submitEnroll = async () => {
+    setVerifying(true)
+    try {
+      const res = await api.post<{ recovery_codes: string[] }>('/auth/2fa/enable', {
+        code: code.trim(),
+      })
+      // Aktivieren stellt zugleich die Sitzung aus. Die Codes zeigen wir einmalig —
+      // danach sind sie nicht mehr abrufbar.
+      setRecovery(res.recovery_codes)
+    } catch (e) {
+      toast.error(translateError(e))
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -148,8 +171,65 @@ export default function LoginPage() {
             {t('login.signInPrompt', { app: branding.app_name })}
           </p>
 
+          {/* Erzwungene 2FA-Einrichtung: Passwort stimmt, aber ohne zweiten Faktor
+              gibt es keine Sitzung. */}
+          {enroll && !recovery && (
+            <div className="mt-8 space-y-4">
+              <p className="text-muted-foreground text-sm">{t('login.enroll.prompt')}</p>
+              <div className="bg-card flex justify-center rounded-lg border p-4">
+                <img src={enroll.qr_png} alt="" className="size-44" />
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {t('login.enroll.manual')}{' '}
+                <code className="bg-muted rounded px-1 py-0.5 font-mono">{enroll.secret}</code>
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="enroll-code">{t('login.codeLabel')}</Label>
+                <Input
+                  id="enroll-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder={t('login.codePlaceholder')}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submitEnroll()}
+                />
+              </div>
+              <Button
+                className="w-full"
+                loading={verifying}
+                onClick={submitEnroll}
+                disabled={!code.trim()}
+              >
+                {t('login.enroll.activateButton')}
+              </Button>
+            </div>
+          )}
+
+          {/* Recovery-Codes: einmalig sichtbar, danach nie wieder. */}
+          {recovery && (
+            <div className="mt-8 space-y-4">
+              <p className="text-sm font-medium">{t('login.enroll.recoveryTitle')}</p>
+              <p className="text-muted-foreground text-sm">{t('login.enroll.recoveryHint')}</p>
+              <div className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-3 font-mono text-xs">
+                {recovery.map((c) => (
+                  <span key={c}>{c}</span>
+                ))}
+              </div>
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  await refresh()
+                  navigate('/')
+                }}
+              >
+                {t('login.enroll.continueButton')}
+              </Button>
+            </div>
+          )}
+
           {/* 2FA-Schritt */}
-          {twoFactor && (
+          {twoFactor && !enroll && (
             <div className="mt-8 space-y-4">
               <p className="text-muted-foreground text-sm">{t('login.twoFactorPrompt')}</p>
               <div className="space-y-1.5">
@@ -177,7 +257,7 @@ export default function LoginPage() {
           )}
 
           {/* SSO-Block */}
-          {!twoFactor && ssoEnabled && (
+          {!twoFactor && !enroll && ssoEnabled && (
             <div className="mt-8 space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="email">{t('login.emailLabel')}</Label>
@@ -212,7 +292,7 @@ export default function LoginPage() {
           )}
 
           {/* Lokaler Login */}
-          {!twoFactor && localVisible && (
+          {!twoFactor && !enroll && localVisible && (
             <form
               onSubmit={handleSubmit(onSubmit)}
               className={

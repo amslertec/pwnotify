@@ -166,7 +166,15 @@
     "codePlaceholder": "123456",
     "verifyButton": "Bestätigen",
     "recoveryHint": "Kein Zugriff auf die App? Verwenden Sie einen Ihrer Recovery-Codes.",
-    "idleLogout": "Sie wurden wegen Inaktivität automatisch abgemeldet."
+    "idleLogout": "Sie wurden wegen Inaktivität automatisch abgemeldet.",
+    "enroll": {
+      "prompt": "Für dieses Konto ist Zwei-Faktor-Authentifizierung vorgeschrieben. Bitte richten Sie sie jetzt ein — scannen Sie den Code mit Ihrer Authenticator-App.",
+      "manual": "Falls Sie nicht scannen können, geben Sie diesen Schlüssel manuell ein:",
+      "activateButton": "2FA aktivieren und anmelden",
+      "recoveryTitle": "Wiederherstellungscodes",
+      "recoveryHint": "Bewahren Sie diese Codes sicher auf. Jeder funktioniert genau einmal und ersetzt Ihre Authenticator-App, wenn Sie keinen Zugriff mehr darauf haben. Sie werden nur dieses eine Mal angezeigt.",
+      "continueButton": "Weiter zur Anwendung"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -567,6 +575,13 @@
       "logDaysHint": "Die Historie enthält UPNs und Empfängeradressen. 0 = unbegrenzt aufbewahren.",
       "auditDays": "Audit-Protokoll löschen nach (Tage)",
       "auditDaysHint": "Für Compliance ist eine lückenlose Historie meist erwünscht — nur setzen, wenn eine Löschfrist vorgeschrieben ist. 0 = unbegrenzt aufbewahren."
+    },
+    "security": {
+      "title": "Anmeldesicherheit",
+      "description": "Gilt für lokale Konten. SSO-Konten sind ausgenommen — deren Zwei-Faktor-Authentifizierung steuert Microsoft Entra.",
+      "saveButton": "Speichern",
+      "require2fa": "Zwei-Faktor-Authentifizierung vorschreiben",
+      "require2faHint": "Lokale Konten ohne 2FA müssen es beim nächsten Anmelden einrichten. Bis dahin entsteht keine Sitzung: Nach dem Passwort führt der Weg direkt in die Einrichtung. Bestehende Sitzungen laufen weiter, bis sie ablaufen."
     }
   },
   "entraGuide": {

@@ -15,6 +15,7 @@ import type { VersionInfo } from '@/lib/types'
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
   const [updateCheck, setUpdateCheck] = useState(Boolean(settings['app.update_check'] ?? true))
+  const [require2fa, setRequire2fa] = useState(Boolean(settings['auth.require_2fa'] ?? false))
   // Aufbewahrungsfristen in Tagen; 0 = unbegrenzt (Standard).
   const [auditDays, setAuditDays] = useState(String(settings['audit.retention_days'] ?? 0))
   const [userDays, setUserDays] = useState(String(settings['privacy.user_retention_days'] ?? 0))
@@ -102,6 +103,26 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           <Switch checked={updateCheck} onCheckedChange={setUpdateCheck} />
         </div>
       </Section>
+      <Section
+        title={t('generalTab.security.title')}
+        description={t('generalTab.security.description')}
+        footer={
+          <Button onClick={() => save({ 'auth.require_2fa': require2fa })} loading={saving}>
+            {t('generalTab.security.saveButton')}
+          </Button>
+        }
+      >
+        <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
+          <span>
+            <span className="block text-sm font-medium">{t('generalTab.security.require2fa')}</span>
+            <span className="text-muted-foreground mt-1 block text-sm">
+              {t('generalTab.security.require2faHint')}
+            </span>
+          </span>
+          <Switch checked={require2fa} onCheckedChange={setRequire2fa} />
+        </label>
+      </Section>
+
       <Section
         title={t('generalTab.retention.title')}
         description={t('generalTab.retention.description')}

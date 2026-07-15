@@ -4,6 +4,23 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Two-factor authentication can now be enforced** (Settings → General → Sign-in security,
+  off by default). Until now 2FA was purely opt-in: an administrator could not require it, so
+  the protection existed only for those who happened to switch it on.
+  When enabled, a local account without 2FA gets **no session at all** — after the password
+  the path leads straight into enrolment, and tokens are only issued once the first code is
+  confirmed. Deliberately stricter than issuing a session and locking the UI afterwards: that
+  would hand out a valid access token first. Verified against a running instance: with the
+  requirement on, a correct password yields `two_factor_setup_required` and `/api/users`
+  answers 401, while enrolment works via the short-lived intermediate token; after activation
+  the session exists and the next sign-in asks for the code as usual.
+  SSO accounts are exempt — their MFA is Entra's job. Existing sessions keep running until
+  they expire.
+
 ## [0.1.13] — 2026-07-15
 
 ### Added

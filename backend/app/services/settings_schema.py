@@ -32,6 +32,11 @@ SETTINGS: dict[str, SettingSpec] = {
     "app.public_url": SettingSpec(""),
     # Prüft periodisch das neueste GitHub-Release und zeigt bei neuerer Version einen Hinweis.
     "app.update_check": SettingSpec(True),
+    # ---- Anmeldung ----
+    # Zwei-Faktor-Pflicht für LOKALE Konten. Ist sie aktiv, entsteht ohne eingerichtetes
+    # 2FA gar keine vollwertige Sitzung: Nach dem Passwort führt der Weg direkt in die
+    # Einrichtung. SSO-Konten sind ausgenommen — deren MFA macht Entra selbst.
+    "auth.require_2fa": SettingSpec(False),
     # ---- Admin-Benachrichtigungen (Digest + Fehler-Alert) ----
     "alerts.enabled": SettingSpec(False),
     "alerts.recipients": SettingSpec([]),  # Liste von E-Mail-Adressen
