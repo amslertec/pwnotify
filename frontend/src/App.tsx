@@ -7,6 +7,7 @@ import { InstallPrompt } from './components/install-prompt'
 import { AppLayout } from './components/layout/app-layout'
 import { Toaster } from './components/toaster'
 import { api } from './lib/api'
+import AuditPage from './pages/audit'
 import { useAuth } from './lib/auth'
 import type { SetupStatus } from './lib/types'
 import AccessPage from './pages/access'
@@ -65,6 +66,14 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/runs" element={<RunsPage />} />
+          <Route
+            path="/audit"
+            element={
+              <AdminOnly>
+                <AuditPage />
+              </AdminOnly>
+            }
+          />
           <Route
             path="/settings"
             element={

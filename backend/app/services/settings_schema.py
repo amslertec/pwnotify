@@ -69,6 +69,11 @@ SETTINGS: dict[str, SettingSpec] = {
     "schedule.timezone": SettingSpec("Europe/Zurich"),
     "schedule.reminder_days": SettingSpec([14, 7, 3, 1, 0]),
     "schedule.dry_run": SettingSpec(False),
+    # Aufbewahrung des Audit-Protokolls in Tagen. 0 = unbegrenzt (Standard) — für
+    # Compliance ist eine lückenlose Historie meist erwünscht. Wer eine Löschfrist
+    # braucht (Datenschutz), setzt hier z. B. 365; ältere Einträge werden nach jedem
+    # geplanten Lauf entfernt.
+    "audit.retention_days": SettingSpec(0),
     # Sicherung gegen Massenversand: Würde ein Lauf mehr als diesen Anteil aller
     # geprüften Benutzer benachrichtigen, ist das fast immer eine Fehlkonfiguration
     # (z. B. falsche Gültigkeitsdauer) und nicht ein realer Stichtag. Der Lauf bricht

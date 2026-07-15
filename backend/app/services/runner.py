@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..core.logging import get_logger
 from ..models.run import Run
-from ..repositories import entra_repo, exclusion_repo, run_repo
+from ..repositories import audit_repo, entra_repo, exclusion_repo, run_repo
 from . import alerts
 from .expiry import due_reminder_stage
 from .graph import GraphClient, GraphConfig
@@ -124,6 +124,16 @@ async def execute_run(
             except Exception as exc:
                 detail.append({"step": "sso_sync", "error": str(exc)})
                 log.warning("sso_sync_failed", error=str(exc))
+
+            # 1c) Audit-Protokoll auf die eingestellte Frist kürzen (0 = unbegrenzt).
+            try:
+                geloescht = await audit_repo.purge_older_than(
+                    session, days=int(settings.get("audit.retention_days") or 0)
+                )
+                if geloescht:
+                    detail.append({"step": "audit_purge", "removed": geloescht})
+            except Exception as exc:
+                log.warning("audit_purge_failed", error=str(exc))
 
             # 2) Benachrichtigungen
             excluded_ids = await _resolve_excluded_ids(session, settings)

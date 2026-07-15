@@ -81,7 +81,65 @@
     "settings": "Einstellungen",
     "logout": "Abmelden",
     "collapse": "Sidebar einklappen",
-    "menu": "Menü"
+    "menu": "Menü",
+    "audit": "Audit-Protokoll"
+  },
+  "audit": {
+    "title": "Audit-Protokoll",
+    "description": "Wer hat wann was geändert. Einträge sind unveränderlich und können nicht gelöscht werden.",
+    "columns": {
+      "time": "Zeit",
+      "actor": "Benutzer",
+      "action": "Aktion",
+      "target": "Betroffen",
+      "ip": "IP-Adresse",
+      "detail": "Details"
+    },
+    "filter": {
+      "action": "Aktion",
+      "outcome": "Ergebnis",
+      "allActions": "Alle Aktionen",
+      "allOutcomes": "Alle Ergebnisse"
+    },
+    "outcome": {
+      "success": "Erfolgreich",
+      "failure": "Fehlgeschlagen"
+    },
+    "range": {
+      "all": "Gesamter Zeitraum",
+      "day": "Letzte 24 Stunden",
+      "week": "Letzte 7 Tage",
+      "month": "Letzte 30 Tage",
+      "quarter": "Letzte 90 Tage"
+    },
+    "actor": {
+      "system": "System"
+    },
+    "empty": {
+      "title": "Keine Einträge",
+      "description": "Für die gewählten Filter wurden keine Ereignisse protokolliert."
+    },
+    "pagination": {
+      "summary": "{{count}} Einträge · Seite {{page}} von {{total}}",
+      "prev": "Zurück",
+      "next": "Weiter"
+    },
+    "actions": {
+      "auth.login_success": "Anmeldung erfolgreich",
+      "auth.login_failed": "Anmeldung fehlgeschlagen",
+      "auth.login_blocked": "Anmeldung bei gesperrtem Konto",
+      "auth.logout": "Abmeldung",
+      "auth.account_locked": "Konto gesperrt",
+      "auth.password_changed": "Passwort geändert",
+      "auth.2fa_enabled": "2FA aktiviert",
+      "auth.2fa_disabled": "2FA deaktiviert",
+      "auth.sessions_revoked": "Andere Sitzungen abgemeldet",
+      "user.created": "Benutzer angelegt",
+      "user.deleted": "Benutzer gelöscht",
+      "user.role_changed": "Rolle geändert",
+      "settings.changed": "Einstellungen geändert",
+      "settings.secret_changed": "Secret geändert"
+    }
   },
   "validation": {
     "usernameRequired": "Benutzername erforderlich",

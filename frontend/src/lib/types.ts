@@ -185,3 +185,24 @@ export interface DashboardData {
   next_run: string | null
   backends: { graph_configured: boolean; mail_configured: boolean; mail_backend: string }
 }
+
+export interface AuditEntry {
+  id: number
+  at: string
+  actor_username: string | null
+  actor_type: string
+  /** Stabile Kennung wie "user.role_changed" — wird im Frontend uebersetzt. */
+  action: string
+  target: string | null
+  outcome: string
+  ip_address: string | null
+  user_agent: string | null
+  detail: Record<string, unknown>
+}
+
+export interface AuditPage {
+  items: AuditEntry[]
+  total: number
+  page: number
+  page_size: number
+}

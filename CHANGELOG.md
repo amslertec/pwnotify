@@ -8,6 +8,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Audit log** — a new admin-only page (sidebar → *Audit log*) recording who changed what and
+  when. There was previously **no record at all**: neither sign-ins, role changes, 2FA changes,
+  user creation/deletion nor secret changes left a trace, so "who granted this account admin
+  rights?" had no answer. Covers sign-ins (including failures — and the *attempted* username
+  when it does not exist, which is how account enumeration becomes visible), account lockouts,
+  password changes, 2FA enable/disable, session revocation, user CRUD, role changes (with
+  `from` → `to`), and settings/secret changes.
+  Entries are append-only: there is no API to edit or delete individual records, and they
+  survive deletion of the account that caused them (no foreign key, the name is copied in).
+  Secret **values** are never recorded — for settings changes only the keys are, so a changed
+  Graph secret shows up as `keys=["graph.client_secret"]` and nothing more. The log is
+  filterable by action, outcome and time range, and readable by administrators only —
+  auditors get 403. `audit.retention_days` (default `0` = keep forever) prunes old entries
+  after each scheduled run for installations that need a deletion deadline.
+
 - **Automatic sign-out after inactivity** (`PWNOTIFY_IDLE_TIMEOUT_MIN`, default 30 minutes,
   `0` disables). Previously a refresh token kept a session alive for up to 14 days, so an
   unattended browser stayed signed in for two weeks. Applies to local and SSO accounts alike,
