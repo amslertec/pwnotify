@@ -33,10 +33,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   next token refresh — which covers a closed browser or a stolen token. Activity is shared
   across tabs, so working in one does not time out another. The login page explains the
   automatic sign-out (DE/EN) instead of looking like an error.
+- **Warning before the Graph client secret expires.** Entra secrets expire after 6–24 months.
+  When that happened unnoticed the tool went silent: the sync failed and no reminders went
+  out — an outage nobody notices, because missing e-mails don't announce themselves. Enter the
+  expiry date in Settings → Graph and the dashboard warns 30 days ahead, with the admin digest
+  carrying the notice from 14 days on. The date is maintained by hand on purpose: reading it
+  automatically would require `Application.Read.All`, which grants read access to **every** app
+  registration in the tenant — disproportionate for a warning, and at odds with the
+  least-privilege promise in SECURITY.md.
 - **Signing out now removes the session record** instead of only marking it revoked.
 
 ### Security
 
+- **CI actions pinned to commit SHAs** instead of moving tags. A tag can be repointed at any
+  time; if a third-party action were compromised that way, it would run with access to the
+  build and its secrets (as in the `tj-actions` incident). The tag stays as a comment so it
+  is still readable which version runs, and Dependabot updates pin and comment together.
+- **Dependabot** for Docker base images, GitHub Actions, `uv` and npm. Digest-pinned base
+  images freeze the CVE state of the day they were pinned — that is exactly how
+  CVE-2026-11940 slipped in for 0.1.10 and only surfaced in the CI scan. Alerts and automated
+  security fixes were disabled on the repository and are now switched on.
 - **Security headers on every response.** The app previously sent none at all: it could be
   embedded in an iframe (clickjacking on the login form and admin actions) and had no
   defence-in-depth against XSS. Added `Content-Security-Policy`, `X-Frame-Options: DENY`,

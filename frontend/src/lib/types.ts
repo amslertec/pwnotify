@@ -184,6 +184,8 @@ export interface DashboardData {
   last_run: Run | null
   next_run: string | null
   backends: { graph_configured: boolean; mail_configured: boolean; mail_backend: string }
+  /** Nur gesetzt, wenn das Graph-Secret bald ablaeuft oder abgelaufen ist. */
+  secret_expiry: { expires_at: string; days_left: number; expired: boolean } | null
 }
 
 export interface AuditEntry {

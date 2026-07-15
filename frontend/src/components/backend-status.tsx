@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { Clock, History, Wifi } from 'lucide-react'
+import { Clock, History, KeyRound, Wifi } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from './ui/skeleton'
 import { api } from '@/lib/api'
-import { fmtCountdown } from '@/lib/format'
+import { fmtCountdown, fmtDate } from '@/lib/format'
 import type { DashboardData } from '@/lib/types'
 
 export function RunStatusPill({ status }: { status: string }) {
@@ -58,8 +58,25 @@ export function BackendStatusBar() {
 
   const graphOk = data?.backends.graph_configured
   const mailOk = data?.backends.mail_configured
+  const secret = data?.secret_expiry
   return (
-    <div className="border-border bg-card flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-4 py-3 text-sm">
+    <div className="space-y-2">
+      {secret && (
+        // Ein ablaufendes Secret legt das Tool still, ohne dass es auffiele — deshalb
+        // steht der Hinweis ueber dem Status und nicht darin.
+        <div className="border-destructive/40 bg-destructive/10 text-destructive flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
+          <KeyRound className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {secret.expired
+              ? t('backendStatus.secretExpired', { date: fmtDate(secret.expires_at) })
+              : t('backendStatus.secretSoon', {
+                  count: secret.days_left,
+                  date: fmtDate(secret.expires_at),
+                })}
+          </span>
+        </div>
+      )}
+      <div className="border-border bg-card flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-4 py-3 text-sm">
       <div className="flex items-center gap-2">
         <Wifi className="text-muted-foreground size-4" />
         <Indicator
@@ -88,6 +105,7 @@ export function BackendStatusBar() {
           {t('backendStatus.lastRun')} <RunStatusPill status={data.last_run.status} />
         </div>
       )}
+      </div>
     </div>
   )
 }

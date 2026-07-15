@@ -408,7 +408,9 @@
       "notConfigured": "Mail not configured"
     },
     "nextRun": "Next run:",
-    "lastRun": "Last run:"
+    "lastRun": "Last run:",
+    "secretSoon": "The Graph client secret expires in {{count}} days ({{date}}). The sync will fail after that — please store a new secret in time.",
+    "secretExpired": "The Graph client secret expired on {{date}}. The sync will keep failing until a new secret is stored."
   },
   "settingsPage": {
     "tabs": {
@@ -445,7 +447,9 @@
       "tenantId": "Tenant ID",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
-      "clientSecretHint": "Set — leave empty to keep."
+      "clientSecretHint": "Set — leave empty to keep.",
+      "secretExpires": "Client secret expiry date (optional)",
+      "secretExpiresHint": "Found in Entra under \"Certificates & secrets\". PwNotify then warns you in time — if the secret expires unnoticed, the sync fails and no reminders go out. The date is maintained by hand because reading it automatically would require permission to read every app registration in the tenant."
     },
     "group": {
       "title": "Sync scope (user group)",

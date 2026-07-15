@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from ...repositories import entra_repo, notification_repo, run_repo
 from ...schemas.entities import EntraUserOut, RunOut
+from ...services import secret_expiry
 from ...services.scheduler import get_scheduler
 from ..deps import CurrentUser, SessionDep, SettingsDep
 
@@ -80,4 +81,20 @@ async def dashboard(_: CurrentUser, session: SessionDep, svc: SettingsDep) -> di
             "mail_configured": mail_configured,
             "mail_backend": settings.get("mail.backend", "graph"),
         },
+        # Läuft das Graph-Secret bald ab, steht das Tool danach still — sichtbar machen,
+        # solange noch Zeit bleibt, ein neues zu hinterlegen. None = kein Datum gepflegt
+        # oder noch weit hin.
+        "secret_expiry": _secret_expiry_out(settings.get("graph.client_secret_expires_at")),
+    }
+
+
+def _secret_expiry_out(raw: object) -> dict[str, object] | None:
+    """Nur melden, wenn es etwas zu melden gibt (Warnschwelle erreicht)."""
+    info = secret_expiry.check(str(raw) if raw else None)
+    if info is None or not info.should_warn:
+        return None
+    return {
+        "expires_at": info.expires_at.isoformat(),
+        "days_left": info.days_left,
+        "expired": info.expired,
     }

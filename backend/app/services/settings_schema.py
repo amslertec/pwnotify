@@ -42,6 +42,13 @@ SETTINGS: dict[str, SettingSpec] = {
     "graph.client_id": SettingSpec(""),
     "graph.client_secret": SettingSpec("", secret=True),
     "graph.cloud": SettingSpec("global"),
+    # Ablaufdatum des Client-Secrets (ISO-Datum, z. B. "2027-01-31"), optional.
+    # Entra-Secrets laufen nach 6-24 Monaten ab; danach steht das Tool still, ohne
+    # dass vorher jemand gewarnt wurde. Das Datum wird bewusst manuell gepflegt:
+    # automatisch auslesen ginge nur mit Application.Read.All — einer Berechtigung,
+    # die ALLE App-Registrierungen des Tenants lesen darf. Das ist für eine reine
+    # Warnung unverhältnismässig.
+    "graph.client_secret_expires_at": SettingSpec(""),
     # Objekt-ID einer Entra-Gruppe: nur deren Mitglieder werden synchronisiert und auf
     # Passwortablauf geprüft. Leer -> alle Tenant-Benutzer (altes Verhalten).
     # transitiveMembers löst verschachtelte Gruppen auf; ideal mit einer dynamischen Gruppe.

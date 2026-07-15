@@ -18,6 +18,9 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const [tenant, setTenant] = useState(String(settings['graph.tenant_id'] ?? ''))
   const [clientId, setClientId] = useState(String(settings['graph.client_id'] ?? ''))
   const [secret, setSecret] = useState('')
+  const [secretExpires, setSecretExpires] = useState(
+    String(settings['graph.client_secret_expires_at'] ?? ''),
+  )
   const [group, setGroup] = useState(String(settings['sync.group_id'] ?? ''))
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<GraphTestResult | null>(null)
@@ -29,6 +32,7 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
       'graph.tenant_id': tenant,
       'graph.client_id': clientId,
       ...(secret ? { 'graph.client_secret': secret } : {}),
+      'graph.client_secret_expires_at': secretExpires.trim(),
     })
 
   const saveGroup = () => save({ 'sync.group_id': group.trim() })
@@ -84,6 +88,17 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder={secretSet ? '••••••••' : ''}
+            />
+          </Field>
+          <Field
+            label={t('graphTab.graph.secretExpires')}
+            hint={t('graphTab.graph.secretExpiresHint')}
+            className="sm:col-span-2"
+          >
+            <Input
+              type="date"
+              value={secretExpires}
+              onChange={(e) => setSecretExpires(e.target.value)}
             />
           </Field>
         </div>

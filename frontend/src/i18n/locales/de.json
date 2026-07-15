@@ -408,7 +408,9 @@
       "notConfigured": "Mail nicht konfiguriert"
     },
     "nextRun": "Nächster Lauf:",
-    "lastRun": "Letzter Lauf:"
+    "lastRun": "Letzter Lauf:",
+    "secretSoon": "Das Graph-Client-Secret läuft in {{count}} Tagen ab ({{date}}). Danach schlägt der Sync fehl — bitte rechtzeitig ein neues Secret hinterlegen.",
+    "secretExpired": "Das Graph-Client-Secret ist am {{date}} abgelaufen. Der Sync schlägt fehl, bis ein neues Secret hinterlegt wird."
   },
   "settingsPage": {
     "tabs": {
@@ -445,7 +447,9 @@
       "tenantId": "Tenant-ID",
       "clientId": "Client-ID",
       "clientSecret": "Client-Secret",
-      "clientSecretHint": "Gesetzt — leer lassen, um beizubehalten."
+      "clientSecretHint": "Gesetzt — leer lassen, um beizubehalten.",
+      "secretExpires": "Ablaufdatum des Client-Secrets (optional)",
+      "secretExpiresHint": "In Entra unter \"Certificates & secrets\" ablesen. PwNotify warnt dann rechtzeitig — läuft das Secret unbemerkt ab, schlägt der Sync fehl und es gehen keine Erinnerungen mehr raus. Das Datum wird manuell gepflegt, weil das automatische Auslesen eine Berechtigung auf alle App-Registrierungen des Tenants erfordern würde."
     },
     "group": {
       "title": "Sync-Umfang (Benutzergruppe)",
