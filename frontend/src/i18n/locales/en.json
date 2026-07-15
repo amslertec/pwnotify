@@ -107,7 +107,8 @@
     "codeLabel": "Verification code",
     "codePlaceholder": "123456",
     "verifyButton": "Verify",
-    "recoveryHint": "No access to the app? Use one of your recovery codes."
+    "recoveryHint": "No access to the app? Use one of your recovery codes.",
+    "idleLogout": "You were signed out automatically due to inactivity."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -191,7 +192,8 @@
     "twofa_expired": "2FA session expired. Please sign in again.",
     "twofa_local_only": "2FA is only available for local accounts.",
     "twofa_not_started": "2FA setup not started.",
-    "cannot_demote_self": "You cannot remove your own administrator role."
+    "cannot_demote_self": "You cannot remove your own administrator role.",
+    "session_idle_timeout": "Session ended due to inactivity. Please sign in again."
   },
   "access": {
     "title": "User management",

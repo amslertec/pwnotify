@@ -57,6 +57,8 @@ services:
       # Wem darf X-Forwarded-For geglaubt werden? Hinter einem Reverse-Proxy dessen
       # Netz eintragen — sonst teilen sich alle Nutzer ein Rate-Limit. Nie "*".
       PWNOTIFY_TRUSTED_PROXIES: ${PWNOTIFY_TRUSTED_PROXIES:-127.0.0.1}
+      # Abmeldung nach Inaktivitaet (Minuten, 0 = aus). Sitzung wird geloescht.
+      PWNOTIFY_IDLE_TIMEOUT_MIN: ${PWNOTIFY_IDLE_TIMEOUT_MIN:-30}
       PWNOTIFY_LOG_LEVEL: ${PWNOTIFY_LOG_LEVEL:-INFO}
       PWNOTIFY_LOG_JSON: ${PWNOTIFY_LOG_JSON:-true}
       PWNOTIFY_TIMEZONE: ${PWNOTIFY_TIMEZONE:-Europe/Zurich}

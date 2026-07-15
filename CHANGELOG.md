@@ -4,6 +4,59 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Automatic sign-out after inactivity** (`PWNOTIFY_IDLE_TIMEOUT_MIN`, default 30 minutes,
+  `0` disables). Previously a refresh token kept a session alive for up to 14 days, so an
+  unattended browser stayed signed in for two weeks. Applies to local and SSO accounts alike,
+  and the session row is **deleted**, not just revoked.
+  Two layers, because only the client can tell "working" from "tab left open":
+  the browser signs out after that long without mouse or keyboard activity (a background tab
+  keeps polling, so the server cannot see idleness), and the server ends idle sessions on the
+  next token refresh — which covers a closed browser or a stolen token. Activity is shared
+  across tabs, so working in one does not time out another. The login page explains the
+  automatic sign-out (DE/EN) instead of looking like an error.
+- **Signing out now removes the session record** instead of only marking it revoked.
+
+### Security
+
+- **Security headers on every response.** The app previously sent none at all: it could be
+  embedded in an iframe (clickjacking on the login form and admin actions) and had no
+  defence-in-depth against XSS. Added `Content-Security-Policy`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`,
+  and HSTS (only when `PWNOTIFY_COOKIE_SECURE=true`, since it is pointless over plain HTTP).
+  The CSP uses **no `'unsafe-inline'` for scripts**: `index.html` needs two inline scripts
+  (theme before first paint, branding pre-fetch), so their SHA-256 hashes are read from the
+  served file at startup and put into the policy — change a script and the hash follows
+  automatically, with no hand-maintained list to go stale. `style-src` does allow inline
+  styles, which React needs for `style={{…}}`; CSS injection is far less dangerous than
+  script execution. Routes that already send a stricter policy (the branding assets with
+  their `sandbox` CSP) keep it.
+
+- **Changing your password did not end other sessions.** A stolen refresh token kept full
+  access for up to `refresh_token_ttl_days` (14 by default) even after the victim changed the
+  password — the one action people take to cut an intruder off. Reproduced against a running
+  instance: a second device kept refreshing successfully after the password change. Other
+  sessions are now revoked (your own stays), the count is reported back, and the event is
+  logged.
+- **Validation errors echoed submitted passwords in clear text.** Pydantic attaches the
+  rejected input to 422 responses, so a too-short password came back as
+  `"input":"..."` — and from there into proxy, browser or monitoring logs. Found while
+  testing. Sensitive fields (passwords, client secrets, TOTP codes, tokens) are now stripped
+  from validation errors; harmless fields keep their value for debugging.
+- **`PWNOTIFY_COOKIE_SECURE` now defaults to `true`.** Forgetting the variable silently
+  served auth cookies without the `Secure` flag. Plain-HTTP setups (LAN testing) must now
+  opt out explicitly — `docker-compose.yml` for development already does.
+
+### Fixed
+
+- **A wrong Fernet key looked like "not configured".** Secrets that fail to decrypt were
+  silently replaced with an empty string, so a lost or changed `PWNOTIFY_SECRET_KEY` made
+  Graph and SMTP appear unconfigured instead of broken — sending you to debug the wrong end.
+  Decryption failures are now logged with the affected key and what to check.
+
 ## [0.1.11] — 2026-07-15
 
 > ### ⚠️ `.env` change — read before upgrading

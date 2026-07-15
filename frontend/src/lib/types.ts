@@ -9,6 +9,8 @@ export interface User {
   last_login_at: string | null
   has_avatar: boolean
   avatar_version: number
+  /** Minuten ohne Aktivität bis zur automatischen Abmeldung (0 = aus). */
+  idle_timeout_min: number
 }
 
 export interface LoginResponse {

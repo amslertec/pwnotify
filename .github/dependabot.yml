@@ -1,0 +1,50 @@
+# Automatische Update-PRs. Ohne das bleiben die per Digest gepinnten Basis-Images auf
+# dem CVE-Stand des Pin-Zeitpunkts stehen: bei 0.1.10 fiel genau so CVE-2026-11940
+# (python 3.14.6-r2) erst im CI-Scan auf, statt vorher als PR aufzuschlagen.
+version: 2
+
+updates:
+  # Basis-Images (Chainguard, node, postgres, uv) — der wichtigste Eintrag: Digest-Pins
+  # frieren Sicherheitsfixes ein, bis sie jemand von Hand nachzieht.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
+    labels: [dependencies, docker, security]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # GitHub Actions — hier hängt zusätzlich das SHA-Pinning dran (Supply-Chain).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    labels: [dependencies, backend]
+    commit-message:
+      prefix: "chore(backend)"
+    groups:
+      # Patch-Updates gebündelt, damit nicht jede Bibliothek einen eigenen PR erzeugt.
+      patch-updates:
+        update-types: [patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    labels: [dependencies, frontend]
+    commit-message:
+      prefix: "chore(frontend)"
+    groups:
+      patch-updates:
+        update-types: [patch]
+      # Radix/shadcn-Pakete kommen als Familie — einzeln wäre das PR-Rauschen enorm.
+      radix:
+        patterns: ["@radix-ui/*"]

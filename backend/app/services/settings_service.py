@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import get_settings
 from ..core.crypto import decrypt, encrypt
+from ..core.logging import get_logger
 from ..models._base import utcnow
 from ..models.setting import Setting
 from .settings_schema import MASK, SECRET_KEYS, SETTINGS, default_settings
+
+log = get_logger("settings")
 
 
 def effective_base_url(settings: dict[str, Any]) -> str:
@@ -38,6 +41,19 @@ class SettingsService:
                 try:
                     value = decrypt(value)
                 except ValueError:
+                    # Nicht entschlüsselbar heisst fast immer: falscher oder verlorener
+                    # Fernet-Key (/data/secret.key weg, PWNOTIFY_SECRET_KEY geändert).
+                    # Der leere Wert lässt das Secret wie "nie konfiguriert" aussehen —
+                    # ohne diesen Log sucht man den Ausfall an der falschen Stelle.
+                    log.error(
+                        "secret_decrypt_failed",
+                        key=row.key,
+                        hint=(
+                            "Fernet-Key passt nicht zum verschlüsselten Wert. "
+                            "PWNOTIFY_SECRET_KEY bzw. /data/secret.key prüfen — sonst muss "
+                            "das Secret in den Einstellungen neu gesetzt werden."
+                        ),
+                    )
                     value = ""
             result[row.key] = value
         return result

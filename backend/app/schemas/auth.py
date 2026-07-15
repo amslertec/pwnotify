@@ -24,6 +24,10 @@ class UserOut(BaseModel):
     has_avatar: bool = False
     # Datei-Änderungszeit als Cache-Buster -> neues Profilbild erscheint sofort.
     avatar_version: int = 0
+    # Minuten ohne Aktivität bis zur automatischen Abmeldung (0 = aus). Das Frontend
+    # braucht den Wert, um bei echter Untätigkeit selbst abzumelden — ein offener Tab
+    # pollt sonst weiter und hielte die Sitzung am Leben.
+    idle_timeout_min: int = 0
 
 
 class LanguageUpdate(BaseModel):

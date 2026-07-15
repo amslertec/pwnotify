@@ -3,7 +3,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 import { api, ApiError, onAuthExpired } from './api'
 import type { LoginResponse, User } from './types'
+import { useIdleLogout } from '@/hooks/use-idle-logout'
 import { setLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n'
+
+/** Merkt für die Login-Seite, dass die Abmeldung wegen Inaktivität erfolgte. */
+export const IDLE_LOGOUT_FLAG = 'pwnotify-idle-logout'
 
 interface AuthContextValue {
   user: User | null
@@ -70,6 +74,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     qc.clear()
   }
+
+  // Abmeldung bei Inaktivität. Der Server beendet untätige Sitzungen beim Token-Refresh;
+  // solange ein Tab offen ist und im Hintergrund pollt, greift das aber nicht — deshalb
+  // meldet der Client bei echter Untätigkeit (keine Maus-/Tastatureingabe) selbst ab.
+  // Die Sitzung wird dabei serverseitig gelöscht, nicht nur der Tab geleert.
+  useIdleLogout(
+    user?.idle_timeout_min ?? 0,
+    () => {
+      sessionStorage.setItem(IDLE_LOGOUT_FLAG, '1')
+      void logout()
+    },
+    !!user,
+  )
 
   return (
     <AuthContext.Provider value={{ user, loading, login, verify2fa, logout, refresh }}>

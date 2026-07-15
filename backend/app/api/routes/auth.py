@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import io
 import json
 import uuid
@@ -141,6 +142,7 @@ def _user_out(user: AppUser) -> UserOut:
         last_login_at=user.last_login_at,
         has_avatar=exists,
         avatar_version=int(path.stat().st_mtime) if exists and path else 0,
+        idle_timeout_min=_settings.idle_timeout_min,
     )
 
 
@@ -283,6 +285,20 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
         clear_auth_cookies(response)
         raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
 
+    # Inaktivität: Eine Sitzung, in der lange nichts passiert ist, wird beendet und
+    # entfernt — sonst hielte der Refresh-Token sie `refresh_token_ttl_days` am Leben.
+    # Fängt vor allem den geschlossenen Browser und gestohlene Tokens; bei offenem Tab
+    # meldet zusätzlich das Frontend bei echter Untätigkeit ab.
+    idle_min = _settings.idle_timeout_min
+    if idle_min > 0 and us.last_used_at < now - dt.timedelta(minutes=idle_min):
+        await user_repo.delete_session_by_jti(session, us.refresh_jti)
+        clear_auth_cookies(response)
+        log.info("session_idle_timeout", user_id=us.user_id, idle_min=idle_min)
+        raise AuthError(
+            "Sitzung wegen Inaktivität beendet. Bitte erneut anmelden.",
+            code="session_idle_timeout",
+        )
+
     user = await user_repo.get(session, us.user_id)
     if user is None or not user.is_active:
         clear_auth_cookies(response)
@@ -307,7 +323,9 @@ async def logout(request: Request, response: Response, session: SessionDep) -> M
     if token:
         try:
             payload = decode_token(token, expected_type="refresh")
-            await user_repo.revoke_session(session, payload["jti"])
+            # Beim Abmelden die Sitzung entfernen, nicht nur widerrufen: sie soll weder
+            # in der Sitzungsliste noch als Datensatz zurückbleiben.
+            await user_repo.delete_session_by_jti(session, payload["jti"])
         except jwt.PyJWTError:
             pass
     clear_auth_cookies(response)
@@ -412,13 +430,28 @@ async def revoke_other_sessions(
 
 @router.post("/password", response_model=Message)
 async def change_password(
-    body: PasswordChangeRequest, user: CurrentUser, session: SessionDep
+    request: Request, body: PasswordChangeRequest, user: CurrentUser, session: SessionDep
 ) -> Message:
     if not verify_password(body.current_password, user.password_hash):
         raise AuthError("Aktuelles Passwort ist falsch.", code="wrong_current_password")
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
+
+    # Ein Passwortwechsel muss fremde Sitzungen beenden. Sonst behält ein gestohlener
+    # Refresh-Token vollen Zugriff (bis zu `refresh_token_ttl_days`), obwohl der
+    # Benutzer glaubt, ihn mit dem neuen Passwort gerade entzogen zu haben.
+    # Die eigene Sitzung bleibt bestehen — sonst meldet der Wechsel einen selbst ab.
+    current_jti: str | None = None
+    token = request.cookies.get(REFRESH_COOKIE)
+    if token:
+        with contextlib.suppress(jwt.PyJWTError):
+            current_jti = decode_token(token, expected_type="refresh").get("jti")
+    revoked = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
+
     await session.commit()
+    log.info("password_changed", username=user.username, sessions_revoked=revoked)
+    if revoked:
+        return Message(message=f"Passwort geändert. {revoked} andere Sitzung(en) abgemeldet.")
     return Message(message="Passwort geändert.")
 
 

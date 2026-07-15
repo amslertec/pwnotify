@@ -28,7 +28,10 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     static_dir: str = "/app/static"
     base_url: str = "http://localhost:8080"
-    cookie_secure: bool = False
+    # Sicher als Standard: Cookies nur über HTTPS. Wer die App bewusst über
+    # Klartext-HTTP betreibt (LAN-Test, Szenario A), muss das explizit abschalten —
+    # ein vergessener Wert darf nicht unbemerkt Tokens über HTTP zulassen.
+    cookie_secure: bool = True
     log_level: str = "INFO"
     log_json: bool = True
     timezone: str = "Europe/Zurich"
@@ -45,6 +48,14 @@ class Settings(BaseSettings):
     # ---- Auth / JWT ----
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 14
+
+    # Abmeldung bei Inaktivität. Der Refresh-Token allein hält eine Sitzung sonst
+    # `refresh_token_ttl_days` lang am Leben — auch wenn niemand mehr arbeitet.
+    # Greift, sobald `idle_timeout_min` ohne Aktivität vergangen sind; die Sitzung
+    # wird dann gelöscht, nicht nur widerrufen. 0 = deaktiviert.
+    # Das Frontend meldet zusätzlich bei echter Untätigkeit (Maus/Tastatur) aktiv ab —
+    # nur so greift es auch, wenn ein Tab offen bleibt und im Hintergrund pollt.
+    idle_timeout_min: int = 30
     login_rate_limit: str = "10/minute"
     login_max_failures: int = 5
     login_lockout_min: int = 15

@@ -6,6 +6,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
@@ -36,6 +37,11 @@ from .api.routes import (
 from .core.config import get_settings
 from .core.errors import register_exception_handlers
 from .core.logging import configure_logging, get_logger
+from .core.security_headers import (
+    SecurityHeadersMiddleware,
+    build_csp,
+    inline_script_hashes,
+)
 from .db.migrate import run_migrations
 from .db.session import dispose_engine, get_session_factory
 from .seed import run_seed
@@ -106,6 +112,19 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
+
+    # Security-Header. Die Hashes der Inline-Skripte werden einmal beim Start aus der
+    # ausgelieferten index.html gelesen, damit die CSP ohne 'unsafe-inline' auskommt.
+    hashes = inline_script_hashes(Path(settings.static_dir) / "index.html")
+    if not hashes:
+        log.warning(
+            "csp_inline_hashes_missing", hint="index.html nicht lesbar — CSP evtl. zu streng"
+        )
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        csp=build_csp(hashes),
+        hsts=settings.cookie_secure,  # nur sinnvoll, wenn die App über HTTPS läuft
+    )
 
     register_exception_handlers(app)
 

@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
-import { useAuth } from '@/lib/auth'
+import { IDLE_LOGOUT_FLAG, useAuth } from '@/lib/auth'
 import { useBranding } from '@/components/branding-provider'
 import type { AuthConfig, SetupStatus } from '@/lib/types'
 
@@ -66,6 +66,11 @@ export default function LoginPage() {
   useEffect(() => {
     if (params.get('sso_denied')) toast.error(t('login.ssoDenied'))
     if (params.get('sso_error')) toast.error(t('login.ssoError'))
+    // Erklärt die automatische Abmeldung — sonst wirkt sie wie ein Fehler.
+    if (sessionStorage.getItem(IDLE_LOGOUT_FLAG)) {
+      sessionStorage.removeItem(IDLE_LOGOUT_FLAG)
+      toast.info(t('login.idleLogout'))
+    }
   }, [params, t])
 
   if (setup?.needs_setup) return <Navigate to="/setup" replace />

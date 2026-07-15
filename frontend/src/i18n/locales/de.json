@@ -107,7 +107,8 @@
     "codeLabel": "Bestätigungscode",
     "codePlaceholder": "123456",
     "verifyButton": "Bestätigen",
-    "recoveryHint": "Kein Zugriff auf die App? Verwenden Sie einen Ihrer Recovery-Codes."
+    "recoveryHint": "Kein Zugriff auf die App? Verwenden Sie einen Ihrer Recovery-Codes.",
+    "idleLogout": "Sie wurden wegen Inaktivität automatisch abgemeldet."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -191,7 +192,8 @@
     "twofa_expired": "2FA-Sitzung abgelaufen. Bitte erneut anmelden.",
     "twofa_local_only": "2FA ist nur für lokale Konten verfügbar.",
     "twofa_not_started": "2FA-Einrichtung nicht gestartet.",
-    "cannot_demote_self": "Sie können sich nicht selbst die Administratorrolle entziehen."
+    "cannot_demote_self": "Sie können sich nicht selbst die Administratorrolle entziehen.",
+    "session_idle_timeout": "Sitzung wegen Inaktivität beendet. Bitte erneut anmelden."
   },
   "access": {
     "title": "Benutzerverwaltung",

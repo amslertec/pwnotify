@@ -141,6 +141,12 @@ async def prune_sessions(session: AsyncSession, user_id: int) -> None:
     await session.commit()
 
 
+async def delete_session_by_jti(session: AsyncSession, jti: str) -> None:
+    """Sitzung vollständig entfernen (Abmeldung, Inaktivität) statt nur zu widerrufen."""
+    await session.execute(sa_delete(UserSession).where(UserSession.refresh_jti == jti))
+    await session.commit()
+
+
 async def revoke_session(session: AsyncSession, jti: str) -> None:
     us = await get_session_by_jti(session, jti)
     if us:
