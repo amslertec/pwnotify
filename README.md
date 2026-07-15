@@ -179,7 +179,23 @@ server {
 }
 ```
 
-Then set `PWNOTIFY_BASE_URL=https://pwnotify.example.com` and `PWNOTIFY_COOKIE_SECURE=true`.
+Then set in `.env`:
+
+```dotenv
+PWNOTIFY_BIND=127.0.0.1:8080
+PWNOTIFY_BASE_URL=https://pwnotify.example.com
+PWNOTIFY_COOKIE_SECURE=true
+PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12
+```
+
+> **Why `172.16.0.0/12` and not your proxy's IP?** With a published port, Docker rewrites
+> the source address of requests coming from the host, so the app sees the **Docker gateway**
+> (`172.x.0.1`), never your proxy's LAN address. Setting the proxy's own IP (e.g.
+> `10.10.10.200`) silently does nothing: `X-Forwarded-For` is then ignored, every user shares
+> a single login rate limit, and one attacker can lock everyone else out. The range covers
+> Docker's default bridge networks and survives a subnet change after `docker compose down`.
+> If the proxy runs as a container and you don't publish the app port, use the proxy
+> container's own IP instead — that is the tightest setup. See `example.env` for details.
 
 ---
 

@@ -14,15 +14,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 >
 > - **No reverse proxy** (direct access, `PWNOTIFY_BIND=0.0.0.0:8080`): **nothing to do.**
 >   The default is correct — the header is ignored and the real peer IP counts.
-> - **Behind a reverse proxy:** set it, or all users share **one** rate limit and a single
->   attacker can lock everyone else out.
->   - Proxy on the **host**, container bound to `127.0.0.1:8080` → default is already correct.
->   - Proxy as a **container** → set the proxy container's IP, e.g.
->     `PWNOTIFY_TRUSTED_PROXIES=172.24.0.5`, and stop publishing the app port.
+> - **Behind a reverse proxy with the app port published** (the common case, including a
+>   proxy on the host itself): set **`PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12`**.
+>   Counter-intuitive but verified: with a published port, Docker rewrites the source
+>   address of requests coming from the host, so the container sees the **Docker gateway**
+>   (`172.x.0.1`) — *not* your proxy's LAN address. Entering the proxy's own IP (e.g.
+>   `10.10.10.200`) therefore has no effect: the header is ignored, all users share **one**
+>   rate limit, and a single attacker can lock everyone else out.
+> - **Proxy as a container, app port not published:** tightest option — enter the proxy
+>   container's IP, e.g. `PWNOTIFY_TRUSTED_PROXIES=172.24.0.5`.
 >
-> Do **not** set it to the Docker gateway/subnet while the port is published — direct
-> requests from the host arrive via that address and the bypass reopens. Never use `*`.
-> `example.env` documents both scenarios. No other `.env` changes; the mass-send guard
+> Trusting the bridge range means any process on the Docker host could forge the header;
+> that is acceptable when the port is bound to `127.0.0.1`, and better than every user
+> sharing one limit. With `PWNOTIFY_BIND=0.0.0.0` and no proxy, do **not** trust the range.
+> Never use `*`. CIDR ranges and comma-separated lists are supported. `example.env`
+> documents every scenario. No other `.env` changes; the mass-send guard
 > (`schedule.max_notify_ratio`) is a database setting with a safe default.
 
 This is a **security release**. Every issue below was reproduced against a running instance
