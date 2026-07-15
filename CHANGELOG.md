@@ -12,24 +12,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > whose `X-Forwarded-For` header may override the client IP. It closes a bypass of the login
 > rate limit and account lockout.
 >
+> Set it to the address the app actually **sees** — which depends on where the proxy runs:
+>
 > - **No reverse proxy** (direct access, `PWNOTIFY_BIND=0.0.0.0:8080`): **nothing to do.**
 >   The default is correct — the header is ignored and the real peer IP counts.
-> - **Behind a reverse proxy with the app port published** (the common case, including a
->   proxy on the host itself): set **`PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12`**.
->   Counter-intuitive but verified: with a published port, Docker rewrites the source
->   address of requests coming from the host, so the container sees the **Docker gateway**
->   (`172.x.0.1`) — *not* your proxy's LAN address. Entering the proxy's own IP (e.g.
->   `10.10.10.200`) therefore has no effect: the header is ignored, all users share **one**
->   rate limit, and a single attacker can lock everyone else out.
-> - **Proxy as a container, app port not published:** tightest option — enter the proxy
->   container's IP, e.g. `PWNOTIFY_TRUSTED_PROXIES=172.24.0.5`.
+> - **Proxy on a separate server:** enter its LAN IP, e.g.
+>   `PWNOTIFY_TRUSTED_PROXIES=10.10.10.200`. Requests from another host keep their source
+>   address (DNAT only), so this works as written — the tightest and clearest setup.
+>   Requires `PWNOTIFY_BIND=0.0.0.0:8080`; `127.0.0.1` would lock the proxy out entirely.
+> - **Proxy on the same host** as PwNotify: use `PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12`.
+>   Docker rewrites the source of host-local requests, so the app sees the **Docker gateway**
+>   (`172.x.0.1`) and never the host's own LAN address — entering that address would silently
+>   do nothing, leaving all users sharing **one** rate limit.
+> - **Proxy as a container**, app port not published: enter the proxy container's IP.
 >
-> Trusting the bridge range means any process on the Docker host could forge the header;
-> that is acceptable when the port is bound to `127.0.0.1`, and better than every user
-> sharing one limit. With `PWNOTIFY_BIND=0.0.0.0` and no proxy, do **not** trust the range.
-> Never use `*`. CIDR ranges and comma-separated lists are supported. `example.env`
-> documents every scenario. No other `.env` changes; the mass-send guard
-> (`schedule.max_notify_ratio`) is a database setting with a safe default.
+> If you get it wrong, access still works — but the header is ignored and everyone shares a
+> single login rate limit, so one attacker can lock all users out. Verify after upgrading:
+> log in once and check `SELECT ip_address FROM user_session ORDER BY created_at DESC LIMIT 3;`
+> — it must show the real client IP, not a gateway. Never use `*`; comma-separated lists and
+> CIDR ranges work. `example.env` documents every scenario. No other `.env` changes; the
+> mass-send guard (`schedule.max_notify_ratio`) is a database setting with a safe default.
 
 This is a **security release**. Every issue below was reproduced against a running instance
 before it was fixed, and each is covered by a regression test (23 → 59 tests).

@@ -179,23 +179,45 @@ server {
 }
 ```
 
-Then set in `.env`:
+Then set in `.env` — the values depend on **where the proxy runs**.
+
+**Proxy on a separate server** (e.g. `10.10.10.200`):
+
+```dotenv
+PWNOTIFY_BIND=0.0.0.0:8080          # 127.0.0.1 would lock the proxy out
+PWNOTIFY_BASE_URL=https://pwnotify.example.com
+PWNOTIFY_COOKIE_SECURE=true
+PWNOTIFY_TRUSTED_PROXIES=10.10.10.200
+```
+
+Requests from another host keep their source address, so the app really sees the proxy and
+only that address may set `X-Forwarded-For`. Firewall the port so only the proxy reaches it:
+
+```bash
+ufw allow from 10.10.10.200 to any port 8080 proto tcp
+ufw deny 8080
+```
+
+**Proxy on the same host as PwNotify:**
 
 ```dotenv
 PWNOTIFY_BIND=127.0.0.1:8080
 PWNOTIFY_BASE_URL=https://pwnotify.example.com
 PWNOTIFY_COOKIE_SECURE=true
-PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12
+PWNOTIFY_TRUSTED_PROXIES=172.16.0.0/12   # the Docker bridge range, NOT the host's own IP
 ```
 
-> **Why `172.16.0.0/12` and not your proxy's IP?** With a published port, Docker rewrites
-> the source address of requests coming from the host, so the app sees the **Docker gateway**
-> (`172.x.0.1`), never your proxy's LAN address. Setting the proxy's own IP (e.g.
-> `10.10.10.200`) silently does nothing: `X-Forwarded-For` is then ignored, every user shares
-> a single login rate limit, and one attacker can lock everyone else out. The range covers
-> Docker's default bridge networks and survives a subnet change after `docker compose down`.
-> If the proxy runs as a container and you don't publish the app port, use the proxy
-> container's own IP instead — that is the tightest setup. See `example.env` for details.
+> Docker rewrites the source of host-local requests, so the app sees the **Docker gateway**
+> (`172.x.0.1`) and never the host's LAN address — entering that address silently does
+> nothing, and every user then shares a single login rate limit. Cleanest alternative: run
+> the proxy as a container on the same network, drop `ports:` and use its container IP.
+
+**Verify** after changing — log in once, then check that the real client IP was recorded:
+
+```bash
+docker compose exec db psql -U pwnotify -d pwnotify \
+  -c "SELECT ip_address, created_at FROM user_session ORDER BY created_at DESC LIMIT 3;"
+```
 
 ---
 
