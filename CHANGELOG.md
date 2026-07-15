@@ -4,6 +4,14 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The top bar showed "PwNotify" instead of "Audit log"** on the audit page. Its title map
+  did not know `/audit` and fell back to the default. Display only — the page, its guards and
+  the API were unaffected.
+
 ## [0.1.12] — 2026-07-15
 
 ### Added

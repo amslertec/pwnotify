@@ -22,6 +22,7 @@ const TITLE_KEYS: Record<string, string> = {
   '/profile': 'nav.profile',
   '/notifications': 'nav.notifications',
   '/runs': 'nav.runs',
+  '/audit': 'nav.audit',
   '/settings': 'nav.settings',
 }
 
