@@ -556,6 +556,17 @@
     "autoCheck": {
       "title": "Automatically check for updates",
       "description": "Periodically compares with the latest GitHub release and shows a notice window when a newer version exists. Calls the public GitHub API for this."
+    },
+    "retention": {
+      "title": "Retention of personal data",
+      "description": "All periods are off by default (0 = keep forever). Deletion cannot be undone.",
+      "saveButton": "Save retention",
+      "userDays": "Delete departed users after (days)",
+      "userDaysHint": "Accounts that stop appearing in the sync for this long are treated as departed and removed with all their data. Only runs after a successful sync, and never deletes more than half the records — a broken sync must not empty the database. 0 = never delete.",
+      "logDays": "Delete send history after (days)",
+      "logDaysHint": "The history holds UPNs and recipient addresses. 0 = keep forever.",
+      "auditDays": "Delete audit log after (days)",
+      "auditDaysHint": "Compliance usually wants an unbroken history — only set this if a deletion deadline applies. 0 = keep forever."
     }
   },
   "entraGuide": {

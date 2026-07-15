@@ -13,8 +13,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..core.logging import get_logger
 from ..models.run import Run
-from ..repositories import audit_repo, entra_repo, exclusion_repo, run_repo
-from . import alerts
+from ..repositories import (
+    audit_repo,
+    entra_repo,
+    exclusion_repo,
+    notification_repo,
+    run_repo,
+)
+from . import alerts, retention
 from .expiry import due_reminder_stage
 from .graph import GraphClient, GraphConfig
 from .graph.sync import sync_users
@@ -49,6 +55,43 @@ def mass_send_blocked_reason(*, due: int, checked: int, max_ratio: float) -> str
             "nichts versendet. Einstellungen prüfen oder einen Testlauf (Dry-Run) starten."
         )
     return None
+
+
+async def _apply_privacy_retention(
+    session: Any, settings: dict[str, Any], *, sync_ok: bool
+) -> list[dict[str, Any]]:
+    """Fristen für personenbezogene Daten anwenden. Gibt Protokollschritte zurück.
+
+    ``sync_ok`` ist die entscheidende Sicherung: Nur wenn der Graph-Sync in diesem Lauf
+    sauber durchlief, ist ``last_synced_at`` aussagekräftig. Nach einem gescheiterten Sync
+    wirken alle Konten veraltet — Löschen wäre dann eine Katastrophe mit Ansage.
+    """
+    schritte: list[dict[str, Any]] = []
+
+    user_tage = int(settings.get("privacy.user_retention_days") or 0)
+    if user_tage > 0 and sync_ok:
+        faellig = await entra_repo.count_stale(session, days=user_tage)
+        gesamt = await entra_repo.count_all(session)
+        grund = retention.purge_blocked_reason(to_delete=faellig, total=gesamt)
+        if grund:
+            log.error("user_retention_blocked", to_delete=faellig, total=gesamt)
+            schritte.append({"step": "user_retention", "blocked": True, "reason": grund})
+        elif faellig:
+            entfernt = await entra_repo.delete_stale(session, days=user_tage)
+            log.info("user_retention_applied", removed=entfernt, days=user_tage)
+            schritte.append({"step": "user_retention", "removed": entfernt})
+    elif user_tage > 0 and not sync_ok:
+        log.warning("user_retention_skipped", reason="sync_failed")
+        schritte.append({"step": "user_retention", "skipped": "sync_failed"})
+
+    log_tage = int(settings.get("privacy.log_retention_days") or 0)
+    if log_tage > 0:
+        # Historie: unabhängig vom Sync, das Alter der Einträge stimmt immer.
+        entfernt = await notification_repo.delete_older_than(session, days=log_tage)
+        if entfernt:
+            log.info("log_retention_applied", removed=entfernt, days=log_tage)
+            schritte.append({"step": "log_retention", "removed": entfernt})
+    return schritte
 
 
 async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[str]:
@@ -128,7 +171,7 @@ async def execute_run(
                 detail.append({"step": "sso_sync", "error": str(exc)})
                 log.warning("sso_sync_failed", error=str(exc))
 
-            # 1c) Audit-Protokoll auf die eingestellte Frist kürzen (0 = unbegrenzt).
+            # 1c) Aufbewahrungsfristen anwenden (alle standardmässig aus).
             try:
                 geloescht = await audit_repo.purge_older_than(
                     session, days=int(settings.get("audit.retention_days") or 0)
@@ -137,6 +180,17 @@ async def execute_run(
                     detail.append({"step": "audit_purge", "removed": geloescht})
             except Exception as exc:
                 log.warning("audit_purge_failed", error=str(exc))
+
+            # Ausgeschiedene Konten nur entfernen, wenn der Sync ODER die Frist es hergibt.
+            # Wichtig: Bei einem gescheiterten Sync altern alle Einträge gleichzeitig —
+            # dann darf hier nichts gelöscht werden, sonst räumt eine Störung den Bestand.
+            try:
+                for schritt in await _apply_privacy_retention(
+                    session, settings, sync_ok=status == "success"
+                ):
+                    detail.append(schritt)
+            except Exception as exc:
+                log.warning("privacy_retention_failed", error=str(exc))
 
             # 2) Benachrichtigungen
             excluded_ids = await _resolve_excluded_ids(session, settings)

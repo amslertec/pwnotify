@@ -30,6 +30,10 @@ class AppUser(SQLModel, table=True):
     totp_enabled: bool = Field(default=False)
     # Recovery-Codes: JSON-Array von SHA-256-Hex-Hashes ungenutzter Codes.
     recovery_codes: str | None = Field(default=None, sa_column=Column(Text))
+    # Zuletzt verbrauchter TOTP-Zeitschritt (30-Sekunden-Fenster seit Epoch). Ein Code
+    # bleibt rund 90 s gültig (valid_window=1) und wäre ohne diese Sperre in der Zeit
+    # mehrfach einsetzbar — wer ihn abfängt, käme damit ein zweites Mal hinein.
+    totp_last_step: int | None = Field(default=None)
 
     failed_login_count: int = Field(default=0)
     locked_until: dt.datetime | None = Field(

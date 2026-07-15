@@ -556,6 +556,17 @@
     "autoCheck": {
       "title": "Automatisch auf Updates prüfen",
       "description": "Vergleicht periodisch mit dem neuesten GitHub-Release und zeigt bei neuerer Version ein Hinweis-Fenster. Ruft dazu die öffentliche GitHub-API auf."
+    },
+    "retention": {
+      "title": "Aufbewahrung personenbezogener Daten",
+      "description": "Alle Fristen sind standardmässig aus (0 = unbegrenzt aufbewahren). Löschen kann nicht rückgängig gemacht werden.",
+      "saveButton": "Fristen speichern",
+      "userDays": "Ausgeschiedene Benutzer löschen nach (Tage)",
+      "userDaysHint": "Konten, die so lange nicht mehr im Sync auftauchen, gelten als ausgeschieden und werden mit allen Daten entfernt. Greift nur nach einem erfolgreichen Sync und nie für mehr als die Hälfte des Bestands — ein gestörter Sync soll nicht die Datenbank leeren. 0 = nie löschen.",
+      "logDays": "Versandhistorie löschen nach (Tage)",
+      "logDaysHint": "Die Historie enthält UPNs und Empfängeradressen. 0 = unbegrenzt aufbewahren.",
+      "auditDays": "Audit-Protokoll löschen nach (Tage)",
+      "auditDaysHint": "Für Compliance ist eine lückenlose Historie meist erwünscht — nur setzen, wenn eine Löschfrist vorgeschrieben ist. 0 = unbegrenzt aufbewahren."
     }
   },
   "entraGuide": {

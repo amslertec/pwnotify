@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import secrets
+import time
 
 import pyotp
 import qrcode
@@ -27,6 +28,27 @@ def verify_totp(secret: str, code: str) -> bool:
         return False
     # valid_window=1 -> ±30s Toleranz gegen Uhr-Drift.
     return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+def matching_step(secret: str, code: str, *, now: float | None = None) -> int | None:
+    """Zu welchem Zeitschritt gehört der Code? ``None``, wenn er nicht passt.
+
+    Grundlage des Replay-Schutzes: Ein TOTP-Code ist wegen ``valid_window=1`` rund 90 s
+    lang gültig und liesse sich in der Zeit mehrfach verwenden. Wer ihn abfängt
+    (Schulterblick, Mitschnitt), käme damit ein zweites Mal hinein. Der Aufrufer merkt
+    sich den zurückgegebenen Schritt und lehnt ihn beim nächsten Mal ab.
+    """
+    code = (code or "").strip().replace(" ", "")
+    if not code.isdigit():
+        return None
+    totp = pyotp.TOTP(secret)
+    jetzt = now if now is not None else time.time()
+    # Gleiches Fenster wie verify_totp: aktueller Schritt ± 1.
+    aktuell = int(jetzt // totp.interval)
+    for schritt in (aktuell, aktuell - 1, aktuell + 1):
+        if secrets.compare_digest(totp.at(schritt * totp.interval), code):
+            return schritt
+    return None
 
 
 def qr_png_data_uri(uri: str) -> str:

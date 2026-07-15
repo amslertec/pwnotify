@@ -4,7 +4,31 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.13] — 2026-07-15
+
+### Added
+
+- **Retention for personal data** (`privacy.user_retention_days`, `privacy.log_retention_days`,
+  both default `0` = keep forever). PwNotify mirrors Entra accounts (name, UPN, mail addresses)
+  and records every send. Neither was ever deleted: people who left the tenant long ago stayed
+  stored in full, and the send history kept their addresses indefinitely. With 1000+ accounts
+  that is a data-protection issue, not cosmetics. Accounts that stop appearing in the sync for
+  the configured number of days are removed; the send history is trimmed by age.
+  Guarded twice, because deletion cannot be undone: retention only runs after a **successful**
+  sync (a failed one makes every account look stale at once), and it refuses to delete more
+  than half the records in one go. Verified against the database: 5 of 112 departures are
+  removed, while a simulated broken sync (100 of 107) is blocked and reported.
+
+### Security
+
+- **TOTP codes are now single-use.** A code stays valid for about 90 seconds (`valid_window=1`),
+  so anyone who captured one — shoulder surfing, a recording, malware — could use it a second
+  time within that window, which is exactly what the second factor is meant to prevent. The
+  consumed time step is now stored per account and rejected on reuse. Verified against a running
+  instance: the first sign-in succeeds, the identical code afterwards is refused and recorded in
+  the audit log as `totp_replay`. Clock-drift tolerance is unchanged.
+- **Rate limit on `/2fa/setup`, `/2fa/enable` and `/2fa/disable`.** Only sign-in was limited, so
+  a stolen access token could hammer the disable endpoint with guessed codes until 2FA was off.
 
 ### Fixed
 
@@ -416,6 +440,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.13]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.13
 [0.1.12]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.12
 [0.1.11]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.11
 [0.1.10]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.10

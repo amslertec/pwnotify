@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,3 +85,27 @@ async def count_sent_since(session: AsyncSession, since: Any) -> int:
         )
     )
     return int(res.scalar_one())
+
+
+async def count_all(session: AsyncSession) -> int:
+    return int(
+        (await session.execute(select(func.count()).select_from(NotificationLog))).scalar_one()
+    )
+
+
+async def delete_older_than(session: AsyncSession, *, days: int) -> int:
+    """Versandhistorie kürzen. Enthält UPNs und Empfängeradressen."""
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
+    n = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(NotificationLog)
+                .where(NotificationLog.created_at < cutoff)
+            )
+        ).scalar_one()
+    )
+    if n:
+        await session.execute(sa_delete(NotificationLog).where(NotificationLog.created_at < cutoff))
+        await session.commit()
+    return n

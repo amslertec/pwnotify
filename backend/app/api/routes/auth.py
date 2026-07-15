@@ -32,6 +32,7 @@ from ...core.twofa import (
     generate_recovery_codes,
     generate_secret,
     match_recovery_code,
+    matching_step,
     provisioning_uri,
     qr_png_data_uri,
     verify_totp,
@@ -272,8 +273,23 @@ async def two_factor_verify(
             "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
         )
 
-    ok = verify_totp(decrypt(user.totp_secret), body.code)
-    if not ok:
+    # Jeder TOTP-Code gilt nur einmal. Er ist rund 90 s gültig; ohne diese Sperre käme
+    # jemand, der ihn abfängt (Schulterblick, Mitschnitt), damit ein zweites Mal hinein.
+    schritt = matching_step(decrypt(user.totp_secret), body.code)
+    ok = schritt is not None and schritt != user.totp_last_step
+    if schritt is not None and schritt == user.totp_last_step:
+        log.warning("totp_replay_blocked", username=user.username)
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "totp_replay"},
+        )
+    if ok:
+        user.totp_last_step = schritt
+    else:
         # Recovery-Code als Fallback (verbraucht ihn).
         hashes: list[str] = json.loads(user.recovery_codes or "[]")
         matched = match_recovery_code(body.code, hashes)
@@ -527,7 +543,10 @@ async def change_password(
 # 2FA (TOTP) — Verwaltung (nur lokale Konten)
 # --------------------------------------------------------------------------- #
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)
-async def two_factor_setup(user: CurrentUser, session: SessionDep) -> TwoFactorSetupOut:
+@limiter.limit(_settings.login_rate_limit)
+async def two_factor_setup(
+    request: Request, user: CurrentUser, session: SessionDep
+) -> TwoFactorSetupOut:
     if user.is_sso:
         raise PwNotifyError("2FA ist nur für lokale Konten verfügbar.", code="twofa_local_only")
     secret = generate_secret()
@@ -539,6 +558,7 @@ async def two_factor_setup(user: CurrentUser, session: SessionDep) -> TwoFactorS
 
 
 @router.post("/2fa/enable", response_model=RecoveryCodesOut)
+@limiter.limit(_settings.login_rate_limit)
 async def two_factor_enable(
     request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
 ) -> RecoveryCodesOut:
@@ -556,6 +576,7 @@ async def two_factor_enable(
 
 
 @router.post("/2fa/disable", response_model=UserOut)
+@limiter.limit(_settings.login_rate_limit)
 async def two_factor_disable(
     request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
 ) -> UserOut:

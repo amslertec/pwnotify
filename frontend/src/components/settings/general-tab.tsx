@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '../ui/button'
+import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
-import { Section } from './section'
+import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import type { VersionInfo } from '@/lib/types'
@@ -14,6 +15,10 @@ import type { VersionInfo } from '@/lib/types'
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
   const [updateCheck, setUpdateCheck] = useState(Boolean(settings['app.update_check'] ?? true))
+  // Aufbewahrungsfristen in Tagen; 0 = unbegrenzt (Standard).
+  const [auditDays, setAuditDays] = useState(String(settings['audit.retention_days'] ?? 0))
+  const [userDays, setUserDays] = useState(String(settings['privacy.user_retention_days'] ?? 0))
+  const [logDays, setLogDays] = useState(String(settings['privacy.log_retention_days'] ?? 0))
   const qc = useQueryClient()
   const { data: ver } = useQuery({
     queryKey: ['version'],
@@ -95,6 +100,61 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
             <p className="text-muted-foreground text-xs">{t('generalTab.autoCheck.description')}</p>
           </div>
           <Switch checked={updateCheck} onCheckedChange={setUpdateCheck} />
+        </div>
+      </Section>
+      <Section
+        title={t('generalTab.retention.title')}
+        description={t('generalTab.retention.description')}
+        footer={
+          <Button
+            onClick={() =>
+              save({
+                'audit.retention_days': Number(auditDays) || 0,
+                'privacy.user_retention_days': Number(userDays) || 0,
+                'privacy.log_retention_days': Number(logDays) || 0,
+              })
+            }
+            loading={saving}
+          >
+            {t('generalTab.retention.saveButton')}
+          </Button>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label={t('generalTab.retention.userDays')}
+            hint={t('generalTab.retention.userDaysHint')}
+          >
+            <Input
+              type="number"
+              min={0}
+              value={userDays}
+              onChange={(e) => setUserDays(e.target.value)}
+            />
+          </Field>
+          <Field
+            label={t('generalTab.retention.logDays')}
+            hint={t('generalTab.retention.logDaysHint')}
+          >
+            <Input
+              type="number"
+              min={0}
+              value={logDays}
+              onChange={(e) => setLogDays(e.target.value)}
+            />
+          </Field>
+          <Field
+            label={t('generalTab.retention.auditDays')}
+            hint={t('generalTab.retention.auditDaysHint')}
+            className="sm:col-span-2"
+          >
+            <Input
+              type="number"
+              min={0}
+              value={auditDays}
+              onChange={(e) => setAuditDays(e.target.value)}
+            />
+          </Field>
         </div>
       </Section>
     </div>

@@ -81,6 +81,16 @@ SETTINGS: dict[str, SettingSpec] = {
     # braucht (Datenschutz), setzt hier z. B. 365; ältere Einträge werden nach jedem
     # geplanten Lauf entfernt.
     "audit.retention_days": SettingSpec(0),
+    # ---- Aufbewahrung personenbezogener Daten (alle 0 = unbegrenzt) ----
+    # Entra-Konten, die seit so vielen Tagen nicht mehr im Sync auftauchen, gelten als
+    # ausgeschieden und werden entfernt. Ohne Frist bleiben Name, UPN und Mailadressen
+    # von Personen gespeichert, die den Tenant längst verlassen haben.
+    # Ein Sanity-Schutz verhindert, dass ein tagelang fehlgeschlagener Sync — nach dem
+    # alle Einträge gleich alt wirken — den Bestand leerräumt.
+    "privacy.user_retention_days": SettingSpec(0),
+    # Versandhistorie (notification_log) und Lauf-Protokolle älter als X Tage entfernen.
+    # Beide enthalten UPNs und Empfängeradressen.
+    "privacy.log_retention_days": SettingSpec(0),
     # Sicherung gegen Massenversand: Würde ein Lauf mehr als diesen Anteil aller
     # geprüften Benutzer benachrichtigen, ist das fast immer eine Fehlkonfiguration
     # (z. B. falsche Gültigkeitsdauer) und nicht ein realer Stichtag. Der Lauf bricht

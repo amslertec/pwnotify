@@ -6,6 +6,7 @@ import datetime as dt
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -182,3 +183,28 @@ async def expiry_histogram(session: AsyncSession, days: int = 30) -> list[dict[s
         }
         for i in range(days + 1)
     ]
+
+
+async def count_all(session: AsyncSession) -> int:
+    return int((await session.execute(select(func.count()).select_from(EntraUser))).scalar_one())
+
+
+async def count_stale(session: AsyncSession, *, days: int) -> int:
+    """Wie viele Konten wurden seit ``days`` nicht mehr synchronisiert?"""
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
+    stmt = select(func.count()).select_from(EntraUser).where(EntraUser.last_synced_at < cutoff)
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def delete_stale(session: AsyncSession, *, days: int) -> int:
+    """Konten entfernen, die seit ``days`` nicht mehr im Sync auftauchten.
+
+    Der Aufrufer muss vorher :func:`services.retention.purge_blocked_reason` prüfen —
+    ein fehlgeschlagener Sync lässt sonst den ganzen Bestand veraltet aussehen.
+    """
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
+    n = await count_stale(session, days=days)
+    if n:
+        await session.execute(sa_delete(EntraUser).where(EntraUser.last_synced_at < cutoff))
+        await session.commit()
+    return n
