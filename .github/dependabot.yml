@@ -48,3 +48,16 @@ updates:
       # Radix/shadcn-Pakete kommen als Familie — einzeln wäre das PR-Rauschen enorm.
       radix:
         patterns: ["@radix-ui/*"]
+    ignore:
+      # Die Node-Typen müssen zur Laufzeit passen: gebaut wird mit node:24
+      # (Dockerfile) und node-version 24 (CI). Neuere Typen würden APIs als
+      # vorhanden zusichern, die es zur Laufzeit nicht gibt — der Compiler wäre
+      # zufrieden, die App liefe auf die Nase. Beim Anheben von Node hier mitziehen.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript-Majors nur bewusst und von Hand: Der Sprung auf 7.0 (nativer
+      # Go-Compiler) liess den Build mit "Cannot read properties of undefined
+      # (reading 'Cjs')" scheitern — das Build-Ökosystem ist noch nicht so weit.
+      # Minor- und Patch-Updates kommen weiterhin automatisch.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
