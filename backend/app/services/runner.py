@@ -5,6 +5,7 @@ Fehler einzelner User oder eines Teilschritts dürfen den Lauf nie abbrechen.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 from typing import Any
 
@@ -95,6 +96,8 @@ async def execute_run(
         status = "success"
         error: str | None = None
         started = dt.datetime.now(dt.UTC)
+        # Vorbelegt, damit das finally auch greift, wenn der Lauf vorher scheitert.
+        sender: Any = None
 
         try:
             # 1) Graph-Sync
@@ -211,6 +214,13 @@ async def execute_run(
             status = "error"
             error = str(exc)
             log.error("run_failed", error=str(exc))
+        finally:
+            # Gepoolte Verbindungen des Mail-Versands freigeben — sonst bleiben sie über
+            # den Lauf hinaus offen. Auch im Fehlerfall.
+            close = getattr(getattr(sender, "client", None), "aclose", None)
+            if close is not None:
+                with contextlib.suppress(Exception):
+                    await close()
 
         if failed and status == "success":
             status = "partial"

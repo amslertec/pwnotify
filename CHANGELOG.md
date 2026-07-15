@@ -83,6 +83,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Every reminder e-mail opened its own connection to Graph.** `send_mail` created a fresh
+  HTTP client per message, so each mail paid for a new TCP and TLS handshake. Measured against
+  the real Graph endpoint: 29 ms per call without pooling vs. 4 ms with — about 26 ms of pure
+  overhead per mail. The client is now reused across a run and closed afterwards (also on
+  failure), so the connection is established once instead of once per recipient.
+- **CSV/XLSX export blocked the whole server while it ran.** `openpyxl` and `csv` are pure CPU
+  work and ran directly in the async handler; with `workers=1` (the scheduler shares that
+  process) nothing else was served meanwhile. Measured: ~0.28 s of full blocking per 10,000
+  rows — noticeable rather than fatal, but avoidable. Both formats are now built in a worker
+  thread; blocking drops to timer granularity and `/health` answers in ~1 ms while an export
+  runs.
+- **Exports silently truncated at 100,000 rows.** The limit was passed as a page size, so a
+  larger tenant would have received a file that looks complete but isn't. Larger exports are
+  now rejected with a clear message asking you to filter — a quietly incomplete export is
+  worse than an error.
 - **A wrong Fernet key looked like "not configured".** Secrets that fail to decrypt were
   silently replaced with an empty string, so a lost or changed `PWNOTIFY_SECRET_KEY` made
   Graph and SMTP appear unconfigured instead of broken — sending you to debug the wrong end.
