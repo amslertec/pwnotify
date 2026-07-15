@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     timezone: str = "Europe/Zurich"
     port: int = 8080
 
+    # Wem darf ``X-Forwarded-For`` geglaubt werden? Nur Requests von diesen Peers
+    # dürfen die Client-IP überschreiben. Der Wert ist sicherheitsrelevant: das
+    # Rate-Limit und der Login-Lockout schlüsseln auf die Client-IP auf — vertraut
+    # man dem Header pauschal ("*"), setzt ein Angreifer ihn selbst und umgeht
+    # beide Schutzmechanismen vollständig.
+    # Hinter einem Reverse-Proxy: dessen IP bzw. Netz eintragen (z. B. "172.18.0.0/16").
+    trusted_proxies: str = "127.0.0.1"
+
     # ---- Auth / JWT ----
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 14

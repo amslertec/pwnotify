@@ -148,12 +148,52 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
     )
 
 
+_MAX_REMOVAL_RATIO = 0.5
+"""Ab welchem Anteil ein Sync als Fehlkonfiguration statt als Abgang gilt."""
+
+
+def removal_blocked_reason(
+    *, desired_count: int, existing_count: int, removal_count: int
+) -> str | None:
+    """Prüft, ob eine geplante Löschung plausibel ist. Gibt den Grund zurück, wenn nicht.
+
+    Der Sync entfernt SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind. Zwei
+    Fälle sind fast immer ein Konfigurationsfehler statt ein echter Abgang — und beide
+    enden damit, dass sich der Betreiber aus der eigenen Anwendung aussperrt:
+
+    * Die Soll-Menge ist leer (leergeräumte Gruppe, falsche Group-ID): niemand entfernt
+      absichtlich alle Admins auf einmal.
+    * Der Sync will die Mehrheit aller SSO-Benutzer entfernen.
+
+    Im Zweifel wird nicht gelöscht: ein zu viel behaltener Benutzer ist reparabel,
+    ein Aussperren aller Administratoren nicht.
+    """
+    if removal_count == 0:
+        return None
+    if existing_count == 0:
+        return None
+    if desired_count == 0:
+        return (
+            "Die Admin-/Auditor-Gruppe ist leer — kein Abgleich möglich. "
+            "Es wurde nichts entfernt (Schutz vor Aussperrung). "
+            "Gruppen-ID und Mitgliedschaften in den Einstellungen prüfen."
+        )
+    if removal_count > existing_count * _MAX_REMOVAL_RATIO:
+        return (
+            f"Der Abgleich würde {removal_count} von {existing_count} SSO-Benutzern "
+            "entfernen — das sieht nach einer Fehlkonfiguration aus. Es wurde nichts "
+            "entfernt (Schutz vor Aussperrung)."
+        )
+    return None
+
+
 async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
     """Gleicht die SSO-Benutzer mit der Entra-Admin- und -Auditor-Gruppe ab.
 
     Mitglieder der Admin-Gruppe erhalten die Rolle ``admin``, Mitglieder der
     Auditor-Gruppe ``auditor`` (Admin hat Vorrang). Frühere SSO-Benutzer, die in
-    keiner der Gruppen mehr sind, werden komplett entfernt.
+    keiner der Gruppen mehr sind, werden entfernt — abgesichert durch
+    :func:`removal_blocked_reason`.
     """
     admin_group = str(settings.get("oidc.admin_group_id") or "")
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
@@ -201,9 +241,25 @@ async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dic
         synced += 1
 
     # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen.
-    to_remove = [
-        u.id for u in await user_repo.list_sso(session) if u.username.lower() not in desired
-    ]
+    existing_sso = await user_repo.list_sso(session)
+    to_remove = [u.id for u in existing_sso if u.username.lower() not in desired]
+
+    blocked = removal_blocked_reason(
+        desired_count=len(desired),
+        existing_count=len(existing_sso),
+        removal_count=len(to_remove),
+    )
+    if blocked:
+        await session.commit()  # Rollen-/Namensabgleich oben behalten, nur nicht löschen
+        log.error(
+            "sso_removal_blocked",
+            reason=blocked,
+            desired=len(desired),
+            existing=len(existing_sso),
+            would_remove=len(to_remove),
+        )
+        return {"synced": synced, "removed": 0, "removal_blocked": 1}
+
     for uid in to_remove:
         if uid is not None:
             await user_repo.delete(session, uid)

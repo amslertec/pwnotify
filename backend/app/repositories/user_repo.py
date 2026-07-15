@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,8 +60,14 @@ async def list_sso(session: AsyncSession) -> list[AppUser]:
 async def delete(session: AsyncSession, user_id: int) -> None:
     user = await session.get(AppUser, user_id)
     if user is not None:
-        for us in await list_sessions(session, user_id):
-            await session.delete(us)
+        # ALLE Sessions zuerst und explizit entfernen. Zwei Fallstricke:
+        # 1. `list_sessions` blendet widerrufene/abgelaufene Sessions aus, deren
+        #    Fremdschlüssel aber weiter auf den Benutzer zeigt — nach einem Logout
+        #    scheiterte das Löschen so an user_session_user_id_fkey.
+        # 2. Zwischen AppUser und UserSession ist keine Relationship definiert, der
+        #    ORM kennt die Abhängigkeit also nicht und würde die Reihenfolge frei
+        #    wählen. Ein direktes DELETE läuft sofort und damit garantiert zuerst.
+        await session.execute(sa_delete(UserSession).where(UserSession.user_id == user_id))
         await session.delete(user)
         await session.commit()
 

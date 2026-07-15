@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core.config import get_settings
 from .graph import GraphClient, GraphConfig, GraphConnectionResult
+from .graph.client import GROUP_PERMISSION
 from .mail import build_sender
 from .settings_schema import MASK
 from .templating import build_context, email_logo, render
@@ -37,7 +38,20 @@ async def test_graph(
         return GraphConnectionResult(
             connected=False, error="Tenant-ID, Client-ID und Client-Secret sind erforderlich."
         )
-    return await GraphClient(cfg).test_connection()
+    return await GraphClient(cfg).test_connection(
+        extra_permissions=required_group_permissions(settings)
+    )
+
+
+def required_group_permissions(settings: dict[str, Any]) -> list[str]:
+    """``GroupMember.Read.All`` nur verlangen, wenn eine Gruppe konfiguriert ist.
+
+    Sonst meldete der Verbindungstest „alle Berechtigungen vorhanden“, während der
+    gruppenbasierte Sync und das SSO-Rollen-Mapping mit 403 scheiterten — die Diagnose,
+    auf die man sich beim Einrichten verlässt, war also falsch.
+    """
+    keys = ("sync.group_id", "oidc.admin_group_id", "oidc.auditor_group_id")
+    return [GROUP_PERMISSION] if any(settings.get(k) for k in keys) else []
 
 
 async def send_test_mail(settings: dict[str, Any], *, to: str, locale: str, base_url: str) -> None:

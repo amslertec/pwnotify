@@ -14,6 +14,7 @@ from ..core.logging import get_logger
 from ..models.run import Run
 from ..repositories import entra_repo, exclusion_repo, run_repo
 from . import alerts
+from .expiry import due_reminder_stage
 from .graph import GraphClient, GraphConfig
 from .graph.sync import sync_users
 from .mail import build_sender
@@ -21,6 +22,32 @@ from .notifier import notify_user
 from .settings_service import SettingsService, effective_base_url
 
 log = get_logger("runner")
+
+# Unterhalb dieser Menge wird nie blockiert: bei wenigen Konten ist ein hoher Anteil
+# Fälliger normal (3 von 5 = 60 %) und harmlos.
+_MASS_SEND_MIN_COUNT = 20
+
+
+def mass_send_blocked_reason(*, due: int, checked: int, max_ratio: float) -> str | None:
+    """Prüft, ob ein Lauf verdächtig viele Benachrichtigungen verschicken würde.
+
+    Ein einzelner Konfigurationsfehler — etwa eine falsche Gültigkeitsdauer — lässt
+    schlagartig alle Konten als fällig erscheinen. Ohne Bremse gingen dann tausende
+    Mails an echte Empfänger; das ist nicht rückholbar und beim Kunden ein Vertrauens-
+    schaden. Gibt den Grund zurück, wenn abgebrochen werden soll, sonst ``None``.
+    """
+    if max_ratio <= 0 or due == 0 or checked == 0:
+        return None
+    if due < _MASS_SEND_MIN_COUNT:
+        return None
+    if due > checked * max_ratio:
+        return (
+            f"Der Lauf würde {due} von {checked} Benutzern benachrichtigen "
+            f"({due / checked:.0%}, erlaubt sind {max_ratio:.0%}). Das deutet auf eine "
+            "Fehlkonfiguration hin (z. B. Gültigkeitsdauer oder Sync-Gruppe). Es wurde "
+            "nichts versendet. Einstellungen prüfen oder einen Testlauf (Dry-Run) starten."
+        )
+    return None
 
 
 async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[str]:
@@ -85,7 +112,14 @@ async def execute_run(
                 from . import oidc
 
                 sso_stats = await oidc.sync_sso_users(session, settings)
-                if sso_stats["synced"] or sso_stats["removed"]:
+                if sso_stats.get("removal_blocked"):
+                    # Sichtbar machen: ein blockierter Abgleich heisst, dass die
+                    # Gruppenkonfiguration nicht stimmt. Der Lauf darf dann nicht
+                    # "success" melden, sonst bleibt die Fehlkonfiguration unbemerkt —
+                    # "partial" löst zusätzlich den Admin-Alert aus.
+                    status = "partial"
+                    detail.append({"step": "sso_sync", **sso_stats})
+                elif sso_stats["synced"] or sso_stats["removed"]:
                     detail.append({"step": "sso_sync", **sso_stats})
             except Exception as exc:
                 detail.append({"step": "sso_sync", "error": str(exc)})
@@ -96,6 +130,30 @@ async def execute_run(
             sender = build_sender(settings)
             users = await entra_repo.iter_active_for_notification(session)
             checked = len(users)
+
+            # Vor dem ersten Versand abschätzen, wie viele Mails anstünden. Bewusst ohne
+            # die Dedup-Abfrage (eine DB-Abfrage je Benutzer) — als Obergrenze reicht das,
+            # und genau der Fehlerfall "plötzlich sind alle fällig" wird so erkannt,
+            # bevor die erste Mail rausgeht.
+            due_estimate = sum(
+                1
+                for u in users
+                if u.days_left is not None
+                and due_reminder_stage(
+                    days_left=u.days_left, reminder_days=reminder_days, already_sent=set()
+                )
+                is not None
+            )
+            mass_block = mass_send_blocked_reason(
+                due=due_estimate,
+                checked=checked,
+                max_ratio=float(settings.get("schedule.max_notify_ratio") or 0),
+            )
+            if mass_block and not dry_run:
+                status = "partial"
+                detail.append({"step": "mass_send_guard", "blocked": True, "reason": mass_block})
+                log.error("mass_send_blocked", due=due_estimate, checked=checked)
+                users = []
 
             for user in users:
                 try:

@@ -35,12 +35,12 @@ services:
       - internal
 
   app:
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.10}
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.11}
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: "0.1.10"
+        VERSION: "0.1.11"
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +49,7 @@ services:
       PWNOTIFY_SECRET_KEY: ${PWNOTIFY_SECRET_KEY:-}
       PWNOTIFY_BASE_URL: ${PWNOTIFY_BASE_URL:-http://localhost:8080}
       PWNOTIFY_COOKIE_SECURE: ${PWNOTIFY_COOKIE_SECURE:-false}
+      PWNOTIFY_TRUSTED_PROXIES: ${PWNOTIFY_TRUSTED_PROXIES:-127.0.0.1}
       PWNOTIFY_LOG_LEVEL: ${PWNOTIFY_LOG_LEVEL:-INFO}
       PWNOTIFY_LOG_JSON: ${PWNOTIFY_LOG_JSON:-true}
       PWNOTIFY_TIMEZONE: ${PWNOTIFY_TIMEZONE:-Europe/Zurich}

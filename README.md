@@ -64,13 +64,14 @@ once:
 4. **Certificates & secrets** → **New client secret** → copy the **Value** immediately
    (you cannot see it again).
 5. **API permissions** → **Add a permission** → **Microsoft Graph** → **Application
-   permissions**, and add all three:
+   permissions**:
 
    | Permission | Why |
    |---|---|
    | `User.Read.All` | read users, UPN, `lastPasswordChangeDateTime`, `passwordPolicies` |
    | `Domain.Read.All` | read `passwordValidityPeriodInDays` per domain |
    | `Mail.Send` | send reminder e-mails (Graph backend only) |
+   | `GroupMember.Read.All` | **only if** you scope the sync to a group or use Microsoft SSO with admin/auditor groups — reads group members. Without it those queries fail with 403. |
 
 6. Click **Grant admin consent for &lt;tenant&gt;** — the status column must turn green.
 
@@ -124,7 +125,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.1.10`.
+`amslertec/pwnotify:0.1.11`.
 
 ### From source (development)
 

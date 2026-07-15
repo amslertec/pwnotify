@@ -55,12 +55,26 @@ and, where appropriate, a `.trivyignore` entry referencing this section.
 
 ## Required Microsoft Graph permissions (least privilege)
 
-PwNotify requests only three **application** permissions:
+PwNotify requests three **application** permissions, plus one that is only needed for
+optional group features:
 
 | Permission | Purpose |
 |---|---|
 | `User.Read.All` | Read users, UPN, `lastPasswordChangeDateTime`, `passwordPolicies` |
 | `Domain.Read.All` | Read `passwordValidityPeriodInDays` per domain |
 | `Mail.Send` | Send reminder e-mails (Graph backend only) |
+| `GroupMember.Read.All` | **Optional** — only when the sync is scoped to a group or Microsoft SSO maps admin/auditor groups. Read group members. |
 
-It never requests write access to directory objects.
+It never requests write access to directory objects. The connection test only demands
+`GroupMember.Read.All` once a group is actually configured, so instances that don't use
+group features are not pushed toward a permission they don't need.
+
+`Mail.Send` (application) allows sending as **any** mailbox in the tenant. To limit the
+blast radius of a leaked client secret, scope it to the single sender mailbox with an
+[application access policy](https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access):
+
+```powershell
+New-ApplicationAccessPolicy -AppId <client-id> `
+  -PolicyScopeGroupId <mail-enabled-security-group> `
+  -AccessRight RestrictAccess -Description "PwNotify: sender mailbox only"
+```

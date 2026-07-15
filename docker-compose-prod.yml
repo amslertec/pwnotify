@@ -43,8 +43,8 @@ services:
 
   app:
     # Von Docker Hub. Für unveränderliche Deployments per Digest pinnen, z. B.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.10@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.10}
+    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.11@sha256:<digest>
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.11}
     pull_policy: always
     depends_on:
       db:
@@ -54,6 +54,9 @@ services:
       PWNOTIFY_SECRET_KEY: ${PWNOTIFY_SECRET_KEY:-}
       PWNOTIFY_BASE_URL: ${PWNOTIFY_BASE_URL:-http://localhost:8080}
       PWNOTIFY_COOKIE_SECURE: ${PWNOTIFY_COOKIE_SECURE:-true}
+      # Wem darf X-Forwarded-For geglaubt werden? Hinter einem Reverse-Proxy dessen
+      # Netz eintragen — sonst teilen sich alle Nutzer ein Rate-Limit. Nie "*".
+      PWNOTIFY_TRUSTED_PROXIES: ${PWNOTIFY_TRUSTED_PROXIES:-127.0.0.1}
       PWNOTIFY_LOG_LEVEL: ${PWNOTIFY_LOG_LEVEL:-INFO}
       PWNOTIFY_LOG_JSON: ${PWNOTIFY_LOG_JSON:-true}
       PWNOTIFY_TIMEZONE: ${PWNOTIFY_TIMEZONE:-Europe/Zurich}

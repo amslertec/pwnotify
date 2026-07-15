@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import jwt
 from argon2 import PasswordHasher
@@ -43,6 +43,37 @@ def needs_rehash(hashed: str) -> bool:
         return _ph.check_needs_rehash(hashed)
     except InvalidHashError:
         return True
+
+
+# --------------------------------------------------------------------------- #
+# Kontosperre nach Fehlversuchen
+#
+# Gilt bewusst für BEIDE Faktoren. Zählt nur das Passwort, bleibt der zweite Faktor
+# unbegrenzt ratbar — wer das Passwort schon hat, bräuchte dann nur Zeit.
+# --------------------------------------------------------------------------- #
+class _Lockable(Protocol):
+    """Was zum Sperren nötig ist — hält die Funktionen von AppUser entkoppelt."""
+
+    failed_login_count: int
+    locked_until: dt.datetime | None
+
+
+def register_failed_attempt(
+    user: _Lockable, *, now: dt.datetime, max_failures: int, lockout_min: int
+) -> bool:
+    """Zählt einen Fehlversuch und sperrt bei Bedarf. Gibt zurück, ob jetzt gesperrt ist."""
+    user.failed_login_count += 1
+    if user.failed_login_count >= max_failures:
+        user.locked_until = now + dt.timedelta(minutes=lockout_min)
+        user.failed_login_count = 0
+        return True
+    return False
+
+
+def reset_failed_attempts(user: _Lockable) -> None:
+    """Nach erfolgreicher Anmeldung: Zähler und Sperre löschen."""
+    user.failed_login_count = 0
+    user.locked_until = None
 
 
 # --------------------------------------------------------------------------- #

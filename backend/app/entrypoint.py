@@ -26,7 +26,7 @@ def main() -> None:
         return
 
     settings = get_settings()
-    log.info("starting_uvicorn", port=settings.port)
+    log.info("starting_uvicorn", port=settings.port, trusted_proxies=settings.trusted_proxies)
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
@@ -35,7 +35,9 @@ def main() -> None:
         log_config=None,  # structlog übernimmt das Logging
         access_log=False,
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        # Nur diesen Peers wird X-Forwarded-For geglaubt — sonst könnte jeder Client
+        # seine Herkunfts-IP fälschen und damit Rate-Limit und Lockout aushebeln.
+        forwarded_allow_ips=settings.trusted_proxies,
     )
 
 

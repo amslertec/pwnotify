@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,39 @@ _ALLOWED = {
     "image/vnd.microsoft.icon": ".ico",
 }
 _MAX_BYTES = 2 * 1024 * 1024
+
+# SVG ist XML und darf Skripte, Event-Handler und externe Referenzen enthalten. Da die
+# Datei unter der eigenen Domain ausgeliefert wird, liefe solcher Code im App-Origin.
+# Statt zu säubern (Sanitizer sind notorisch löchrig) wird abgelehnt: ein Logo braucht
+# nichts davon.
+_SVG_ACTIVE_PATTERNS = (
+    (re.compile(rb"<\s*script", re.I), "Skript-Element"),
+    (re.compile(rb"\son[a-z]+\s*=", re.I), "Event-Handler-Attribut"),
+    (re.compile(rb"javascript\s*:", re.I), "javascript:-URL"),
+    (re.compile(rb"<\s*foreignObject", re.I), "foreignObject-Element"),
+    (re.compile(rb"<\s*!ENTITY", re.I), "XML-Entity (XXE)"),
+    (re.compile(rb"<\s*iframe", re.I), "iframe-Element"),
+)
+
+# Verhindert, dass ein Bild als aktives Dokument interpretiert wird. `sandbox` entzieht
+# der Antwort u. a. Skriptausführung und den eigenen Origin; als <img> eingebunden —
+# so nutzt das Frontend die Route — bleibt alles unverändert nutzbar.
+_ASSET_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _reject_active_svg(data: bytes) -> None:
+    """Lehnt SVGs mit aktiven Inhalten ab (Stored XSS im eigenen Origin)."""
+    for pattern, label in _SVG_ACTIVE_PATTERNS:
+        if pattern.search(data):
+            raise PwNotifyError(
+                f"Das SVG enthält aktive Inhalte ({label}) und wurde abgelehnt. "
+                "Bitte ein Logo ohne Skripte hochladen — oder PNG/WebP verwenden.",
+                code="svg_active_content",
+            )
 
 
 def _branding_dir() -> Path:
@@ -97,6 +131,8 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
     data = await file.read()
     if len(data) > _MAX_BYTES:
         raise PwNotifyError("Datei zu gross (max. 2 MB).", code="file_too_large")
+    if ext == ".svg":
+        _reject_active_svg(data)
     # Logo: transparente Ränder automatisch abschneiden (SVG bleibt unverändert).
     if trim and ext != ".svg":
         trimmed = _autotrim(data)
@@ -148,7 +184,7 @@ async def get_logo(svc: SettingsDep) -> Response:
     path = await svc.get("branding.logo_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Logo gesetzt.", code="no_logo")
-    return FileResponse(path, headers={"Cache-Control": "no-cache"})
+    return FileResponse(path, headers=_ASSET_HEADERS)
 
 
 @router.get("/favicon")
@@ -156,4 +192,4 @@ async def get_favicon(svc: SettingsDep) -> Response:
     path = await svc.get("branding.favicon_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Favicon gesetzt.", code="no_favicon")
-    return FileResponse(path, headers={"Cache-Control": "no-cache"})
+    return FileResponse(path, headers=_ASSET_HEADERS)

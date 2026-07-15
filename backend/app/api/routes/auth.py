@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import datetime as dt
 import io
 import json
 import uuid
@@ -16,6 +15,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from ...core.config import get_settings
 from ...core.crypto import decrypt, encrypt
 from ...core.errors import AuthError, NotFoundError, PwNotifyError
+from ...core.logging import get_logger
 from ...core.security import (
     create_2fa_token,
     decode_token,
@@ -23,6 +23,8 @@ from ...core.security import (
     hash_token,
     issue_token_pair,
     needs_rehash,
+    register_failed_attempt,
+    reset_failed_attempts,
     verify_password,
 )
 from ...core.twofa import (
@@ -66,6 +68,7 @@ from ..deps import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _settings = get_settings()
+log = get_logger("auth")
 
 _AVATAR_ALLOWED = {"image/png", "image/jpeg", "image/webp"}
 _AVATAR_MAX_BYTES = 5 * 1024 * 1024
@@ -177,16 +180,19 @@ async def login(
 
     if user is None or not verify_password(body.password, user.password_hash):
         if user is not None:
-            user.failed_login_count += 1
-            if user.failed_login_count >= _settings.login_max_failures:
-                user.locked_until = now + dt.timedelta(minutes=_settings.login_lockout_min)
-                user.failed_login_count = 0
+            locked = register_failed_attempt(
+                user,
+                now=now,
+                max_failures=_settings.login_max_failures,
+                lockout_min=_settings.login_lockout_min,
+            )
             await session.commit()
+            if locked:
+                log.warning("account_locked", username=user.username, factor="password")
         raise AuthError("Ungültiger Benutzername oder Passwort.", code="invalid_credentials")
 
     # Passwort ok
-    user.failed_login_count = 0
-    user.locked_until = None
+    reset_failed_attempts(user)
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
 
@@ -220,6 +226,16 @@ async def two_factor_verify(
         clear_2fa_cookie(response)
         raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
 
+    # Auch der zweite Faktor unterliegt der Kontosperre: Wer das Passwort bereits hat,
+    # könnte den sechsstelligen Code sonst unbegrenzt raten — das IP-Rate-Limit allein
+    # hält einen Angreifer mit mehreren Adressen nicht auf.
+    now = utcnow()
+    if user.locked_until and user.locked_until > now:
+        clear_2fa_cookie(response)
+        raise AuthError(
+            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
+        )
+
     ok = verify_totp(decrypt(user.totp_secret), body.code)
     if not ok:
         # Recovery-Code als Fallback (verbraucht ihn).
@@ -230,8 +246,19 @@ async def two_factor_verify(
             user.recovery_codes = json.dumps(hashes)
             ok = True
     if not ok:
+        locked = register_failed_attempt(
+            user,
+            now=now,
+            max_failures=_settings.login_max_failures,
+            lockout_min=_settings.login_lockout_min,
+        )
+        await session.commit()
+        if locked:
+            clear_2fa_cookie(response)
+            log.warning("account_locked", username=user.username, factor="2fa")
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
 
+    reset_failed_attempts(user)
     clear_2fa_cookie(response)
     return await _complete_login(request, response, session, user)
 

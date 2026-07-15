@@ -30,3 +30,6 @@ sbom/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Lokale, nicht-öffentliche Arbeitsdokumente (z. B. Security-Roadmap)
+*.local.md

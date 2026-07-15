@@ -4,6 +4,109 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] — 2026-07-15
+
+> ### ⚠️ `.env` change — read before upgrading
+>
+> This release adds **`PWNOTIFY_TRUSTED_PROXIES`** (default `127.0.0.1`), which controls
+> whose `X-Forwarded-For` header may override the client IP. It closes a bypass of the login
+> rate limit and account lockout.
+>
+> - **No reverse proxy** (direct access, `PWNOTIFY_BIND=0.0.0.0:8080`): **nothing to do.**
+>   The default is correct — the header is ignored and the real peer IP counts.
+> - **Behind a reverse proxy:** set it, or all users share **one** rate limit and a single
+>   attacker can lock everyone else out.
+>   - Proxy on the **host**, container bound to `127.0.0.1:8080` → default is already correct.
+>   - Proxy as a **container** → set the proxy container's IP, e.g.
+>     `PWNOTIFY_TRUSTED_PROXIES=172.24.0.5`, and stop publishing the app port.
+>
+> Do **not** set it to the Docker gateway/subnet while the port is published — direct
+> requests from the host arrive via that address and the bypass reopens. Never use `*`.
+> `example.env` documents both scenarios. No other `.env` changes; the mass-send guard
+> (`schedule.max_notify_ratio`) is a database setting with a safe default.
+
+This is a **security release**. Every issue below was reproduced against a running instance
+before it was fixed, and each is covered by a regression test (23 → 59 tests).
+
+### Security
+
+- **Login rate limiting and account lockout could be bypassed via `X-Forwarded-For`.**
+  Uvicorn ran with `forwarded_allow_ips="*"`, so *any* client — not just a real reverse
+  proxy — could override its own source IP. Since both the rate limit and the lockout key
+  on the client IP, an attacker rotating that header looked like a new client on every
+  request and defeated both. Reproduced: 15 login attempts with a rotating header passed
+  unthrottled; the same run now blocks from the 11th.
+  A new `PWNOTIFY_TRUSTED_PROXIES` setting controls which peers may set the header,
+  defaulting to `127.0.0.1`. Regression tests keep the wildcard from returning.
+
+- **An empty Entra group could delete every SSO administrator, locking you out of your own
+  instance.** The SSO sync removes users who are no longer in the admin/auditor group. When
+  the group exists but returns no members (emptied group, wrong group ID), the target set was
+  empty and *all* SSO users were deleted — including the last administrator. Reproduced against
+  a live instance: the sync attempted to delete every SSO account. The sync now refuses to
+  remove anything when the target set is empty or when it would remove more than half of all
+  SSO users; the run is marked `partial`, logs the reason, and triggers the admin alert, so
+  the misconfiguration surfaces instead of failing silently.
+
+- **Stored XSS via SVG logo upload.** SVG is XML and may contain scripts. Uploaded SVGs were
+  stored verbatim (raster images go through Pillow, SVGs skipped that path) and served from
+  `/api/branding/logo` and `/api/branding/favicon` as `image/svg+xml` — both routes are
+  **unauthenticated**. Opening such a URL executed the script in the application's own origin,
+  letting it act as the signed-in user (HttpOnly cookies and SameSite=Strict do not help here,
+  since the request is same-site). Reproduced against a live instance.
+  SVGs containing scripts, event handlers, `javascript:` URLs, `foreignObject`, `iframe` or XML
+  entities are now rejected on upload rather than sanitised — a logo needs none of them, and
+  sanitisers are easy to bypass. Both routes additionally serve with
+  `Content-Security-Policy: … sandbox` and `X-Content-Type-Options: nosniff`, which also
+  neutralises files uploaded before this release. Embedding as `<img>`/`<link rel=icon>` —
+  how the app itself uses them — is unaffected.
+
+- **No safeguard against mass mis-sending.** The notification loop had no limit of any kind. A
+  single wrong setting — validity period, sync group — makes every account look due at once, so
+  a tenant with 1000+ users would receive 1000 e-mails before anyone noticed, and sent mail
+  cannot be recalled. A run now estimates how many notifications it would send **before** the
+  first one goes out and aborts if that exceeds `schedule.max_notify_ratio` (default 50 % of
+  all checked users), marking the run `partial` and triggering the admin alert. Small tenants
+  are never blocked (3 of 5 users due is real, not a misconfiguration), dry runs are exempt,
+  and `0` disables the guard.
+
+- **The second factor could be brute-forced: a wrong TOTP code never locked the account.**
+  Failed passwords increment a counter and lock the account; failed 2FA codes did neither, and
+  `/auth/2fa/verify` had no lockout check at all. Anyone already holding the password (phishing,
+  credential leak) could keep guessing the six-digit code — the IP rate limit alone does not stop
+  an attacker with several addresses, which made the second factor largely decorative. Both
+  factors now share one lockout path: after `login_max_failures` wrong codes the account locks
+  for `login_lockout_min` minutes. Verified against a running instance: guessing locks out from
+  the 6th attempt. Lockouts are now also logged (`account_locked`, with the factor), so
+  brute-force attempts are visible instead of silent.
+
+### Fixed
+
+- **"Test connection" reported all permissions present while group features failed with 403.**
+  The check only compared the token against `User.Read.All`, `Domain.Read.All` and `Mail.Send`,
+  but group-scoped sync and SSO role mapping call `/groups/{id}/transitiveMembers`, which needs
+  `GroupMember.Read.All`. The very diagnostic you rely on while setting things up was wrong.
+  The connection test now additionally requires that permission **once a group is configured**
+  (`sync.group_id`, `oidc.admin_group_id` or `oidc.auditor_group_id`) — and stays quiet about
+  it otherwise, so instances without group features aren't pushed toward a permission they
+  don't need. Documented in README and SECURITY.md, which had omitted it (the in-app Entra
+  guide and the Docker Hub page already listed it).
+
+- **Users could not be deleted once they had logged out.** `delete()` only removed *active*
+  sessions, while revoked and expired ones kept a foreign key on the account, so deletion
+  failed with an integrity error (`user_session_user_id_fkey`). This broke both user management
+  and the SSO sync's removal of departed members. All sessions are now removed first, via an
+  explicit statement — `AppUser` and `UserSession` have no ORM relationship, so the deletion
+  order was otherwise undefined.
+
+### Changed
+
+- **Behaviour change when running behind a reverse proxy.** `X-Forwarded-For` is no longer
+  trusted by default. If a proxy sits in front of PwNotify and `PWNOTIFY_TRUSTED_PROXIES`
+  is not set to match it, every request appears to come from the proxy — all users then
+  share a single rate limit, so one attacker can lock everyone else out. See `example.env`
+  for the two supported setups (proxy on the host vs. proxy as a container).
+
 ## [0.1.10] — 2026-07-15
 
 ### Added
@@ -185,6 +288,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.11]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.11
 [0.1.10]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.10
 [0.1.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.9
 [0.1.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.8

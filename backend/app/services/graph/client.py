@@ -33,6 +33,11 @@ log = get_logger("graph")
 
 REQUIRED_PERMISSIONS = ["User.Read.All", "Domain.Read.All", "Mail.Send"]
 
+# Nur nötig, wenn eine Gruppe konfiguriert ist (gruppenbasierter Sync, SSO-Rollen).
+# Fehlt sie, scheitern die betroffenen Abfragen mit 403 — deshalb darf der
+# Verbindungstest sie nicht pauschal ignorieren, aber auch nicht pauschal verlangen.
+GROUP_PERMISSION = "GroupMember.Read.All"
+
 USER_SELECT = (
     "id,displayName,userPrincipalName,mail,otherMails,accountEnabled,"
     "lastPasswordChangeDateTime,passwordPolicies,department,jobTitle,assignedLicenses,"
@@ -155,13 +160,23 @@ class GraphClient:
         return resp
 
     # -- Public API ---------------------------------------------------------- #
-    async def test_connection(self) -> GraphConnectionResult:
+    async def test_connection(
+        self, *, extra_permissions: list[str] | None = None
+    ) -> GraphConnectionResult:
+        """Prüft Token und Berechtigungen.
+
+        ``extra_permissions`` ergänzt die Basisrechte um solche, die nur für aktivierte
+        Funktionen nötig sind (z. B. ``GroupMember.Read.All``, sobald eine Gruppe
+        konfiguriert ist). Ohne das meldet der Test „alles vorhanden“, während der
+        gruppenbasierte Sync später mit 403 scheitert.
+        """
         try:
             token = await self._acquire_token()
         except GraphError as exc:
             return GraphConnectionResult(connected=False, error=str(exc))
         granted = self._roles_from_token(token)
-        missing = [p for p in REQUIRED_PERMISSIONS if p not in granted]
+        required = [*REQUIRED_PERMISSIONS, *(extra_permissions or [])]
+        missing = [p for p in required if p not in granted]
         return GraphConnectionResult(
             connected=True,
             tenant_id=self.config.tenant_id,

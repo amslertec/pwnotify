@@ -69,6 +69,11 @@ SETTINGS: dict[str, SettingSpec] = {
     "schedule.timezone": SettingSpec("Europe/Zurich"),
     "schedule.reminder_days": SettingSpec([14, 7, 3, 1, 0]),
     "schedule.dry_run": SettingSpec(False),
+    # Sicherung gegen Massenversand: Würde ein Lauf mehr als diesen Anteil aller
+    # geprüften Benutzer benachrichtigen, ist das fast immer eine Fehlkonfiguration
+    # (z. B. falsche Gültigkeitsdauer) und nicht ein realer Stichtag. Der Lauf bricht
+    # dann ab, statt tausende Mails zu verschicken. 0 = Sicherung aus.
+    "schedule.max_notify_ratio": SettingSpec(0.5),
     # ---- Password Policy ----
     "policy.auto_detect": SettingSpec(True),
     "policy.validity_days_override": SettingSpec(None),
