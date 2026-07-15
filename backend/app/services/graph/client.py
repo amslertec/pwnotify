@@ -312,6 +312,23 @@ class GraphClient:
                 url = data.get("@odata.nextLink", "")
         return ids
 
+    async def check_member_groups(self, user_id: str, group_ids: list[str]) -> set[str]:
+        """Welche der genannten Gruppen enthalten den Benutzer (transitiv)?
+
+        Nötig für grosse Tenants: Ist ein Benutzer in mehr als 200 Gruppen, liefert Entra
+        im Token keine Gruppenliste mehr, sondern nur einen Verweis ("Overage"). Ohne
+        Rückfrage wären dort ausgerechnet die Konten mit vielen Mitgliedschaften — meist
+        die Administratoren — von der Anmeldung ausgesperrt.
+
+        Braucht keine zusätzliche Berechtigung: ``GroupMember.Read.All`` ist bereits
+        gesetzt, sobald Gruppen konfiguriert sind.
+        """
+        if not group_ids:
+            return set()
+        url = f"{self.config.base}/v1.0/users/{user_id}/checkMemberGroups"
+        resp = await self._request(self._shared_http(), "POST", url, json={"groupIds": group_ids})
+        return {g for g in resp.json().get("value", []) if isinstance(g, str)}
+
     async def send_mail(
         self,
         *,

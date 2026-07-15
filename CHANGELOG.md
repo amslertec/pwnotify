@@ -4,7 +4,7 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.12] — 2026-07-15
 
 ### Added
 
@@ -33,6 +33,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   next token refresh — which covers a closed browser or a stolen token. Activity is shared
   across tabs, so working in one does not time out another. The login page explains the
   automatic sign-out (DE/EN) instead of looking like an error.
+- **SSO now works for users in more than 200 groups.** Above that limit Entra stops putting
+  the group list into the ID token and sends a reference instead ("overage"). PwNotify treated
+  a missing list as "no groups" and refused the sign-in — which hits precisely the accounts
+  with many memberships, i.e. the administrators of a large tenant. Membership in the
+  configured admin/auditor groups is now checked directly against Graph
+  (`checkMemberGroups`) when the token carries no list. No extra permission needed:
+  `GroupMember.Read.All` is already required once groups are configured. If the lookup fails,
+  the sign-in is still denied — never granted on doubt.
 - **Warning before the Graph client secret expires.** Entra secrets expire after 6–24 months.
   When that happened unnoticed the tool went silent: the sync failed and no reminders went
   out — an outage nobody notices, because missing e-mails don't announce themselves. Enter the
@@ -83,6 +91,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A crash during a run left it marked "running" forever.** Runs are created as `running` and
+  only finalised at the end; if the process died in between (restart, deploy, OOM), the record
+  never closed — the history showed a run that never ends and the statistics were off. Such
+  runs are now closed on startup with a clear reason. Safe to do: only one run can be active
+  per process (`max_instances=1` plus a lock), so nothing real can be open at startup.
 - **Every reminder e-mail opened its own connection to Graph.** `send_mail` created a fresh
   HTTP client per message, so each mail paid for a new TCP and TLS handshake. Measured against
   the real Graph endpoint: 29 ms per call without pooling vs. 4 ms with — about 26 ms of pure
@@ -395,6 +408,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.12]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.12
 [0.1.11]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.11
 [0.1.10]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.10
 [0.1.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.9

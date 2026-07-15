@@ -124,13 +124,22 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
     groups = claims.get("groups")
     if not isinstance(groups, list):
-        # Overage (User in >200 Gruppen) oder groupMembershipClaims nicht gesetzt.
+        # Zwei Ursachen: 'groupMembershipClaims' ist im App-Manifest nicht gesetzt — oder
+        # der Benutzer ist in mehr als 200 Gruppen, dann liefert Entra statt der Liste nur
+        # einen Verweis ("Overage"). Letzteres trifft ausgerechnet Konten mit vielen
+        # Mitgliedschaften, also typischerweise Administratoren. Deshalb wird hier gezielt
+        # nachgefragt, statt die Anmeldung pauschal abzulehnen.
+        groups = await _groups_via_graph(
+            settings, claims.get("oid") or username, [admin_group, auditor_group]
+        )
+    if groups is None:
         return OidcResult(
             username=username,
             display_name=display_name,
             allowed=False,
-            reason="Keine Gruppeninformationen im Token. Bitte im App-Manifest "
-            "'groupMembershipClaims' auf 'SecurityGroup' setzen.",
+            reason="Keine Gruppeninformationen im Token und Rückfrage bei Microsoft Graph "
+            "nicht möglich. Bitte im App-Manifest 'groupMembershipClaims' auf "
+            "'SecurityGroup' setzen.",
         )
     # Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
     if admin_group and admin_group in groups:
@@ -146,6 +155,37 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
         role=role,
         reason=None if allowed else "Nicht Mitglied einer berechtigten Gruppe.",
     )
+
+
+async def _groups_via_graph(
+    settings: dict[str, Any], user_id: str, group_ids: list[str]
+) -> list[str] | None:
+    """Mitgliedschaft direkt bei Graph erfragen, wenn das Token keine Gruppen liefert.
+
+    Gibt die Teilmenge der geprüften Gruppen zurück, ``None`` wenn die Rückfrage nicht
+    möglich war (kein Secret, keine Gruppen konfiguriert, Graph-Fehler) — dann bleibt es
+    beim bisherigen Verhalten: Anmeldung ablehnen statt im Zweifel Rechte vergeben.
+    """
+    gesucht = [g for g in group_ids if g]
+    if not (user_id and gesucht and settings.get("graph.client_secret")):
+        return None
+    graph = GraphClient(
+        GraphConfig(
+            tenant_id=str(settings.get("graph.tenant_id") or ""),
+            client_id=str(settings.get("graph.client_id") or ""),
+            client_secret=str(settings.get("graph.client_secret") or ""),
+            cloud=str(settings.get("graph.cloud") or "global"),
+        )
+    )
+    try:
+        treffer = await graph.check_member_groups(user_id, gesucht)
+        log.info("oidc_groups_via_graph", user=user_id, matched=len(treffer))
+        return list(treffer)
+    except Exception as exc:
+        log.warning("oidc_group_lookup_failed", user=user_id, error=str(exc))
+        return None
+    finally:
+        await graph.aclose()
 
 
 _MAX_REMOVAL_RATIO = 0.5

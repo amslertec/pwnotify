@@ -45,6 +45,7 @@ from .core.security_headers import (
 )
 from .db.migrate import run_migrations
 from .db.session import dispose_engine, get_session_factory
+from .repositories import run_repo
 from .seed import run_seed
 from .services.scheduler import SchedulerService, set_scheduler
 
@@ -83,6 +84,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 2) Seed aus ENV (nur beim ersten Start wirksam)
     factory = get_session_factory()
     await run_seed(factory)
+    # 2b) Läufe aufräumen, die ein Neustart mitten drin erwischt hat — sie stünden
+    # sonst für immer auf "running" und verfälschten Historie und Statistik.
+    async with factory() as session:
+        stale = await run_repo.mark_stale_as_error(session)
+        if stale:
+            log.warning("stale_runs_cleaned", count=stale)
     # 3) Scheduler starten
     scheduler = SchedulerService(factory, base_url=settings.base_url)
     set_scheduler(scheduler)
