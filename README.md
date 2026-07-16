@@ -280,10 +280,13 @@ cd frontend && pnpm install && pnpm run dev   # proxies /api to :8080
 ```
 
 
-## Version decisions
+## Versions
 
-Exact pinned versions, the compatibility matrix, and deliberate deviations (Chainguard base,
-TypeScript 5.9.3, single-worker Uvicorn, etc.) are documented in
+Every dependency is pinned exactly — see [`backend/pyproject.toml`](backend/pyproject.toml)
+and [`frontend/package.json`](frontend/package.json). Notable deliberate choices: a Chainguard
+base image (0 known HIGH/CRITICAL CVEs), single-worker Uvicorn (the scheduler runs in-process),
+and TypeScript held at 5.x — the build chain is not ready for the rewritten 7.0 compiler.
+
 Security posture is in [`SECURITY.md`](SECURITY.md).
 
 ## License
