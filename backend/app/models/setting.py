@@ -19,6 +19,7 @@ from ._base import utcnow
 class Setting(SQLModel, table=True):
     __tablename__ = "setting"
 
+    tenant_id: int = Field(foreign_key="tenant.id", primary_key=True)
     key: str = Field(sa_column=Column(String(100), primary_key=True))
     value: Any | None = Field(default=None, sa_column=Column(JSONB))
     is_secret: bool = Field(default=False)

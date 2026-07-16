@@ -16,6 +16,7 @@ class Run(SQLModel, table=True):
     __tablename__ = "run"
 
     id: int | None = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenant.id", index=True, nullable=False)
     trigger: str = Field(
         default="schedule", sa_column=Column(String(16), nullable=False)
     )  # schedule|manual

@@ -16,6 +16,7 @@ class EntraUser(SQLModel, table=True):
     __tablename__ = "entra_user"
 
     id: int | None = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenant.id", index=True, nullable=False)
     entra_id: str = Field(sa_column=Column(String(64), unique=True, index=True, nullable=False))
     upn: str = Field(sa_column=Column(String(320), index=True, nullable=False))
     display_name: str = Field(default="", sa_column=Column(String(320), nullable=False))
@@ -53,6 +54,7 @@ class Exclusion(SQLModel, table=True):
     __tablename__ = "exclusion"
 
     id: int | None = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenant.id", index=True, nullable=False)
     kind: str = Field(sa_column=Column(String(16), nullable=False))  # "user" | "group"
     value: str = Field(sa_column=Column(String(320), nullable=False))  # entra_id / group-id / upn
     label: str | None = Field(default=None, sa_column=Column(String(320)))

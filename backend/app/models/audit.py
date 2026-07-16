@@ -25,6 +25,7 @@ class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_log"
 
     id: int | None = Field(default=None, primary_key=True)
+    tenant_id: int | None = Field(default=None, foreign_key="tenant.id", index=True)
     at: dt.datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
