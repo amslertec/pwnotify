@@ -156,6 +156,10 @@ variables are only a **first-run seed** (see `example.env` for the full list). K
 | `PWNOTIFY_SECRET_KEY` | Fernet master key; leave empty to auto-generate `/data/secret.key` |
 | `PWNOTIFY_BASE_URL` | public URL (used in e-mail links and cookies) |
 | `PWNOTIFY_COOKIE_SECURE` | set `true` behind HTTPS |
+| `PWNOTIFY_TRUSTED_PROXIES` | proxy peers allowed to set `X-Forwarded-For` (default `127.0.0.1`); set your proxy's IP/subnet so the audit log and rate limiter see the real client IP |
+| `PWNOTIFY_ALLOWED_HOSTS` | optional comma-separated Host-header allow-list (empty = no check) |
+| `PWNOTIFY_IDLE_TIMEOUT_MIN` | sign out after N minutes of inactivity (default `30`, `0` = off) |
+| `PWNOTIFY_REFRESH_TOKEN_TTL_DAYS` | maximum session lifetime (default `14`) |
 | `PWNOTIFY_TIMEZONE` | scheduler timezone (default `Europe/Zurich`) |
 | `PWNOTIFY_ADMIN_USERNAME` / `_PASSWORD` | optional: seed the admin instead of the wizard |
 
