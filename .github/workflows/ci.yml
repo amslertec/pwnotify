@@ -17,6 +17,18 @@ jobs:
   # ---------------------------------------------------------------- Backend
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: pwnotify
+          POSTGRES_PASSWORD: pwnotify
+          POSTGRES_DB: pwnotify_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pwnotify -d pwnotify_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -34,6 +46,8 @@ jobs:
       - name: mypy (strict)
         run: uv run mypy app
       - name: pytest
+        env:
+          PWNOTIFY_TEST_DATABASE_URL: postgresql+asyncpg://pwnotify:pwnotify@localhost:5432/pwnotify_test
         run: uv run pytest -q
 
   # --------------------------------------------------------------- Frontend
