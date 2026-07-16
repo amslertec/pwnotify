@@ -5,18 +5,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import Column, DateTime, FetchedValue, String
+from sqlalchemy import Column, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
-from ._base import utcnow
-
-# server_default=FetchedValue() ist Phase-1-Brücke: der eigentliche Default (Default-Tenant-
-# id) sitzt als server_default in der Migration; dieser Marker sagt SQLAlchemy nur, dass
-# einer existiert, damit tenant_id bei fehlendem Wert aus dem INSERT weggelassen (statt
-# explizit NULL gesendet) wird und Postgres den Default anwendet. Ohne diesen Marker würde
-# die ORM-Schicht (session.add(...)) trotz DB-seitigem server_default NULL einfügen.
-_TENANT_ID_BRIDGE = {"server_default": FetchedValue()}
+from ._base import TENANT_ID_BRIDGE, utcnow
 
 
 class EntraUser(SQLModel, table=True):
@@ -24,7 +17,7 @@ class EntraUser(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     tenant_id: int = Field(
-        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=_TENANT_ID_BRIDGE
+        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=TENANT_ID_BRIDGE
     )
     entra_id: str = Field(sa_column=Column(String(64), unique=True, index=True, nullable=False))
     upn: str = Field(sa_column=Column(String(320), index=True, nullable=False))
@@ -64,7 +57,7 @@ class Exclusion(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     tenant_id: int = Field(
-        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=_TENANT_ID_BRIDGE
+        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=TENANT_ID_BRIDGE
     )
     kind: str = Field(sa_column=Column(String(16), nullable=False))  # "user" | "group"
     value: str = Field(sa_column=Column(String(320), nullable=False))  # entra_id / group-id / upn
