@@ -1,7 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConnectionStatus } from '../run-status'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
@@ -10,6 +12,7 @@ import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
+import type { DashboardData } from '@/lib/types'
 
 const STRATEGIES = ['primary', 'alternate', 'both', 'alternate_fallback_primary']
 
@@ -26,6 +29,10 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
   const [testTo, setTestTo] = useState('')
   const [testing, setTesting] = useState(false)
   const passSet = settings['mail.smtp_password'] === MASK_MARKER
+  const { data: dash } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.get<DashboardData>('/dashboard'),
+  })
 
   const onSave = () =>
     save({
@@ -62,6 +69,14 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
         </Button>
       }
     >
+      <ConnectionStatus
+        ok={!!dash?.backends.mail_configured}
+        label={
+          dash?.backends.mail_configured
+            ? t('backendStatus.mail.configured', { backend: dash?.backends.mail_backend })
+            : t('backendStatus.mail.notConfigured')
+        }
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t('mailTab.fields.backend')}>
           <Select value={backend} onValueChange={setBackend}>

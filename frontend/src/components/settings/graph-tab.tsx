@@ -1,7 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConnectionStatus } from '../run-status'
 import { EntraGuide } from '../entra-guide'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -11,7 +13,7 @@ import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
-import type { GraphTestResult } from '@/lib/types'
+import type { DashboardData, GraphTestResult } from '@/lib/types'
 
 export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
@@ -23,6 +25,11 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   )
   const [group, setGroup] = useState(String(settings['sync.group_id'] ?? ''))
   const [testing, setTesting] = useState(false)
+  // Nutzt den bereits gecachten Dashboard-Query — kein zusätzlicher Request.
+  const { data: dash } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.get<DashboardData>('/dashboard'),
+  })
   const [result, setResult] = useState<GraphTestResult | null>(null)
   const secretSet = settings['graph.client_secret'] === MASK_MARKER
 
@@ -71,6 +78,14 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
           </>
         }
       >
+        <ConnectionStatus
+          ok={!!dash?.backends.graph_configured}
+          label={
+            dash?.backends.graph_configured
+              ? t('backendStatus.graph.connected')
+              : t('backendStatus.graph.notConfigured')
+          }
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t('graphTab.graph.tenantId')} className="sm:col-span-2">
             <Input value={tenant} onChange={(e) => setTenant(e.target.value)} />

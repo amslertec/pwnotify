@@ -86,6 +86,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void logout()
     },
     !!user,
+    // Aktivitäts-Ping: hält last_used_at auf dem Server aktuell, damit aktives Arbeiten
+    // ohne API-Aufrufe (Lesen, Scrollen) nicht in den Idle-Timeout läuft. Fehler ignorieren.
+    () => {
+      void api.post('/auth/activity').catch(() => {})
+    },
   )
 
   return (

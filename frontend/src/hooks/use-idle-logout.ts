@@ -8,6 +8,11 @@ const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchsta
 /** Aktivität höchstens einmal pro Sekunde verarbeiten — mousemove feuert sonst dauernd. */
 const THROTTLE_MS = 1000
 
+/** Den Server höchstens alle 4 Minuten über Aktivität informieren. Deutlich unter dem
+ *  30-Minuten-Timeout, damit `last_used_at` nie veraltet, aber selten genug, um kein
+ *  Rauschen zu erzeugen. */
+const PING_THROTTLE_MS = 4 * 60_000
+
 const STORAGE_KEY = 'pwnotify-last-activity'
 
 /**
@@ -21,13 +26,16 @@ export function useIdleLogout(
   timeoutMin: number,
   onTimeout: () => void,
   enabled: boolean = true,
+  onActivityPing?: () => void,
 ): void {
   // Über eine Ref, damit ein neu erzeugter Callback den Timer nicht bei jedem Render
   // zurücksetzt — sonst liefe der Timeout nie ab.
   const onTimeoutRef = useRef(onTimeout)
+  const onPingRef = useRef(onActivityPing)
   useEffect(() => {
     onTimeoutRef.current = onTimeout
-  }, [onTimeout])
+    onPingRef.current = onActivityPing
+  }, [onTimeout, onActivityPing])
 
   useEffect(() => {
     if (!enabled || timeoutMin <= 0) return
@@ -35,6 +43,7 @@ export function useIdleLogout(
     const timeoutMs = timeoutMin * 60_000
     let timer: ReturnType<typeof setTimeout> | undefined
     let lastWrite = 0
+    let lastPing = Date.now() // beim Mount ist last_used_at gerade frisch
 
     const stamp = () => {
       const now = Date.now()
@@ -61,6 +70,12 @@ export function useIdleLogout(
       if (now - lastWrite < THROTTLE_MS) return
       lastWrite = now
       arm(stamp())
+      // Den Server über echte Aktivität informieren, damit `last_used_at` mitzieht und
+      // aktives Arbeiten nicht in den serverseitigen Idle-Timeout läuft.
+      if (now - lastPing >= PING_THROTTLE_MS) {
+        lastPing = now
+        onPingRef.current?.()
+      }
     }
 
     // Rückkehr auf den Tab: Stempel prüfen, statt den Timer weiterlaufen zu lassen —

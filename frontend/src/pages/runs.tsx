@@ -1,89 +1,52 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, History, Play } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, History } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
-import { BackendStatusBar, RunStatusPill } from '@/components/backend-status'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { RunStatusPill } from '@/components/run-status'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
-import { translateError } from '@/lib/errors'
-import { fmtDateTime, fmtDuration } from '@/lib/format'
+import { fmtDateTime, fmtDuration, fmtRelative } from '@/lib/format'
 import type { Page, Run, RunDetail } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
+const PAGE_SIZE = 25
+
 export default function RunsPage() {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
-  const qc = useQueryClient()
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
-  const pageSize = 25
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['runs', page],
-    queryFn: () => api.get<Page<Run>>(`/runs?page=${page}&page_size=${pageSize}`),
+    queryFn: () => api.get<Page<Run>>(`/runs?page=${page}&page_size=${PAGE_SIZE}`),
     placeholderData: (p) => p,
   })
 
-  const trigger = useMutation({
-    mutationFn: (dryRun: boolean) => api.post<RunDetail>('/runs/trigger', { dry_run: dryRun }),
-    onSuccess: (run) => {
-      toast.success(t('runs.toast.completed', { count: run.sent }))
-      void qc.invalidateQueries({ queryKey: ['runs'] })
-    },
-    onError: (e) => toast.error(translateError(e)),
-  })
-
   const rows = data?.items ?? []
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize))
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
 
   return (
     <div>
-      <PageHeader
-        title={t('runs.title')}
-        description={t('runs.description')}
-        actions={
-          isAdmin ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => trigger.mutate(true)}
-                loading={trigger.isPending}
-              >
-                {t('runs.actions.dryRun')}
-              </Button>
-              <Button onClick={() => trigger.mutate(false)} loading={trigger.isPending}>
-                <Play /> {t('runs.actions.runNow')}
-              </Button>
-            </>
-          ) : undefined
-        }
-      />
-
-      <div className="mb-4">
-        <BackendStatusBar />
-      </div>
+      <PageHeader title={t('runs.title')} description={t('runs.description')} />
 
       <Card className={cn('overflow-hidden', isFetching && 'opacity-70 transition-opacity')}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
-              <tr className="border-border text-muted-foreground border-b text-left text-xs uppercase">
-                <th className="w-8 px-4 py-3" />
+              <tr className="border-border text-muted-foreground border-b text-left text-xs tracking-wide uppercase">
+                <th className="w-8 py-3 pl-4" />
                 <th className="px-4 py-3 font-medium">{t('runs.columns.time')}</th>
                 <th className="px-4 py-3 font-medium">{t('runs.columns.status')}</th>
                 <th className="px-4 py-3 font-medium">{t('runs.columns.trigger')}</th>
-                <th className="px-4 py-3 font-medium">{t('runs.columns.checked')}</th>
-                <th className="px-4 py-3 font-medium">{t('runs.columns.sent')}</th>
-                <th className="px-4 py-3 font-medium">{t('runs.columns.failed')}</th>
-                <th className="px-4 py-3 font-medium">{t('runs.columns.duration')}</th>
+                <th className="px-4 py-3 text-right font-medium">{t('runs.columns.checked')}</th>
+                <th className="px-4 py-3 text-right font-medium">{t('runs.columns.sent')}</th>
+                <th className="px-4 py-3 text-right font-medium">{t('runs.columns.failed')}</th>
+                <th className="px-4 py-3 text-right font-medium">{t('runs.columns.duration')}</th>
               </tr>
             </thead>
             <tbody className="divide-border divide-y">
@@ -121,11 +84,7 @@ export default function RunsPage() {
 
         <div className="border-border flex items-center justify-between border-t px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            {t('runs.pagination.summary', {
-              count: data?.total ?? 0,
-              page,
-              total: totalPages,
-            })}
+            {t('runs.pagination.summary', { count: data?.total ?? 0, page, total: totalPages })}
           </span>
           <div className="flex gap-1">
             <Button
@@ -151,6 +110,18 @@ export default function RunsPage() {
   )
 }
 
+/** Zahl rechtsbündig; 0 wird zum dezenten „–", damit echte Werte hervorstechen. */
+function Metric({ value, tone }: { value: number; tone?: 'ok' | 'danger' }) {
+  if (!value) return <td className="text-muted-foreground/50 px-4 py-3 text-right">–</td>
+  const color =
+    tone === 'ok' ? 'var(--status-ok)' : tone === 'danger' ? 'var(--status-expired)' : undefined
+  return (
+    <td className="px-4 py-3 text-right font-medium tabular-nums" style={color ? { color } : undefined}>
+      {value}
+    </td>
+  )
+}
+
 function RunRow({ run, open, onToggle }: { run: Run; open: boolean; onToggle: () => void }) {
   const { t } = useTranslation()
   const { data: detail } = useQuery({
@@ -159,10 +130,13 @@ function RunRow({ run, open, onToggle }: { run: Run; open: boolean; onToggle: ()
     enabled: open,
   })
 
+  const triggerLabel =
+    run.trigger === 'manual' ? t('runs.trigger.manual') : t('runs.trigger.scheduled')
+
   return (
     <Fragment>
       <tr className="hover:bg-muted/30 cursor-pointer" onClick={onToggle}>
-        <td className="px-4 py-2.5">
+        <td className="py-3 pl-4">
           <ChevronDown
             className={cn(
               'text-muted-foreground size-4 transition-transform',
@@ -170,25 +144,26 @@ function RunRow({ run, open, onToggle }: { run: Run; open: boolean; onToggle: ()
             )}
           />
         </td>
-        <td className="px-4 py-2.5 whitespace-nowrap">{fmtDateTime(run.started_at)}</td>
-        <td className="px-4 py-2.5">
-          <div className="flex items-center gap-1.5">
-            <RunStatusPill status={run.status} />
-            {run.dry_run && <Badge variant="secondary">{t('runs.dryRunBadge')}</Badge>}
-          </div>
+        <td className="px-4 py-3 whitespace-nowrap">
+          <div>{fmtDateTime(run.started_at)}</div>
+          <div className="text-muted-foreground text-xs">{fmtRelative(run.started_at)}</div>
         </td>
-        <td className="text-muted-foreground px-4 py-2.5">
-          {run.trigger === 'manual' ? t('runs.trigger.manual') : t('runs.trigger.scheduled')}
+        <td className="px-4 py-3">
+          <RunStatusPill status={run.status} />
         </td>
-        <td className="px-4 py-2.5 tabular-nums">{run.checked_users}</td>
-        <td className="px-4 py-2.5 text-[color:var(--status-ok)] tabular-nums">{run.sent}</td>
-        <td
-          className="px-4 py-2.5 tabular-nums"
-          style={run.failed ? { color: 'var(--status-expired)' } : undefined}
-        >
-          {run.failed}
+        <td className="text-muted-foreground px-4 py-3 whitespace-nowrap">
+          {triggerLabel}
+          {run.dry_run && (
+            <>
+              {' · '}
+              <span className="text-foreground/70">{t('runs.dryRunBadge')}</span>
+            </>
+          )}
         </td>
-        <td className="text-muted-foreground px-4 py-2.5 whitespace-nowrap">
+        <Metric value={run.checked_users} />
+        <Metric value={run.sent} tone="ok" />
+        <Metric value={run.failed} tone="danger" />
+        <td className="text-muted-foreground px-4 py-3 text-right whitespace-nowrap tabular-nums">
           {fmtDuration(run.duration_ms)}
         </td>
       </tr>

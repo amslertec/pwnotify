@@ -31,7 +31,9 @@ export function UserDrawer({
   })
   const { data: logs } = useQuery({
     queryKey: ['user-notifications', userId],
-    queryFn: () => api.get<Page<Notification>>(`/notifications?user_id=${userId}&page_size=50`),
+    // Nur die letzten 5 — der Drawer soll einen schnellen Überblick geben, nicht die
+    // ganze Historie. Die vollständige Liste steht auf der Benachrichtigungen-Seite.
+    queryFn: () => api.get<Page<Notification>>(`/notifications?user_id=${userId}&page_size=5`),
     enabled: userId !== null,
   })
 
@@ -109,11 +111,18 @@ export function UserDrawer({
                 )}
               </div>
 
-              {/* Historie */}
+              {/* Historie — nur die letzten 5, kompakt */}
               <div>
-                <h4 className="font-display mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <Bell className="size-4" /> Benachrichtigungs-Historie
-                </h4>
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <h4 className="font-display flex items-center gap-2 text-sm font-semibold">
+                    <Bell className="size-4" /> Benachrichtigungs-Historie
+                  </h4>
+                  {logs && logs.total > 5 && (
+                    <span className="text-muted-foreground text-xs">
+                      letzte 5 von {logs.total}
+                    </span>
+                  )}
+                </div>
                 {logs && logs.items.length > 0 ? (
                   <div className="space-y-1.5">
                     {logs.items.map((n) => (
@@ -122,15 +131,17 @@ export function UserDrawer({
                         className="border-border flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"
                       >
                         <span
-                          className="size-2 rounded-full"
+                          className="size-2 shrink-0 rounded-full"
                           style={{
                             background:
                               n.status === 'sent' ? 'var(--status-ok)' : 'var(--status-expired)',
                           }}
                         />
-                        <span className="font-medium">{n.reminder_day} T</span>
+                        <span className="w-10 shrink-0 font-medium tabular-nums">
+                          {n.reminder_day} T
+                        </span>
                         <span className="text-muted-foreground truncate">{n.recipient}</span>
-                        <span className="text-muted-foreground ml-auto text-xs whitespace-nowrap">
+                        <span className="text-muted-foreground ml-auto shrink-0 text-xs whitespace-nowrap">
                           {fmtDateTime(n.created_at)}
                         </span>
                       </div>

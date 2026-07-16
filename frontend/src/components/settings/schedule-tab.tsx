@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
+import { RunTriggerButtons } from '../run-status'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
+import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { fmtDateTime } from '@/lib/format'
 
 export function ScheduleTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
   const [cron, setCron] = useState(String(settings['schedule.cron'] ?? '0 8 * * *'))
   const [tz, setTz] = useState(String(settings['schedule.timezone'] ?? 'Europe/Zurich'))
   const [dryRun, setDryRun] = useState(Boolean(settings['schedule.dry_run']))
@@ -68,9 +71,14 @@ export function ScheduleTab({ settings, save, saving }: SettingsTabProps) {
       </div>
 
       <div className="border-border bg-muted/40 rounded-lg border p-4">
-        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-          {t('scheduleTab.nextRuns')}
-        </p>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            {t('scheduleTab.nextRuns')}
+          </p>
+          {/* Hier sieht man den Zeitplan — also der richtige Ort, ihn zu testen oder
+              sofort auszulösen. Nur für Admins. */}
+          {isAdmin && <RunTriggerButtons size="sm" />}
+        </div>
         {previewErr ? (
           <p className="text-danger text-sm">{t('scheduleTab.invalidCron')}</p>
         ) : (

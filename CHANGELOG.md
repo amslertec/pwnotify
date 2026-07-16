@@ -6,8 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Runs page and status indicators reworked.** The runs table is cleaner: the status is a
+  single coloured dot instead of a duplicated pill and text, a dry run shows as `Manual · dry
+  run` in the trigger column instead of squeezed under the date, counts are right-aligned with
+  zeros shown as a faint `–` so real values stand out, and each row carries a relative time
+  ("12 minutes ago"). The **run buttons** ("dry run" / "run now") moved to Settings → Schedule,
+  next to where the schedule is configured. The old status bar was split up: **next/last run**
+  moved to the dashboard, and the **Graph/Mail connection status** now sits as a status line
+  inside its own settings tab.
+- **Notification history in the user drawer** shows only the latest 5 entries (with a "5 of N"
+  note) instead of up to 50 — a quick overview rather than the full log.
+
 ### Fixed
 
+- **You could be signed out for inactivity while actually working.** The idle timer on the
+  client resets on mouse/keyboard, but the server tracked activity only through token
+  refreshes — so on a page without background polling, active reading or scrolling made no API
+  calls and the session went stale, logging you out despite the activity. The client now sends
+  a lightweight activity ping (at most every 4 minutes) that keeps the server's clock in sync,
+  so an actively used session stays alive.
+- **Idle sign-outs left no audit entry.** The server-side idle logout deleted the session
+  silently; it now records a sign-out with `reason: idle_timeout`, so the log no longer looks
+  as if the session just vanished.
 - **SSO sign-ins were missing from the audit log.** The OIDC callback issues its tokens
   directly instead of going through the shared login path (it redirects rather than returning
   JSON) and therefore never wrote an entry. With SSO enabled that meant *no* sign-in was

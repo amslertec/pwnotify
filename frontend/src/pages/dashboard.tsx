@@ -2,7 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
+  Clock,
+  History,
   Infinity as InfinityIcon,
+  KeyRound,
   Send,
   UserX,
   Users as UsersIcon,
@@ -25,11 +28,12 @@ import { useTheme } from '@/components/theme-provider'
 import { DaysBadge } from '@/components/status-badge'
 import { KpiCard } from '@/components/kpi-card'
 import { PageHeader } from '@/components/page-header'
+import { RunStatusPill } from '@/components/run-status'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
-import { fmtDate } from '@/lib/format'
+import { fmtCountdown, fmtDate, fmtRelative } from '@/lib/format'
 import type { DashboardData } from '@/lib/types'
 import { initials } from '@/lib/utils'
 
@@ -60,6 +64,39 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
+
+      {/* Ablaufendes Graph-Secret kündigt einen stillen Totalausfall an — ganz oben. */}
+      {data?.secret_expiry && (
+        <div className="border-destructive/40 bg-destructive/10 text-destructive mb-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
+          <KeyRound className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {data.secret_expiry.expired
+              ? t('backendStatus.secretExpired', { date: fmtDate(data.secret_expiry.expires_at) })
+              : t('backendStatus.secretSoon', {
+                  count: data.secret_expiry.days_left,
+                  date: fmtDate(data.secret_expiry.expires_at),
+                })}
+          </span>
+        </div>
+      )}
+
+      {/* Nächster & letzter Lauf */}
+      <div className="border-border bg-card mb-4 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border px-4 py-3 text-sm">
+        <div className="text-muted-foreground flex items-center gap-2">
+          <Clock className="size-4" />
+          {t('backendStatus.nextRun')}{' '}
+          <span className="text-foreground font-medium">{fmtCountdown(data?.next_run)}</span>
+        </div>
+        {data?.last_run && (
+          <div className="text-muted-foreground flex items-center gap-2">
+            <History className="size-4" />
+            {t('backendStatus.lastRun')} <RunStatusPill status={data.last_run.status} />
+            <span className="text-muted-foreground/70">
+              {fmtRelative(data.last_run.started_at)}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* KPI-Karten */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">

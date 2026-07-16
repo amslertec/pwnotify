@@ -343,6 +343,58 @@ async def two_factor_verify(
     return await _complete_login(request, response, session, user)
 
 
+async def _end_if_idle(
+    session: SessionDep, response: Response, us: object, now: dt.datetime
+) -> bool:
+    """Beendet die Sitzung, wenn seit ``last_used_at`` zu lange nichts passiert ist.
+
+    Fängt den geschlossenen Browser und gestohlene Tokens. ``last_used_at`` wird sowohl
+    beim Token-Refresh als auch durch den Aktivitäts-Ping des Frontends aktualisiert —
+    so bleibt ein aktiv arbeitender Benutzer angemeldet, auch wenn er gerade keine
+    API-Aufrufe auslöst. Gibt True zurück, wenn abgemeldet wurde.
+    """
+    idle_min = _settings.idle_timeout_min
+    if idle_min <= 0 or us.last_used_at >= now - dt.timedelta(minutes=idle_min):  # type: ignore[attr-defined]
+        return False
+    await user_repo.delete_session_by_jti(session, us.refresh_jti)  # type: ignore[attr-defined]
+    clear_auth_cookies(response)
+    log.info("session_idle_timeout", user_id=us.user_id, idle_min=idle_min)  # type: ignore[attr-defined]
+    # Sichtbar machen, dass es eine Abmeldung war — sonst fehlt sie im Protokoll.
+    actor = await user_repo.get(session, us.user_id)  # type: ignore[attr-defined]
+    await audit.record(session, action=audit.LOGOUT, actor=actor, detail={"reason": "idle_timeout"})
+    await session.commit()
+    return True
+
+
+@router.post("/activity", status_code=204)
+async def activity(request: Request, response: Response, session: SessionDep) -> Response:
+    """Aktivitäts-Ping des Frontends: hält ``last_used_at`` an echter Nutzeraktivität aktuell.
+
+    Ohne diesen Ping würde ``last_used_at`` nur beim Token-Refresh vorrücken. Wer aktiv
+    liest oder scrollt, ohne API-Aufrufe auszulösen (z. B. auf einer Seite ohne Polling),
+    liefe sonst trotz Aktivität in den Idle-Timeout. Bewusst schlank: keine Token-Rotation,
+    kein Body. Ist die Sitzung bereits abgelaufen (z. B. nach Standby), wird sie beendet.
+    """
+    token = request.cookies.get(REFRESH_COOKIE)
+    if not token:
+        raise AuthError("Nicht angemeldet.", code="not_authenticated")
+    try:
+        payload = decode_token(token, expected_type="refresh")
+    except jwt.PyJWTError as exc:
+        raise AuthError("Ungültiges Token.", code="invalid_token") from exc
+
+    us = await user_repo.get_session_by_jti(session, payload["jti"])
+    now = utcnow()
+    if us is None or us.revoked or us.expires_at < now:
+        raise AuthError("Sitzung ungültig.", code="session_invalid")
+    if await _end_if_idle(session, response, us, now):
+        raise AuthError("Sitzung wegen Inaktivität beendet.", code="session_idle_timeout")
+
+    us.last_used_at = now
+    await session.commit()
+    return Response(status_code=204)
+
+
 @router.post("/refresh", response_model=UserOut)
 async def refresh(request: Request, response: Response, session: SessionDep) -> UserOut:
     token = request.cookies.get(REFRESH_COOKIE)
@@ -363,15 +415,7 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
         clear_auth_cookies(response)
         raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
 
-    # Inaktivität: Eine Sitzung, in der lange nichts passiert ist, wird beendet und
-    # entfernt — sonst hielte der Refresh-Token sie `refresh_token_ttl_days` am Leben.
-    # Fängt vor allem den geschlossenen Browser und gestohlene Tokens; bei offenem Tab
-    # meldet zusätzlich das Frontend bei echter Untätigkeit ab.
-    idle_min = _settings.idle_timeout_min
-    if idle_min > 0 and us.last_used_at < now - dt.timedelta(minutes=idle_min):
-        await user_repo.delete_session_by_jti(session, us.refresh_jti)
-        clear_auth_cookies(response)
-        log.info("session_idle_timeout", user_id=us.user_id, idle_min=idle_min)
+    if await _end_if_idle(session, response, us, now):
         raise AuthError(
             "Sitzung wegen Inaktivität beendet. Bitte erneut anmelden.",
             code="session_idle_timeout",
