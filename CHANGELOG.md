@@ -4,7 +4,32 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.15] — 2026-07-16
+
+### Added
+
+- **Profile page reworked.** Avatar and name now share one *Profile* card (the avatar sits in
+  its own bordered box, set off from the name fields), password and two-factor sit side by side
+  instead of stacked, and two-factor is a status card with a large shield — green when on, red
+  when off — and a red *Disable* button. The name fields carry the same lock-after-save control
+  as the settings tabs. The local vs. SSO split is unchanged: SSO accounts still get no name
+  editing, avatar upload, password or 2FA — only the profile and their sessions.
+- **Protected settings fields lock after saving.** Connection and credential fields — Graph
+  (tenant, client id, client secret, group id), all SSO fields, all mail fields — become
+  read-only once saved and only reopen via a lock button on the right of the field; they
+  re-lock on the next save. Unlocking is admin-only.
+- **Notification search and date filter.** The notifications table can be searched by recipient
+  address and filtered by a date range; status shows as a coloured badge, and the (uninformative)
+  backend column is gone.
+
+### Security
+
+- **The last administrator can no longer be demoted.** Downgrading the only remaining admin to
+  auditor would lock everyone out of user management and settings. The role change is now
+  refused server-side (`cannot_demote_last_admin`) whenever it would leave zero admins, and the
+  access page disables the auditor option for the last admin. Replaces the narrower
+  "can't demote yourself" rule, which missed demoting the last admin who happened to be someone
+  else.
 
 ### Changed
 
@@ -514,6 +539,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.15]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.15
 [0.1.14]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.14
 [0.1.13]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.13
 [0.1.12]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.12

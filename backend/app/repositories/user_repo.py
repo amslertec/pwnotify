@@ -25,6 +25,14 @@ async def count(session: AsyncSession) -> int:
     return int((await session.execute(select(func.count(AppUser.id)))).scalar_one())
 
 
+async def count_admins(session: AsyncSession) -> int:
+    """Aktive Administratoren (lokal + SSO). Basis für den Schutz vor Aussperrung."""
+    stmt = select(func.count(AppUser.id)).where(
+        AppUser.role == "admin", AppUser.is_active.is_(True)
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
 async def create(
     session: AsyncSession,
     *,

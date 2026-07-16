@@ -91,12 +91,13 @@ function IdentityCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-          {/* Avatar + Upload-Aktionen */}
-          <div className="flex flex-col items-center gap-3">
-            <UserAvatar className="size-20 text-2xl" />
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
+          {/* Avatar + Upload-Aktionen — abgesetzt durch eigenen Rahmen und eine Trennlinie
+              zum Namensbereich. */}
+          <div className="border-border bg-muted/30 flex flex-col items-center gap-3 rounded-xl border p-5 sm:w-52">
+            <UserAvatar className="size-24 text-3xl" />
             {!isSso && (
-              <div className="flex flex-col gap-2">
+              <div className="flex w-full flex-col gap-2">
                 <input
                   ref={avatarRef}
                   type="file"
@@ -104,11 +105,21 @@ function IdentityCard() {
                   className="hidden"
                   onChange={(e) => uploadAvatar(e.target.files?.[0])}
                 />
-                <Button variant="outline" size="sm" onClick={() => avatarRef.current?.click()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => avatarRef.current?.click()}
+                >
                   <Upload /> {t('account.uploadImage')}
                 </Button>
                 {user?.has_avatar && (
-                  <Button variant="outline" size="sm" onClick={removeAvatar}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={removeAvatar}
+                  >
                     <Trash2 className="text-danger size-4" /> {t('account.remove')}
                   </Button>
                 )}

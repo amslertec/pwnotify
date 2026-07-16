@@ -59,11 +59,16 @@ async def set_role(
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
-    # Sich selbst nicht die Admin-Rechte entziehen (sonst niemand mehr Admin).
-    if target.id == admin.id and body.role != "admin":
+    # Den letzten Administrator nicht herabstufen — sonst kann niemand mehr verwalten.
+    # Deckt auch den Selbstentzug ab, wenn man der einzige Admin ist.
+    if (
+        target.role == "admin"
+        and body.role != "admin"
+        and await user_repo.count_admins(session) <= 1
+    ):
         raise ConflictError(
-            "Sie können sich nicht selbst die Administratorrolle entziehen.",
-            code="cannot_demote_self",
+            "Der letzte Administrator kann nicht herabgestuft werden.",
+            code="cannot_demote_last_admin",
         )
     vorher = target.role
     target.role = body.role

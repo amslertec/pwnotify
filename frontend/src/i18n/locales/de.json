@@ -220,7 +220,6 @@
     "admin_required": "Nur mit Administratorrechten möglich.",
     "avatar_sso_managed": "Das Profilbild wird aus Microsoft Entra übernommen.",
     "cannot_delete_self": "Sie können Ihr eigenes Konto nicht löschen.",
-    "cannot_demote_self": "Sie können sich nicht selbst die Administratorrolle entziehen.",
     "content_type_mismatch": "Der Dateiinhalt passt nicht zum angegebenen Format. Bitte eine echte Bilddatei hochladen.",
     "export_too_large": "Der Export ist zu gross. Bitte über Suche oder Status filtern.",
     "file_too_large": "Datei zu groß.",
@@ -262,7 +261,8 @@
     "unsupported_format": "Nicht unterstütztes Dateiformat.",
     "user_not_found": "Benutzer nicht gefunden.",
     "username_taken": "Benutzername bereits vergeben.",
-    "wrong_current_password": "Aktuelles Passwort ist falsch."
+    "wrong_current_password": "Aktuelles Passwort ist falsch.",
+    "cannot_demote_last_admin": "Der letzte Administrator kann nicht herabgestuft werden."
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -297,7 +297,8 @@
     "roleChanged": "Rolle aktualisiert",
     "roleAdmins": "Administratoren",
     "roleAuditors": "Auditoren",
-    "emptyRole": "Keine Benutzer in dieser Rolle."
+    "emptyRole": "Keine Benutzer in dieser Rolle.",
+    "lastAdminHint": "letzter Administrator"
   },
   "account": {
     "avatarTitle": "Profilbild",

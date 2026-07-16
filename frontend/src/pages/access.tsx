@@ -50,6 +50,9 @@ export default function AccessPage() {
   })
 
   const total = (data?.local.length ?? 0) + (data?.sso.length ?? 0)
+  // Aktive Administratoren (lokal + SSO). Der letzte darf nicht herabgestuft werden.
+  const adminCount =
+    byRole(data?.local, 'admin').length + byRole(data?.sso, 'admin').length
 
   const del = useMutation({
     mutationFn: (id: number) => api.del<{ message: string }>(`/admin/users/${id}`),
@@ -100,6 +103,7 @@ export default function AccessPage() {
               isAdmin={isAdmin}
               meId={me?.id}
               total={total}
+              adminCount={adminCount}
               onDelete={(id) => del.mutate(id)}
             />
             <RoleSection
@@ -109,6 +113,7 @@ export default function AccessPage() {
               isAdmin={isAdmin}
               meId={me?.id}
               total={total}
+              adminCount={adminCount}
               onDelete={(id) => del.mutate(id)}
             />
           </div>
@@ -139,6 +144,7 @@ export default function AccessPage() {
                 isAdmin={isAdmin}
                 meId={me?.id}
                 total={total}
+                adminCount={adminCount}
                 onDelete={(id) => del.mutate(id)}
               />
               <RoleSection
@@ -149,6 +155,7 @@ export default function AccessPage() {
                 isAdmin={isAdmin}
                 meId={me?.id}
                 total={total}
+                adminCount={adminCount}
                 onDelete={(id) => del.mutate(id)}
               />
             </div>
@@ -169,6 +176,7 @@ function RoleSection({
   isAdmin,
   meId,
   total,
+  adminCount,
   onDelete,
 }: {
   titleKey: string
@@ -178,6 +186,7 @@ function RoleSection({
   isAdmin: boolean
   meId: number | undefined
   total: number
+  adminCount: number
   onDelete: (id: number) => void
 }) {
   const { t } = useTranslation()
@@ -223,6 +232,8 @@ function RoleSection({
                     isAdmin={isAdmin}
                     isSelf={u.id === meId}
                     canDelete={isAdmin && total > 1 && u.id !== meId}
+                    // Letzten Admin nicht herabstufbar machen (Aussperr-Schutz).
+                    isLastAdmin={u.role === 'admin' && adminCount <= 1}
                     onDelete={() => onDelete(u.id)}
                   />
                 ))
@@ -241,6 +252,7 @@ function UserRow({
   isAdmin,
   isSelf,
   canDelete,
+  isLastAdmin,
   onDelete,
 }: {
   u: AdminUser
@@ -248,6 +260,7 @@ function UserRow({
   isAdmin: boolean
   isSelf: boolean
   canDelete: boolean
+  isLastAdmin: boolean
   onDelete: () => void
 }) {
   const { t } = useTranslation()
@@ -300,7 +313,11 @@ function UserRow({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">{t('access.roleAdmin')}</SelectItem>
-                <SelectItem value="auditor">{t('access.roleAuditor')}</SelectItem>
+                {/* Letzten Admin nicht auf Auditor herabstufbar — sonst Aussperrung. */}
+                <SelectItem value="auditor" disabled={isLastAdmin}>
+                  {t('access.roleAuditor')}
+                  {isLastAdmin && ` — ${t('access.lastAdminHint')}`}
+                </SelectItem>
               </SelectContent>
             </Select>
           )}

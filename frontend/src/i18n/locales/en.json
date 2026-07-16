@@ -220,7 +220,6 @@
     "admin_required": "Requires administrator rights.",
     "avatar_sso_managed": "The profile picture is taken from Microsoft Entra.",
     "cannot_delete_self": "You cannot delete your own account.",
-    "cannot_demote_self": "You cannot remove your own administrator role.",
     "content_type_mismatch": "The file content does not match the declared format. Please upload a real image file.",
     "export_too_large": "The export is too large. Please narrow it down using search or status.",
     "file_too_large": "File too large.",
@@ -262,7 +261,8 @@
     "unsupported_format": "Unsupported file format.",
     "user_not_found": "User not found.",
     "username_taken": "Username already taken.",
-    "wrong_current_password": "Current password is incorrect."
+    "wrong_current_password": "Current password is incorrect.",
+    "cannot_demote_last_admin": "The last administrator cannot be demoted."
   },
   "access": {
     "title": "User management",
@@ -297,7 +297,8 @@
     "roleChanged": "Role updated",
     "roleAdmins": "Administrators",
     "roleAuditors": "Auditors",
-    "emptyRole": "No users in this role."
+    "emptyRole": "No users in this role.",
+    "lastAdminHint": "last administrator"
   },
   "account": {
     "avatarTitle": "Profile picture",
