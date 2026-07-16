@@ -46,7 +46,7 @@ runtime image. The base image was chosen specifically for this: the previously
 considered `python:3.14-slim-bookworm` carried 21 unfixable Debian base-package CVEs
 (perl, util-linux/ncurses, zlib, libsqlite3) that made a Docker Scout A rating
 impossible; `python:slim` was therefore replaced with Chainguard/Wolfi. See
-`VERSIONS.md` for the decision record.
+the pinned versions in `backend/pyproject.toml`.
 
 CI fails the build on any HIGH/CRITICAL finding (Trivy `--exit-code 1`, Docker Scout
 policy gate), so this file is kept accurate automatically. If a future dependency

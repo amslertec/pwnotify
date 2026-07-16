@@ -18,7 +18,6 @@ frontend/.vite/
 # Env / secrets / data
 .env
 .env.*
-!.env.example
 *.pem
 secret.key
 data/
@@ -33,3 +32,16 @@ Thumbs.db
 
 # Lokale, nicht-öffentliche Arbeitsdokumente (z. B. Security-Roadmap)
 *.local.md
+
+# Lokal behalten, aber nicht veröffentlichen (bewusst aus dem Repo genommen):
+# - DOCKERHUB.md  Vorlage für die Docker-Hub-Beschreibung, dort manuell gepflegt
+# - PLAN.md       ursprüngliches Arbeitsdokument, überholt
+# - VERSIONS.md   Versionsentscheide; die verbindlichen Pins stehen in
+#                 backend/pyproject.toml und frontend/package.json
+# - .env.example  veraltet (ohne TRUSTED_PROXIES/IDLE_TIMEOUT_MIN) — example.env gilt
+# - docker-compose.yml  lokale Build-Variante; ausgeliefert wird docker-compose-prod.yml
+DOCKERHUB.md
+PLAN.md
+VERSIONS.md
+.env.example
+/docker-compose.yml

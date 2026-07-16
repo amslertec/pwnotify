@@ -17,7 +17,7 @@ Dockerfile  Multi-stage build -> hardened Chainguard runtime image
 - [pnpm](https://pnpm.io/) `11.12.0` (via `corepack enable`) + Node `24`
 - Docker (for the container build) and a PostgreSQL instance for running locally
 
-Exact pinned versions of every dependency live in [`VERSIONS.md`](VERSIONS.md).
+Every dependency is pinned exactly — see `backend/pyproject.toml` and `frontend/package.json`.
 
 ## Local development
 
@@ -38,7 +38,7 @@ pnpm install
 pnpm run dev                  # Vite dev server, proxies /api to :8080
 ```
 
-Copy `.env.example` to `.env` and fill in at least `PWNOTIFY_DATABASE_URL`.
+Copy `example.env` to `.env` and fill in at least `PWNOTIFY_DATABASE_URL`.
 
 ## Quality gates (must pass before a PR)
 
@@ -63,7 +63,6 @@ pnpm run build
 ## Conventions
 
 - **Versions are pinned exactly** — no `^`/`~`/`latest`. New deps go into the lockfile
-  and into `VERSIONS.md`.
 - **Backend** stays `mypy --strict` clean; repositories may use the documented per-module
   override for SQLModel column-expression false positives.
 - **Frontend** is ESLint + Prettier clean. Avoid raw ASCII double quotes inside JSX

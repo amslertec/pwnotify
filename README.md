@@ -127,21 +127,28 @@ with TLS (see below) for anything beyond a trusted LAN.
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
 `amslertec/pwnotify:0.1.14`.
 
-### From source (development)
+### Building the image yourself
 
 ```bash
 git clone https://github.com/amslertec/pwnotify.git
 cd pwnotify
-cp .env.example .env      # set POSTGRES_PASSWORD at minimum
-docker compose up -d      # builds the image locally
+docker build -t pwnotify:local .
+
+cp example.env .env
+#   -> in .env: PWNOTIFY_IMAGE=pwnotify:local
+#      plus POSTGRES_PASSWORD and the network settings as above
+docker compose -f docker-compose-prod.yml up -d
 ```
+
+The image is self-contained: the frontend is built inside the Dockerfile, so Node and
+pnpm are not needed on your machine.
 
 ---
 
 ## Configuration
 
 All runtime settings live in the **database** and are managed in the UI. Environment
-variables are only a **first-run seed** (see `.env.example` for the full list). Key ones:
+variables are only a **first-run seed** (see `example.env` for the full list). Key ones:
 
 | Variable | Purpose |
 |---|---|
@@ -161,7 +168,7 @@ variables are only a **first-run seed** (see `.env.example` for the full list). 
 ## Reverse proxy (TLS)
 
 Terminate TLS in front of the app. Commented Traefik labels are included in
-`docker-compose.yml`. Minimal nginx example:
+`docker-compose-prod.yml`. Minimal nginx example:
 
 ```nginx
 server {
@@ -278,7 +285,7 @@ See the `Makefile` for `up`, `down`, `logs`, `migrate`, `test`, `lint`, `scan`, 
 
 Exact pinned versions, the compatibility matrix, and deliberate deviations (Chainguard base,
 TypeScript 5.9.3, single-worker Uvicorn, etc.) are documented in
-[`VERSIONS.md`](VERSIONS.md). Security posture is in [`SECURITY.md`](SECURITY.md).
+Security posture is in [`SECURITY.md`](SECURITY.md).
 
 ## License
 

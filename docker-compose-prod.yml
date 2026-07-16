@@ -1,13 +1,13 @@
 # =============================================================================
-# PwNotify — Production Compose (Compose Spec, kein `version:`-Feld)
+# PwNotify — production compose (Compose Spec, no `version:` field)
 #
-# Zieht das fertige Image von Docker Hub (amslertec/pwnotify) — KEIN Build nötig.
-#   1) cp example.env .env   &&  Werte anpassen (mind. Passwörter setzen!)
+# Pulls the prebuilt image from Docker Hub (amslertec/pwnotify) — no build needed.
+#   1) cp example.env .env   &&  adjust the values (set the passwords at least!)
 #   2) docker compose -f docker-compose-prod.yml pull
 #   3) docker compose -f docker-compose-prod.yml up -d
 #
-# Härtung: non-root, read-only rootfs, no-new-privileges, cap_drop ALL,
-# internes Netz für die DB, Healthchecks, Resource-Limits.
+# Hardening: non-root, read-only rootfs, no-new-privileges, cap_drop ALL,
+# internal network for the database, healthchecks, resource limits.
 # =============================================================================
 name: pwnotify
 
@@ -16,7 +16,7 @@ services:
     image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pwnotify}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in .env gesetzt sein}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-pwnotify}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -42,7 +42,7 @@ services:
       - internal
 
   app:
-    # Von Docker Hub. Für unveränderliche Deployments per Digest pinnen, z. B.:
+    # From Docker Hub. Pin by digest for immutable deployments, e.g.:
     #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.14@sha256:<digest>
     image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.14}
     pull_policy: always
@@ -54,27 +54,31 @@ services:
       PWNOTIFY_SECRET_KEY: ${PWNOTIFY_SECRET_KEY:-}
       PWNOTIFY_BASE_URL: ${PWNOTIFY_BASE_URL:-http://localhost:8080}
       PWNOTIFY_COOKIE_SECURE: ${PWNOTIFY_COOKIE_SECURE:-true}
-      # Wem darf X-Forwarded-For geglaubt werden? Hinter einem Reverse-Proxy dessen
-      # Netz eintragen — sonst teilen sich alle Nutzer ein Rate-Limit. Nie "*".
+      # Who may claim a client's IP via X-Forwarded-For? Enter the address the app
+      # actually SEES — behind a proxy on another host that is the proxy's LAN IP;
+      # with a proxy on this host, Docker rewrites the source and the app sees the
+      # bridge gateway (172.16.0.0/12). Get it wrong and every user shares one rate
+      # limit, so a single attacker can lock everyone out. Never "*". See example.env.
       PWNOTIFY_TRUSTED_PROXIES: ${PWNOTIFY_TRUSTED_PROXIES:-127.0.0.1}
-      # Abmeldung nach Inaktivitaet (Minuten, 0 = aus). Sitzung wird geloescht.
+      # Sign out after this many minutes without activity (0 = off). The session
+      # record is deleted, not just revoked.
       PWNOTIFY_IDLE_TIMEOUT_MIN: ${PWNOTIFY_IDLE_TIMEOUT_MIN:-30}
-      # Erlaubte Host-Header (kommagetrennt). Leer = keine Pruefung.
+      # Accepted Host header values, comma-separated. Empty = no check.
       PWNOTIFY_ALLOWED_HOSTS: ${PWNOTIFY_ALLOWED_HOSTS:-}
       PWNOTIFY_LOG_LEVEL: ${PWNOTIFY_LOG_LEVEL:-INFO}
       PWNOTIFY_LOG_JSON: ${PWNOTIFY_LOG_JSON:-true}
       PWNOTIFY_TIMEZONE: ${PWNOTIFY_TIMEZONE:-Europe/Zurich}
-      # Optionaler Erst-Admin-Seed (nur beim allerersten Start ausgewertet):
+      # Optional first-admin seed (only evaluated on the very first start):
       PWNOTIFY_ADMIN_USERNAME: ${PWNOTIFY_ADMIN_USERNAME:-}
       PWNOTIFY_ADMIN_PASSWORD: ${PWNOTIFY_ADMIN_PASSWORD:-}
-      # Graph/Mail können auch komplett über die Setup-UI konfiguriert werden:
+      # Graph and mail can also be configured entirely through the setup wizard:
       PWNOTIFY_GRAPH_TENANT_ID: ${PWNOTIFY_GRAPH_TENANT_ID:-}
       PWNOTIFY_GRAPH_CLIENT_ID: ${PWNOTIFY_GRAPH_CLIENT_ID:-}
       PWNOTIFY_GRAPH_CLIENT_SECRET: ${PWNOTIFY_GRAPH_CLIENT_SECRET:-}
       PWNOTIFY_MAIL_BACKEND: ${PWNOTIFY_MAIL_BACKEND:-graph}
       PWNOTIFY_MAIL_FROM: ${PWNOTIFY_MAIL_FROM:-}
-    # Host-Port-Bindung. Hinter einem TLS-Reverse-Proxy: 127.0.0.1:8080 (nur lokal).
-    # Direkt im LAN erreichbar: PWNOTIFY_BIND=0.0.0.0:8080 in .env setzen.
+    # Host port binding. Proxy on THIS host: 127.0.0.1:8080 (local only).
+    # Proxy on another host, or direct LAN access: PWNOTIFY_BIND=0.0.0.0:8080 in .env.
     ports:
       - "${PWNOTIFY_BIND:-127.0.0.1:8080}:8080"
     volumes:
@@ -102,8 +106,8 @@ services:
       - internal
 
     # ----------------------------------------------------------------------
-    # Beispiel Reverse-Proxy (Traefik) — bei Bedarf einkommentieren und
-    # PWNOTIFY_BIND=127.0.0.1:8080 sowie PWNOTIFY_COOKIE_SECURE=true setzen:
+    # Reverse-proxy example (Traefik) — uncomment if needed and set
+    # PWNOTIFY_BIND=127.0.0.1:8080 plus PWNOTIFY_COOKIE_SECURE=true:
     # labels:
     #   - "traefik.enable=true"
     #   - "traefik.http.routers.pwnotify.rule=Host(`pwnotify.example.com`)"

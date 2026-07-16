@@ -12,8 +12,6 @@ logos
 LICENSE
 CHANGELOG.md
 SECURITY.md
-VERSIONS.md
-PLAN.md
 
 # ---- Python ----
 **/__pycache__
@@ -39,7 +37,6 @@ frontend/.vite
 # ---- Env / Secrets ----
 .env
 .env.*
-!.env.example
 **/*.pem
 **/*.key
 **/secret.key

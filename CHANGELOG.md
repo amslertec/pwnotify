@@ -382,7 +382,7 @@ before it was fixed, and each is covered by a regression test (23 → 59 tests).
   user's UI language; `POST /api/auth/language` updates it, and it is applied on login across
   devices. A **language switch (DE/EN)** sits at the bottom of the sidebar and takes effect
   immediately without a reload.
-- Stack: `i18next`, `react-i18next`, `i18next-browser-languagedetector` (see VERSIONS.md).
+- Stack: `i18next`, `react-i18next`, `i18next-browser-languagedetector` (pinned in `frontend/package.json`).
 
 ## [0.1.4] — 2026-07-14
 
