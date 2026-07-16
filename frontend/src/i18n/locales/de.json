@@ -326,7 +326,10 @@
     "revokeOthers": "Andere Sitzungen abmelden",
     "unknownDevice": "Unbekanntes Gerät",
     "activeLabel": "aktiv",
-    "currentSession": "Diese Sitzung"
+    "currentSession": "Diese Sitzung",
+    "profileTitle": "Profil",
+    "profileDesc": "Dein Name und Profilbild, wie sie in der App erscheinen.",
+    "profileDescSso": "Aus deinem Microsoft-Entra-Konto übernommen."
   },
   "profile": {
     "title": "Mein Konto",

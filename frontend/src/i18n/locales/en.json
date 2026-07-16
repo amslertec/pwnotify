@@ -326,7 +326,10 @@
     "revokeOthers": "Sign out other sessions",
     "unknownDevice": "Unknown device",
     "activeLabel": "active",
-    "currentSession": "This session"
+    "currentSession": "This session",
+    "profileTitle": "Profile",
+    "profileDesc": "Your name and picture as they appear in the app.",
+    "profileDescSso": "Taken from your Microsoft Entra account."
   },
   "profile": {
     "title": "My account",
