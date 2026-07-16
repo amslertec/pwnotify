@@ -24,21 +24,39 @@ TEST_DB_URL = os.environ.get(
 async def migrated_engine():
     # Alembic liest die DB-URL aus get_settings(); auf die Test-DB umbiegen und Cache leeren.
     from app.core.config import get_settings
+    from app.db import session as db_session
     from app.db.migrate import run_migrations
 
+    prev_url = os.environ.get("PWNOTIFY_DATABASE_URL")
     os.environ["PWNOTIFY_DATABASE_URL"] = TEST_DB_URL
     get_settings.cache_clear()
+    await db_session.dispose_engine()
+
     # run_migrations() nutzt asyncio.run intern -> im Thread ausführen.
     await asyncio.to_thread(run_migrations)
 
     engine = create_async_engine(TEST_DB_URL, future=True)
     yield engine
     await engine.dispose()
+    await db_session.dispose_engine()
+
+    if prev_url is None:
+        os.environ.pop("PWNOTIFY_DATABASE_URL", None)
+    else:
+        os.environ["PWNOTIFY_DATABASE_URL"] = prev_url
+    get_settings.cache_clear()
 
 
 @pytest_asyncio.fixture
 async def session(migrated_engine) -> AsyncSession:
-    factory = async_sessionmaker(migrated_engine, expire_on_commit=False, class_=AsyncSession)
-    async with factory() as s:
-        yield s
-        await s.rollback()
+    async with migrated_engine.connect() as conn:
+        outer = await conn.begin()
+        factory = async_sessionmaker(
+            bind=conn,
+            expire_on_commit=False,
+            class_=AsyncSession,
+            join_transaction_mode="create_savepoint",
+        )
+        async with factory() as s:
+            yield s
+        await outer.rollback()
