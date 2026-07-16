@@ -9,7 +9,7 @@ funktioniert ohne Netzwerkzugriff); in der UI-Vorschau eine normale http-URL.
 
 from __future__ import annotations
 
-DEFAULT_SUBJECT_DE = "Ihr Passwort läuft in {{ daysLeft }} Tag(en) ab"
+DEFAULT_SUBJECT_DE = "Dein Passwort läuft in {{ daysLeft }} Tag(en) ab"
 DEFAULT_SUBJECT_EN = "Your password expires in {{ daysLeft }} day(s)"
 
 _HTML = """<!doctype html>
@@ -58,13 +58,13 @@ _HTML = """<!doctype html>
 DEFAULT_HTML_DE = _HTML.format(
     lang="de",
     hello="Hallo",
-    intro1="Ihr Kennwort läuft in <strong>{{ daysLeft }}</strong> Tag(en) ab. "
-    "Bitte ändern Sie es rechtzeitig, um eine Unterbrechung Ihres Zugangs zu vermeiden.",
+    intro1="Dein Kennwort läuft in <strong>{{ daysLeft }}</strong> Tag(en) ab. "
+    "Bitte ändere es rechtzeitig, um eine Unterbrechung deines Zugangs zu vermeiden.",
     expiry_label="Ablaufdatum",
     account_label="Konto",
-    intro2="Sie können Ihr Passwort direkt über die folgende Schaltfläche zurücksetzen.",
+    intro2="Du kannst dein Passwort direkt über die folgende Schaltfläche zurücksetzen.",
     cta="Passwort jetzt ändern",
-    help="Wenn Sie Ihr Passwort bereits geändert haben, können Sie diese E-Mail ignorieren.",
+    help="Wenn du dein Passwort bereits geändert hast, kannst du diese E-Mail ignorieren.",
     footer="Automatische Benachrichtigung – bitte nicht antworten.",
 )
 
@@ -83,9 +83,9 @@ DEFAULT_HTML_EN = _HTML.format(
 
 DEFAULT_TEXT_DE = (
     "Hallo {{ displayName }},\n\n"
-    "Ihr Kennwort läuft in {{ daysLeft }} Tag(en) ab (am {{ expiryDate }}).\n"
+    "Dein Kennwort läuft in {{ daysLeft }} Tag(en) ab (am {{ expiryDate }}).\n"
     "Konto: {{ upn }}\n\n"
-    "Bitte ändern Sie Ihr Passwort: {{ resetUrl }}\n\n"
+    "Bitte ändere dein Passwort: {{ resetUrl }}\n\n"
     "{{ companyName or appName }}"
 )
 DEFAULT_TEXT_EN = (
