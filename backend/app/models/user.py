@@ -20,6 +20,9 @@ class AppUser(SQLModel, table=True):
     role: str = Field(default="admin", sa_column=Column(String(32), nullable=False))
     is_active: bool = Field(default=True)
     is_sso: bool = Field(default=False)
+    # SSO-Konten (Admin wie Auditor) sind an genau EINEN Kunden gebunden (aus dem tid-Claim).
+    # NULL = instanzweit (lokaler Admin). Lokale Auditoren binden über auditor_tenant.
+    tenant_id: int | None = Field(default=None, foreign_key="tenant.id", index=True)
     # UI-Sprache des Kontos (de | en). Steuert nur die Admin-Oberfläche.
     language: str = Field(
         default="de", sa_column=Column(String(8), nullable=False, server_default="de")
