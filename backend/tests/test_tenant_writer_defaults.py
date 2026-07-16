@@ -32,8 +32,6 @@ async def test_settings_upsert_updates_existing_row_on_composite_pk(session):
     assert value == "https://second.example"
 
     rows = (
-        await session.execute(
-            text("SELECT count(*) FROM setting WHERE key = 'app.public_url'")
-        )
+        await session.execute(text("SELECT count(*) FROM setting WHERE key = 'app.public_url'"))
     ).scalar_one()
     assert rows == 1

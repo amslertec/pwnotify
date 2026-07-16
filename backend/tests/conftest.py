@@ -49,7 +49,7 @@ async def migrated_engine():
 
 
 @pytest_asyncio.fixture
-async def session(migrated_engine) -> AsyncGenerator[AsyncSession, None]:
+async def session(migrated_engine) -> AsyncGenerator[AsyncSession]:
     async with migrated_engine.connect() as conn:
         outer = await conn.begin()
         factory = async_sessionmaker(
