@@ -40,8 +40,11 @@ Thumbs.db
 #                 backend/pyproject.toml und frontend/package.json
 # - .env.example  veraltet (ohne TRUSTED_PROXIES/IDLE_TIMEOUT_MIN) — example.env gilt
 # - docker-compose.yml  lokale Build-Variante; ausgeliefert wird docker-compose-prod.yml
+# - Makefile       lokale Abkürzungen; VERSION lief auf 0.1.0 fest und `up` braucht
+#                  docker-compose.yml — im Repo wäre es irreführend, die CI nutzt es nicht
 DOCKERHUB.md
 PLAN.md
 VERSIONS.md
 .env.example
 /docker-compose.yml
+/Makefile

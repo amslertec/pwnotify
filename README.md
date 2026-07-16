@@ -279,7 +279,6 @@ cd backend && uv sync && uv run pytest && uv run ruff check . && uv run mypy app
 cd frontend && pnpm install && pnpm run dev   # proxies /api to :8080
 ```
 
-See the `Makefile` for `up`, `down`, `logs`, `migrate`, `test`, `lint`, `scan`, `build`.
 
 ## Version decisions
 
