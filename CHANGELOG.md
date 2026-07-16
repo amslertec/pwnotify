@@ -4,6 +4,17 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **SSO sign-ins were missing from the audit log.** The OIDC callback issues its tokens
+  directly instead of going through the shared login path (it redirects rather than returning
+  JSON) and therefore never wrote an entry. With SSO enabled that meant *no* sign-in was
+  recorded at all — only sign-outs showed up, which made the log look broken. Successful SSO
+  sign-ins are now recorded (with role), and so are **rejected** ones, including the attempted
+  username and the reason: an attack on the group mapping would otherwise leave no trace.
+
 ## [0.1.14] — 2026-07-16
 
 ### Added

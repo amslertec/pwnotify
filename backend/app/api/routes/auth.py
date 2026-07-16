@@ -671,6 +671,17 @@ async def oidc_callback(
     oidc.verify_state(state)
     result = await oidc.exchange_and_verify(settings, code, _redirect_uri(base))
     if not result.allowed or not result.username:
+        # Abgelehnte SSO-Anmeldung protokollieren: Wer vergeblich versucht hereinzukommen,
+        # gehört ins Protokoll — sonst sieht man einen Angriff auf die Gruppenzuordnung nie.
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_username=result.username or None,
+            outcome="failure",
+            request=request,
+            detail={"sso": True, "reason": result.reason or "not_allowed"},
+        )
+        await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
     user = await user_repo.get_by_username(session, result.username)
@@ -688,6 +699,17 @@ async def oidc_callback(
         user.is_sso = True
         user.display_name = result.display_name
         user.role = result.role  # Rolle folgt der Entra-Gruppenmitgliedschaft
+
+    # Muss hier stehen, weil dieser Pfad bewusst nicht über `_complete_login` läuft
+    # (Redirect statt JSON-Antwort). Ohne diesen Eintrag fehlten ausgerechnet die
+    # SSO-Anmeldungen im Protokoll — bei aktiviertem SSO also praktisch alle.
+    await audit.record(
+        session,
+        action=audit.LOGIN_SUCCESS,
+        actor=user,
+        request=request,
+        detail={"sso": True, "role": user.role},
+    )
     user.last_login_at = utcnow()
     pair = issue_token_pair(str(user.id))
     await user_repo.create_session(
