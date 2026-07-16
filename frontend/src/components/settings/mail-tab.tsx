@@ -8,7 +8,9 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Field, Section } from './section'
+import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
+import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
@@ -18,6 +20,8 @@ const STRATEGIES = ['primary', 'alternate', 'both', 'alternate_fallback_primary'
 
 export function MailTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
+  const [lockSignal, setLockSignal] = useState(0)
   const [backend, setBackend] = useState(String(settings['mail.backend'] ?? 'graph'))
   const [from, setFrom] = useState(String(settings['mail.from'] ?? ''))
   const [strategy, setStrategy] = useState(String(settings['mail.recipient_strategy'] ?? 'primary'))
@@ -34,7 +38,7 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
     queryFn: () => api.get<DashboardData>('/dashboard'),
   })
 
-  const onSave = () =>
+  const persist = () =>
     save({
       'mail.backend': backend,
       'mail.from': from,
@@ -46,10 +50,17 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
       ...(smtpPass ? { 'mail.smtp_password': smtpPass } : {}),
     })
 
+  const onSave = async () => {
+    await persist()
+    setSmtpPass('') // getippter Klartext raus, Feld zeigt danach wieder die Maske
+    setLockSignal((n) => n + 1)
+  }
+
   const test = async () => {
     setTesting(true)
     try {
-      await onSave()
+      // Nur speichern (ohne Re-Lock), damit der Test die aktuellen Felder nutzt.
+      await persist()
       await api.post('/settings/mail/test', { to: testTo, locale: 'de' })
       toast.success(t('mailTab.test.sent', { to: testTo }))
     } catch (e) {
@@ -90,7 +101,13 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
           </Select>
         </Field>
         <Field label={t('mailTab.fields.from')}>
-          <Input value={from} onChange={(e) => setFrom(e.target.value)} />
+          <LockableInput
+            value={from}
+            onChange={setFrom}
+            hasSavedValue={!!settings['mail.from']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
+          />
         </Field>
         <Field label={t('mailTab.fields.strategy')} className="sm:col-span-2">
           <Select value={strategy} onValueChange={setStrategy}>
@@ -110,23 +127,44 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
         {backend === 'smtp' && (
           <>
             <Field label={t('mailTab.fields.smtpHost')}>
-              <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+              <LockableInput
+                value={smtpHost}
+                onChange={setSmtpHost}
+                hasSavedValue={!!settings['mail.smtp_host']}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
+              />
             </Field>
             <Field label={t('mailTab.fields.port')}>
-              <Input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+              <LockableInput
+                value={smtpPort}
+                onChange={setSmtpPort}
+                hasSavedValue={!!settings['mail.smtp_host']}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
+              />
             </Field>
             <Field label={t('mailTab.fields.user')}>
-              <Input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+              <LockableInput
+                value={smtpUser}
+                onChange={setSmtpUser}
+                hasSavedValue={!!settings['mail.smtp_username']}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
+              />
             </Field>
             <Field
               label={t('mailTab.fields.password')}
               hint={passSet ? t('mailTab.passwordHint') : undefined}
             >
-              <Input
+              <LockableInput
                 type="password"
                 value={smtpPass}
-                onChange={(e) => setSmtpPass(e.target.value)}
+                onChange={setSmtpPass}
                 placeholder={passSet ? '••••••••' : ''}
+                hasSavedValue={passSet}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
               />
             </Field>
             <Field label={t('mailTab.fields.tlsMode')}>

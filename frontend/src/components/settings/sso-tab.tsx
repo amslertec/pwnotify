@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
-import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
+import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
+import { useAuth } from '@/lib/auth'
 
 export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
+  const [lockSignal, setLockSignal] = useState(0)
   const [enabled, setEnabled] = useState(Boolean(settings['oidc.enabled'] ?? false))
   const [groupId, setGroupId] = useState(String(settings['oidc.admin_group_id'] ?? ''))
   const [auditorGroupId, setAuditorGroupId] = useState(
@@ -21,14 +24,16 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const base = publicUrl.trim().replace(/\/+$/, '') || window.location.origin
   const redirectUri = `${base}/api/auth/oidc/callback`
 
-  const onSave = () =>
-    save({
+  const onSave = async () => {
+    await save({
       'oidc.enabled': enabled,
       'oidc.admin_group_id': groupId,
       'oidc.auditor_group_id': auditorGroupId.trim(),
       'oidc.button_label': label,
       'app.public_url': publicUrl.trim().replace(/\/+$/, ''),
     })
+    setLockSignal((n) => n + 1)
+  }
 
   return (
     <Section
@@ -54,10 +59,13 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
           hint={t('ssoTab.publicUrl.hint')}
           className="sm:col-span-2"
         >
-          <Input
+          <LockableInput
             value={publicUrl}
-            onChange={(e) => setPublicUrl(e.target.value)}
+            onChange={setPublicUrl}
             placeholder="https://domain.example.com"
+            hasSavedValue={!!settings['app.public_url']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
           />
         </Field>
         <Field
@@ -65,11 +73,14 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
           hint={t('ssoTab.adminGroup.hint')}
           className="sm:col-span-2"
         >
-          <Input
+          <LockableInput
             value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
+            onChange={setGroupId}
             placeholder="00000000-0000-0000-0000-000000000000"
             className="font-mono"
+            hasSavedValue={!!settings['oidc.admin_group_id']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
           />
         </Field>
         <Field
@@ -77,15 +88,24 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
           hint={t('ssoTab.auditorGroup.hint')}
           className="sm:col-span-2"
         >
-          <Input
+          <LockableInput
             value={auditorGroupId}
-            onChange={(e) => setAuditorGroupId(e.target.value)}
+            onChange={setAuditorGroupId}
             placeholder="00000000-0000-0000-0000-000000000000"
             className="font-mono"
+            hasSavedValue={!!settings['oidc.auditor_group_id']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
           />
         </Field>
         <Field label={t('ssoTab.buttonLabel.label')} className="sm:col-span-2">
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+          <LockableInput
+            value={label}
+            onChange={setLabel}
+            hasSavedValue={!!settings['oidc.button_label']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
+          />
         </Field>
       </div>
 

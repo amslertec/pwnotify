@@ -25,7 +25,7 @@ import { fmtDateTime } from '@/lib/format'
 import type { Notification, Page } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
 
 export default function NotificationsPage() {
   const { t } = useTranslation()

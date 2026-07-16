@@ -450,7 +450,9 @@
     "toast": {
       "saved": "Gespeichert"
     },
-    "readOnlyNotice": "Als Auditor haben Sie nur Lesezugriff auf die Einstellungen. Änderungen können nur Administratoren speichern."
+    "readOnlyNotice": "Als Auditor haben Sie nur Lesezugriff auf die Einstellungen. Änderungen können nur Administratoren speichern.",
+    "lock": "Feld sperren",
+    "unlock": "Feld entsperren"
   },
   "graphTab": {
     "toast": {

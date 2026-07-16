@@ -8,8 +8,10 @@ import { EntraGuide } from '../entra-guide'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Field, Section } from './section'
+import { LockableInput } from './lockable-input'
 import { GraphResultCard } from '@/pages/setup'
 import type { SettingsTabProps } from '@/pages/settings'
+import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
@@ -17,6 +19,9 @@ import type { DashboardData, GraphTestResult } from '@/lib/types'
 
 export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
+  const isAdmin = useAuth().user?.role === 'admin'
+  // Steigt nach jedem Speichern — sperrt die geschützten Felder danach wieder.
+  const [lockSignal, setLockSignal] = useState(0)
   const [tenant, setTenant] = useState(String(settings['graph.tenant_id'] ?? ''))
   const [clientId, setClientId] = useState(String(settings['graph.client_id'] ?? ''))
   const [secret, setSecret] = useState('')
@@ -34,15 +39,21 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const secretSet = settings['graph.client_secret'] === MASK_MARKER
 
   // Jeder Speichern-Button speichert NUR die Felder seines eigenen Abschnitts.
-  const saveGraph = () =>
-    save({
+  const saveGraph = async () => {
+    await save({
       'graph.tenant_id': tenant,
       'graph.client_id': clientId,
       ...(secret ? { 'graph.client_secret': secret } : {}),
       'graph.client_secret_expires_at': secretExpires.trim(),
     })
+    setSecret('') // getippter Klartext raus, Feld zeigt danach wieder die Maske
+    setLockSignal((n) => n + 1)
+  }
 
-  const saveGroup = () => save({ 'sync.group_id': group.trim() })
+  const saveGroup = async () => {
+    await save({ 'sync.group_id': group.trim() })
+    setLockSignal((n) => n + 1)
+  }
 
   const test = async () => {
     setTesting(true)
@@ -88,21 +99,36 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t('graphTab.graph.tenantId')} className="sm:col-span-2">
-            <Input value={tenant} onChange={(e) => setTenant(e.target.value)} />
+            <LockableInput
+              value={tenant}
+              onChange={setTenant}
+              hasSavedValue={!!settings['graph.tenant_id']}
+              lockSignal={lockSignal}
+              canUnlock={isAdmin}
+            />
           </Field>
           <Field label={t('graphTab.graph.clientId')} className="sm:col-span-2">
-            <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            <LockableInput
+              value={clientId}
+              onChange={setClientId}
+              hasSavedValue={!!settings['graph.client_id']}
+              lockSignal={lockSignal}
+              canUnlock={isAdmin}
+            />
           </Field>
           <Field
             label={t('graphTab.graph.clientSecret')}
             hint={secretSet ? t('graphTab.graph.clientSecretHint') : undefined}
             className="sm:col-span-2"
           >
-            <Input
+            <LockableInput
               type="password"
               value={secret}
-              onChange={(e) => setSecret(e.target.value)}
+              onChange={setSecret}
               placeholder={secretSet ? '••••••••' : ''}
+              hasSavedValue={secretSet}
+              lockSignal={lockSignal}
+              canUnlock={isAdmin}
             />
           </Field>
           <Field
@@ -130,11 +156,14 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
         }
       >
         <Field label={t('graphTab.group.objectIdLabel')} hint={t('graphTab.group.objectIdHint')}>
-          <Input
+          <LockableInput
             value={group}
-            onChange={(e) => setGroup(e.target.value)}
+            onChange={setGroup}
             placeholder={t('graphTab.group.objectIdPlaceholder')}
             className="font-mono"
+            hasSavedValue={!!settings['sync.group_id']}
+            lockSignal={lockSignal}
+            canUnlock={isAdmin}
           />
         </Field>
 

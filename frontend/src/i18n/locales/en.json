@@ -450,7 +450,9 @@
     "toast": {
       "saved": "Saved"
     },
-    "readOnlyNotice": "As an auditor you have read-only access to the settings. Only administrators can save changes."
+    "readOnlyNotice": "As an auditor you have read-only access to the settings. Only administrators can save changes.",
+    "lock": "Lock field",
+    "unlock": "Unlock field"
   },
   "graphTab": {
     "toast": {
