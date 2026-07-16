@@ -23,6 +23,8 @@ secret.key
 data/
 pgdata/
 sbom/
+backups/
+.superpowers/
 
 # Editor / OS
 .vscode/
