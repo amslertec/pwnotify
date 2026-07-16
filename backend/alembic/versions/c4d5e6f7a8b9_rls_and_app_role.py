@@ -44,19 +44,17 @@ def upgrade() -> None:
     op.execute(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
     )
-    # 3. RLS + Policy pro Tenant-Tabelle. audit_log zusätzlich: tenant-lose Zeilen (NULL) sichtbar
-    #    (lokaler Admin bekommt sie später über den Kontext; hier sind sie generell lesbar,
-    #    weil sie keinem Kunden gehören — kein Cross-Tenant-Leak).
+    # Laufzeit-Rolle braucht keinen Zugriff auf die Migrations-Buchhaltung (Migrationen laufen
+    # als Owner). ALL TABLES oben hat alembic_version mit eingeschlossen -- explizit entziehen.
+    op.execute(f"REVOKE ALL ON alembic_version FROM {APP_ROLE}")
+    # 3. RLS + Policy pro Tenant-Tabelle. audit_log ist KEIN Sonderfall: tenant-lose Zeilen
+    #    (NULL, z. B. Kundenanlage/Auditor-Zuweisung/abgelehnte SSO-Logins) sind gegenüber
+    #    jedem restriktiven Tenant-Kontext unsichtbar -- sonst Cross-Tenant-Metadaten-Leak
+    #    (Design §3.2). Der lokale Admin sieht sie weiterhin, weil er als Owner läuft und RLS
+    #    umgeht; für einen Tenant-Kontext gibt es kein legitimes Publikum für diese Zeilen.
     for tbl in RLS_TABLES:
         op.execute(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY")
-        if tbl == "audit_log":
-            op.execute(
-                f"CREATE POLICY tenant_isolation ON {tbl} "
-                f"USING (tenant_id = {_EXPR} OR tenant_id IS NULL) "
-                f"WITH CHECK (tenant_id = {_EXPR} OR tenant_id IS NULL)"
-            )
-        else:
-            op.execute(f"CREATE POLICY tenant_isolation ON {tbl} USING (tenant_id = {_EXPR})")
+        op.execute(f"CREATE POLICY tenant_isolation ON {tbl} USING (tenant_id = {_EXPR})")
 
 
 def downgrade() -> None:
