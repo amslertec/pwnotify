@@ -13,6 +13,7 @@ import jwt
 from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
+from ...core import imagetype
 from ...core.config import get_settings
 from ...core.crypto import decrypt, encrypt
 from ...core.errors import AuthError, NotFoundError, PwNotifyError
@@ -456,6 +457,13 @@ async def upload_my_avatar(user: CurrentUser, file: UploadFile = File(...)) -> U
     data = await file.read()
     if len(data) > _AVATAR_MAX_BYTES:
         raise PwNotifyError("Datei zu gross (max. 5 MB).", code="file_too_large")
+    # Inhalt muss zum behaupteten Typ passen. Pillow würde Fremdes zwar ohnehin ablehnen,
+    # aber eine klare Meldung ist besser als ein generisches "Ungültige Bilddatei" —
+    # und die Prüfung greift, bevor eine Bibliothek überhaupt an die Bytes geht.
+    if not imagetype.matches(data, file.content_type or ""):
+        raise PwNotifyError(
+            "Der Dateiinhalt passt nicht zum angegebenen Format.", code="content_type_mismatch"
+        )
     processed = _process_avatar(data)
     if processed is None:
         raise PwNotifyError("Ungültige Bilddatei.", code="invalid_image")

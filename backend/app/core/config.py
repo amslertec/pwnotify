@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # Hinter einem Reverse-Proxy: dessen IP bzw. Netz eintragen (z. B. "172.18.0.0/16").
     trusted_proxies: str = "127.0.0.1"
 
+    # Erlaubte Werte im Host-Header, kommagetrennt. Leer = keine Prüfung (Standard).
+    # Bewusst offen als Standard: Eine zu enge Liste macht die App unerreichbar, während
+    # der Gewinn hier klein ist — E-Mail-Links und Cookies stammen aus PWNOTIFY_BASE_URL,
+    # nicht aus dem Host-Header. Wer es eng haben will, trägt seine Domain(s) ein.
+    allowed_hosts: str = ""
+
     # ---- Auth / JWT ----
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 14

@@ -43,8 +43,8 @@ services:
 
   app:
     # Von Docker Hub. Für unveränderliche Deployments per Digest pinnen, z. B.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.13@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.13}
+    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.1.14@sha256:<digest>
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.1.14}
     pull_policy: always
     depends_on:
       db:
@@ -59,6 +59,8 @@ services:
       PWNOTIFY_TRUSTED_PROXIES: ${PWNOTIFY_TRUSTED_PROXIES:-127.0.0.1}
       # Abmeldung nach Inaktivitaet (Minuten, 0 = aus). Sitzung wird geloescht.
       PWNOTIFY_IDLE_TIMEOUT_MIN: ${PWNOTIFY_IDLE_TIMEOUT_MIN:-30}
+      # Erlaubte Host-Header (kommagetrennt). Leer = keine Pruefung.
+      PWNOTIFY_ALLOWED_HOSTS: ${PWNOTIFY_ALLOWED_HOSTS:-}
       PWNOTIFY_LOG_LEVEL: ${PWNOTIFY_LOG_LEVEL:-INFO}
       PWNOTIFY_LOG_JSON: ${PWNOTIFY_LOG_JSON:-true}
       PWNOTIFY_TIMEZONE: ${PWNOTIFY_TIMEZONE:-Europe/Zurich}

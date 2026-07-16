@@ -26,10 +26,34 @@ _REDACT_KEYS = {
 }
 
 
+# Schlüssel mit Personenbezug. Sie werden nicht entfernt, sondern gekürzt: Logs werden
+# oft zentral gesammelt und lange aufbewahrt, dort gehören keine vollständigen Adressen
+# hin — für die Fehlersuche braucht man aber erkennen können, wen es betraf. Die Domain
+# bleibt deshalb stehen. Für Forensik existiert das Audit-Protokoll mit Klartext.
+_PII_KEYS = {"upn", "addr", "recipient", "mail", "email", "username", "user", "to"}
+
+
+def mask_pii(value: str) -> str:
+    """``pascal.amsler@example.com`` -> ``pa***@example.com``; sonst Anfang + ``***``."""
+    if not value:
+        return value
+    if "@" in value:
+        lokal, _, domain = value.partition("@")
+        sichtbar = lokal[:2] if len(lokal) > 3 else lokal[:1]
+        return f"{sichtbar}***@{domain}"
+    return f"{value[:2]}***" if len(value) > 4 else "***"
+
+
 def _redact(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     for key in list(event_dict.keys()):
-        if key.lower() in _REDACT_KEYS and event_dict[key]:
+        wert = event_dict[key]
+        if not wert:
+            continue
+        k = key.lower()
+        if k in _REDACT_KEYS:
             event_dict[key] = "***redacted***"
+        elif k in _PII_KEYS and isinstance(wert, str):
+            event_dict[key] = mask_pii(wert)
     return event_dict
 
 

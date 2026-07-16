@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import FileResponse, Response
 
+from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...schemas.common import Message
@@ -131,6 +132,13 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
     data = await file.read()
     if len(data) > _MAX_BYTES:
         raise PwNotifyError("Datei zu gross (max. 2 MB).", code="file_too_large")
+    # Der Content-Type kommt vom Client — der Inhalt muss dazu passen. Sonst landete
+    # bei einem Pillow-Fehler (unten wird dann das Original behalten) beliebiges
+    # Material unter einer Bild-Endung im Auslieferungsverzeichnis.
+    if not imagetype.matches(data, file.content_type or ""):
+        raise PwNotifyError(
+            "Der Dateiinhalt passt nicht zum angegebenen Format.", code="content_type_mismatch"
+        )
     if ext == ".svg":
         _reject_active_svg(data)
     # Logo: transparente Ränder automatisch abschneiden (SVG bleibt unverändert).

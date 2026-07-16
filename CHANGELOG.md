@@ -4,7 +4,7 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.14] — 2026-07-16
 
 ### Added
 
@@ -20,6 +20,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the session exists and the next sign-in asks for the code as usual.
   SSO accounts are exempt — their MFA is Entra's job. Existing sessions keep running until
   they expire.
+- **The encryption key can now be rotated without re-entering any secrets.**
+  `PWNOTIFY_SECRET_KEY` accepts several keys, comma-separated: encryption always uses the
+  first, decryption the first that fits. Put the new key in front, restart, save the settings
+  once (or wait until they change anyway), then drop the old one — no downtime. Previously a
+  compromised key could only be replaced by re-typing every secret, and until then everything
+  looked "not configured". The JWT signing key deliberately follows only the first key, so a
+  rotation does not invalidate everyone's sessions.
+- **Optional Host-header check** (`PWNOTIFY_ALLOWED_HOSTS`, empty = off). Deliberately open by
+  default: too narrow a list makes the app unreachable, while the gain is small — e-mail links
+  and cookies come from `PWNOTIFY_BASE_URL`, not the Host header. `127.0.0.1` and `localhost`
+  stay allowed so the container healthcheck keeps working.
+
+### Security
+
+- **Personal data is now shortened in logs.** UPNs and recipient addresses were written in
+  full; logs are often shipped to a central system and kept for a long time, where complete
+  addresses do not belong. They are shortened rather than removed — `pa***@example.com` keeps
+  the domain, so a failed send can still be traced. Secrets are still removed entirely, and the
+  audit log keeps the clear text for forensics.
+- **Uploads are checked against their actual content, not the client's claim.** Only the
+  `Content-Type` sent by the browser was verified. For branding uploads that mattered: when
+  Pillow cannot process a file the original is kept on purpose (SVGs cannot be rasterised), so
+  arbitrary bytes could land under a `.png` name in the served directory. The magic bytes must
+  now match the declared type — for logos, favicons and avatars alike.
 
 ## [0.1.13] — 2026-07-15
 
@@ -457,6 +481,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.1.14]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.14
 [0.1.13]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.13
 [0.1.12]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.12
 [0.1.11]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.11

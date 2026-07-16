@@ -13,6 +13,7 @@ from fastapi.responses import ORJSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
@@ -120,6 +121,13 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
+
+    # Host-Header prüfen, sofern konfiguriert. Standard ist offen — siehe config.py.
+    hosts = [h.strip() for h in settings.allowed_hosts.split(",") if h.strip()]
+    if hosts:
+        # Der Healthcheck spricht den Container über 127.0.0.1 an und muss weiter laufen.
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*hosts, "127.0.0.1", "localhost"])
+        log.info("trusted_hosts_enabled", hosts=hosts)
 
     # Security-Header. Die Hashes der Inline-Skripte werden einmal beim Start aus der
     # ausgelieferten index.html gelesen, damit die CSP ohne 'unsafe-inline' auskommt.

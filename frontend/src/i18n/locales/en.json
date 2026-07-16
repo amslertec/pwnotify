@@ -221,6 +221,7 @@
     "avatar_sso_managed": "The profile picture is taken from Microsoft Entra.",
     "cannot_delete_self": "You cannot delete your own account.",
     "cannot_demote_self": "You cannot remove your own administrator role.",
+    "content_type_mismatch": "The file content does not match the declared format. Please upload a real image file.",
     "export_too_large": "The export is too large. Please narrow it down using search or status.",
     "file_too_large": "File too large.",
     "generic": "Something went wrong.",
