@@ -28,6 +28,10 @@ def get_engine() -> AsyncEngine:
             max_overflow=5,
             future=True,
         )
+
+        from sqlalchemy import event
+
+        event.listen(_engine.sync_engine, "begin", _begin_tenant_wrapper)
     return _engine
 
 
@@ -50,3 +54,17 @@ async def dispose_engine() -> None:
         await _engine.dispose()
     _engine = None
     _factory = None
+
+
+def _begin_tenant_wrapper(conn: object) -> None:
+    """SQLAlchemy 'begin'-Event-Callback (läuft auf der Sync-Engine, auch für AsyncEngine --
+    die asyncio-Bridge führt den Callback im selben Greenlet wie den umgebenden async-Aufruf
+    aus). `conn` ist eine Core-`Connection`; die rohe DBAPI-Verbindung trägt der Cursor,
+    über den `SET LOCAL ROLE`/GUC gesetzt werden.
+
+    Lokaler Import von `tenant_context`, um den Zirkularimport zu vermeiden
+    (`tenant_context` importiert `get_session_factory` aus diesem Modul).
+    """
+    from .tenant_context import apply_tenant_on_begin
+
+    apply_tenant_on_begin(conn.connection.dbapi_connection, None)  # type: ignore[attr-defined]
