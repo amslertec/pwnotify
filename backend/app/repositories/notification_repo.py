@@ -57,6 +57,9 @@ async def list_logs(
     *,
     status: str | None = None,
     entra_user_id: int | None = None,
+    search: str | None = None,
+    since: dt.datetime | None = None,
+    until: dt.datetime | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[NotificationLog], int]:
@@ -68,6 +71,16 @@ async def list_logs(
     if entra_user_id:
         stmt = stmt.where(NotificationLog.entra_user_id == entra_user_id)
         count_stmt = count_stmt.where(NotificationLog.entra_user_id == entra_user_id)
+    if search:
+        cond = NotificationLog.recipient.ilike(f"%{search}%")
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
+    if since:
+        stmt = stmt.where(NotificationLog.created_at >= since)
+        count_stmt = count_stmt.where(NotificationLog.created_at >= since)
+    if until:
+        stmt = stmt.where(NotificationLog.created_at < until)
+        count_stmt = count_stmt.where(NotificationLog.created_at < until)
     total = int((await session.execute(count_stmt)).scalar_one())
     stmt = (
         stmt.order_by(NotificationLog.created_at.desc())

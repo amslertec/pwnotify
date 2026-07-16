@@ -339,7 +339,13 @@
     "filter": {
       "all": "All",
       "sent": "Sent",
-      "failed": "Failed"
+      "failed": "Failed",
+      "searchLabel": "Search",
+      "searchPlaceholder": "Search by e-mail address…",
+      "statusLabel": "Status",
+      "from": "From",
+      "to": "To",
+      "clear": "Clear filters"
     },
     "columns": {
       "time": "Time",
@@ -351,7 +357,9 @@
     },
     "empty": {
       "title": "No notifications",
-      "description": "No reminders have been sent yet."
+      "description": "No reminders have been sent yet.",
+      "filteredTitle": "No matches",
+      "filteredDescription": "No notifications found for the selected filters."
     },
     "days": "{{n}} days",
     "status": {

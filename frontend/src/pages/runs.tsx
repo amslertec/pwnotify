@@ -14,7 +14,7 @@ import { fmtDateTime, fmtDuration, fmtRelative } from '@/lib/format'
 import type { Page, Run, RunDetail } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
 
 export default function RunsPage() {
   const { t } = useTranslation()

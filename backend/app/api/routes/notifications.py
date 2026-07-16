@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Query
 
 from ...core.config import get_settings
@@ -18,17 +20,43 @@ from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
+def _parse_day(value: str | None) -> dt.datetime | None:
+    """`YYYY-MM-DD` -> Tagesbeginn (UTC). Unlesbares Datum wird ignoriert, nicht zum Fehler."""
+    if not value:
+        return None
+    try:
+        d = dt.date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    return dt.datetime(d.year, d.month, d.day, tzinfo=dt.UTC)
+
+
 @router.get("", response_model=Page[NotificationOut])
 async def list_notifications(
     _: CurrentUser,
     session: SessionDep,
     status: str | None = None,
     user_id: int | None = None,
+    search: str | None = None,
+    # Datumsbereich als YYYY-MM-DD (inklusive from, exklusive Tag nach to).
+    date_from: str | None = None,
+    date_to: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> Page[NotificationOut]:
+    since = _parse_day(date_from)
+    until = _parse_day(date_to)
+    if until is not None:
+        until = until + dt.timedelta(days=1)  # bis Ende des gewählten Tages
     rows, total = await notification_repo.list_logs(
-        session, status=status, entra_user_id=user_id, page=page, page_size=page_size
+        session,
+        status=status,
+        entra_user_id=user_id,
+        search=(search or "").strip() or None,
+        since=since,
+        until=until,
+        page=page,
+        page_size=page_size,
     )
     return Page[NotificationOut](
         items=[NotificationOut.model_validate(r, from_attributes=True) for r in rows],

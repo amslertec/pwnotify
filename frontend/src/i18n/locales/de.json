@@ -339,7 +339,13 @@
     "filter": {
       "all": "Alle",
       "sent": "Gesendet",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "searchLabel": "Suche",
+      "searchPlaceholder": "Nach E-Mail-Adresse suchen…",
+      "statusLabel": "Status",
+      "from": "Von",
+      "to": "Bis",
+      "clear": "Filter zurücksetzen"
     },
     "columns": {
       "time": "Zeitpunkt",
@@ -351,7 +357,9 @@
     },
     "empty": {
       "title": "Keine Benachrichtigungen",
-      "description": "Es wurden noch keine Erinnerungen versendet."
+      "description": "Es wurden noch keine Erinnerungen versendet.",
+      "filteredTitle": "Keine Treffer",
+      "filteredDescription": "Für die gewählten Filter wurden keine Benachrichtigungen gefunden."
     },
     "days": "{{n}} Tage",
     "status": {
