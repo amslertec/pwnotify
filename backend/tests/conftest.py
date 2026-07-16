@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -48,7 +49,7 @@ async def migrated_engine():
 
 
 @pytest_asyncio.fixture
-async def session(migrated_engine) -> AsyncSession:
+async def session(migrated_engine) -> AsyncGenerator[AsyncSession, None]:
     async with migrated_engine.connect() as conn:
         outer = await conn.begin()
         factory = async_sessionmaker(

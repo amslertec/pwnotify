@@ -5,18 +5,23 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, FetchedValue, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 from ._base import utcnow
+
+# server_default=FetchedValue() ist Phase-1-Brücke: siehe app/models/entra.py für Details.
+_TENANT_ID_BRIDGE = {"server_default": FetchedValue()}
 
 
 class Run(SQLModel, table=True):
     __tablename__ = "run"
 
     id: int | None = Field(default=None, primary_key=True)
-    tenant_id: int = Field(foreign_key="tenant.id", index=True, nullable=False)
+    tenant_id: int = Field(
+        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=_TENANT_ID_BRIDGE
+    )
     trigger: str = Field(
         default="schedule", sa_column=Column(String(16), nullable=False)
     )  # schedule|manual

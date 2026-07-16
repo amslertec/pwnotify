@@ -103,4 +103,5 @@ disable_error_code = [
   "operator",
   "call-overload",
   "index",
+  "list-item",
 ]

@@ -91,7 +91,7 @@ class SettingsService:
             pg_insert(Setting)
             .values(key=key, value=value, is_secret=is_secret, updated_at=now)
             .on_conflict_do_update(
-                index_elements=[Setting.key],
+                index_elements=[Setting.tenant_id, Setting.key],
                 set_={"value": value, "is_secret": is_secret, "updated_at": now},
             )
         )
