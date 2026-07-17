@@ -128,10 +128,19 @@ class SuperadminCreate(BaseModel):
     """Nur für den superadmin-only Erstellungs-Endpunkt (`POST /admin/users/superadmin`,
     Task 4) -- bewusst KEIN `role`-Feld (immer fest `superadmin`) und ein explizites
     `is_sso`-Feld, das die Route hart ablehnt, statt es zu ignorieren (Design §11.3:
-    Superadmin ist IMMER ein lokales Konto)."""
+    Superadmin ist IMMER ein lokales Konto).
 
-    username: str = Field(min_length=3, max_length=150)
-    password: str = Field(min_length=10, max_length=1024)
+    `password` PRÄSENT -> bestehender Direktanlage-Pfad (Benutzername weiterhin Pflicht,
+    von der Route erzwungen). `password` ABWESEND -> Einladungsmodus (Task 10, Parität zu
+    `create_local`/Task 5, §7b): `email` wird Pflicht, `username` wird IGNORIERT (die Route
+    vergibt einen Platzhalter-Benutzernamen, den erst die Einladungsannahme -- rollenagnostisch,
+    `public_tokens.accept_token` -- durch den echten, dort eindeutigkeitsgeprüften Namen
+    ersetzt) -- deshalb hier beide optional, die Route selbst erzwingt die je nach Modus
+    passende Pflichtangabe."""
+
+    username: str | None = Field(default=None, min_length=3, max_length=150)
+    password: str | None = Field(default=None, min_length=10, max_length=1024)
+    email: str | None = Field(default=None, max_length=320)
     display_name: str | None = Field(default=None, max_length=320)
     is_sso: bool = False
 

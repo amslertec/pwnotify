@@ -372,31 +372,83 @@ async def create_superadmin(
     Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
     (`SuperadminDefaultContextUser`, `default_context_required`): die Superadmin-Verwaltung
     ist Provider-Ebene (Design §4/§4-notes), genau wie Instanz-/Mandanten-/Zuweisungs-
-    Konsole -- aus einem Kunden-Kontext heraus gesperrt."""
+    Konsole -- aus einem Kunden-Kontext heraus gesperrt.
+
+    **Einladungsmodus (Task 10, Parität zu `create_local`s Einladungsmodus, Task 5, §7b):**
+    `body.password` ABWESEND schaltet auf Einladung um -- exaktes Muster wie dort (Platzhalter-
+    Benutzername `pending:<uuid4>`, unbrauchbarer Passwort-Hash, `is_active=False`), ABER
+    OHNE `add_grant` (Superadmin ist instanzweit, keine Tenant-Zuweisung nötig) und mit
+    `tenant_id = default_tenant_id(...)` als Heimat -- NICHT, weil der Superadmin irgendeinen
+    Tenant "gehört", sondern weil der Einladungsversand (`user_token._send`) in
+    `tenant_scoped_session(user.tenant_id)` läuft und so das Branding auflöst; ein heimatloses
+    Konto (`tenant_id=None`, wie im Direktpfad unten -- dort bewusst unverändert, kein
+    Mailversand nötig) hätte keinen Branding-Scope. Der Accept-Endpunkt
+    (`public_tokens.accept_token`) ist ROLLENAGNOSTISCH -- er fasst `target.role` nie an --,
+    daher aktiviert ein mit `role='superadmin'` angelegtes `pending`-Konto korrekt als
+    Superadmin, ganz ohne Änderung an `public_tokens.py`/`user_token*.py`."""
     if body.is_sso:
         raise ConflictError(
             "Ein Superadmin muss ein lokales Konto sein.", code="superadmin_must_be_local"
         )
-    existing = await user_repo.get_by_username(session, body.username)
-    if existing is not None:
-        raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+
+    raw_password = body.password
+    is_invite = raw_password is None
+
+    username: str
+    password_hash: str
+    if raw_password is None:
+        if not body.email:
+            raise ForbiddenError(
+                "Für eine Einladung ist eine E-Mail-Adresse erforderlich.",
+                code="email_required",
+            )
+        username = f"pending:{uuid.uuid4().hex}"
+        password_hash = hash_password(secrets.token_hex(32))  # nie einlösbar
+    else:
+        if not body.username:
+            raise ForbiddenError("Benutzername erforderlich.", code="username_required")
+        existing = await user_repo.get_by_username(session, body.username)
+        if existing is not None:
+            raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+        username = body.username
+        password_hash = hash_password(raw_password)
 
     user = await user_repo.create(
         session,
-        username=body.username,
-        password_hash=hash_password(body.password),
+        username=username,
+        password_hash=password_hash,
         display_name=body.display_name,
         role="superadmin",
         is_sso=False,
+        tenant_id=await default_tenant_id(session) if is_invite else None,
     )
+    assert user.id is not None  # gerade committet, hat also eine id
+
+    if is_invite:
+        # Einladung: pending -- Konto existiert, ist aber bis zur Annahme (`public_tokens.
+        # accept_token`) nicht nutzbar. E-Mail wird hier gesetzt (wie `create_local`s
+        # Einladungspfad), nicht am `create()`-Aufruf oben (der bleibt für den Direktpfad
+        # unverändert).
+        user.email = body.email
+        user.is_active = False
+        user.updated_at = utcnow()
+        await session.commit()
+        await session.refresh(user)
+
     await audit.record(
         session,
-        action=audit.SUPERADMIN_CREATED,
+        action=audit.USER_INVITED if is_invite else audit.SUPERADMIN_CREATED,
         actor=admin,
-        target=body.username,
+        target=username,
         request=request,
+        detail={"role": "superadmin", "sso": False, "email": body.email} if is_invite else None,
     )
     await session.commit()
+
+    if is_invite:
+        assert admin.id is not None
+        await user_token.issue_invite(session, user=user, created_by=admin.id)
+
     return AdminUserOut.model_validate(user, from_attributes=True)
 
 

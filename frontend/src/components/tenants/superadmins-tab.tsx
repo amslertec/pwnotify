@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
@@ -150,6 +151,53 @@ export function SuperadminsTab() {
   )
 }
 
+/** 'password': bestehender Direktanlage-Pfad (Benutzername + Passwort sofort gesetzt).
+ *  'invite': Einladungsmodus (Task 10, Parität zu `access.tsx`s `CreateDialog`, Task 5 §7b)
+ *  -- nur E-Mail, `POST /admin/users/superadmin` OHNE `password` -> legt ein `pending:`-
+ *  Platzhalterkonto (`role=superadmin`) an und verschickt eine Einladungs-Mail; der
+ *  Empfänger vergibt Benutzername + Passwort erst beim Annehmen (`/einladung`). */
+export type CreateMode = 'password' | 'invite'
+
+interface CreateFormState {
+  firstName: string
+  lastName: string
+  username: string
+  password: string
+  email: string
+}
+
+// Reine Logik ausgelagert (Muster wie `groups-tab.tsx`/`groups-tab.test.ts` -- `vitest.config.ts`
+// matched nur `src/**/*.test.ts`, `environment: 'node'`, kein jsdom/`@testing-library/react` im
+// Einsatz; das Rendering/Wiring selbst wird über `typecheck`/`build` abgesichert), damit der
+// Modus-Zweig (E-Mail-only vs. Benutzername+Passwort) ohne Komponenten-Rendering testbar ist.
+export function isSuperadminEmailValid(email: string): boolean {
+  return /.+@.+\..+/.test(email.trim())
+}
+
+export function canSubmitSuperadminCreate(mode: CreateMode, form: CreateFormState): boolean {
+  return mode === 'invite'
+    ? isSuperadminEmailValid(form.email)
+    : form.username.length >= 3 && form.password.length >= 10
+}
+
+export function buildSuperadminCreatePayload(
+  mode: CreateMode,
+  form: CreateFormState,
+): Record<string, unknown> {
+  if (mode === 'invite') {
+    return { email: form.email.trim() }
+  }
+  return {
+    username: form.username,
+    password: form.password,
+    display_name: `${form.firstName} ${form.lastName}`.trim() || null,
+  }
+}
+
+export function superadminCreatedToastKey(mode: CreateMode): string {
+  return mode === 'invite' ? 'access.inviteSent' : 'tenants.superadmins.created'
+}
+
 function CreateSuperadminDialog({
   open,
   onOpenChange,
@@ -159,63 +207,103 @@ function CreateSuperadminDialog({
 }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
+  const [mode, setMode] = useState<CreateMode>('password')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
+
+  const resetForm = () => {
+    setMode('password')
+    setFirstName('')
+    setLastName('')
+    setUsername('')
+    setPassword('')
+    setEmail('')
+  }
+
+  const formState: CreateFormState = { firstName, lastName, username, password, email }
 
   const create = useMutation({
     mutationFn: () =>
-      api.post<AdminUser>('/admin/users/superadmin', {
-        username,
-        password,
-        display_name: `${firstName} ${lastName}`.trim() || null,
-      }),
+      api.post<AdminUser>('/admin/users/superadmin', buildSuperadminCreatePayload(mode, formState)),
     onSuccess: () => {
-      toast.success(t('tenants.superadmins.created'))
+      toast.success(t(superadminCreatedToastKey(mode)))
       void qc.invalidateQueries({ queryKey: ['admin-users'] })
-      setFirstName('')
-      setLastName('')
-      setUsername('')
-      setPassword('')
+      resetForm()
       onOpenChange(false)
     },
     onError: (e) => toast.error(translateError(e)),
   })
 
+  const canSubmit = canSubmitSuperadminCreate(mode, formState)
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o)
+        if (!o) resetForm()
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('tenants.superadmins.createTitle')}</DialogTitle>
         </DialogHeader>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as CreateMode)}>
+          <TabsList className="w-full">
+            <TabsTrigger value="password" className="flex-1">
+              {t('access.modeSetPassword')}
+            </TabsTrigger>
+            <TabsTrigger value="invite" className="flex-1">
+              {t('access.modeInvite')}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          {mode === 'password' ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>{t('access.firstName')}</Label>
+                  <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('access.lastName')}</Label>
+                  <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('access.username')}</Label>
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('access.passwordLabel')}</Label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </>
+          ) : (
             <div className="space-y-1.5">
-              <Label>{t('access.firstName')}</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              <Label>{t('access.emailLabel')}</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoFocus
+              />
+              <p className="text-muted-foreground text-xs">{t('access.inviteHint')}</p>
             </div>
-            <div className="space-y-1.5">
-              <Label>{t('access.lastName')}</Label>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('access.username')}</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('access.passwordLabel')}</Label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
+          )}
         </div>
         <DialogFooter>
-          <Button
-            onClick={() => create.mutate()}
-            loading={create.isPending}
-            disabled={username.length < 3 || password.length < 10}
-          >
-            {t('tenants.superadmins.create')}
+          <Button onClick={() => create.mutate()} loading={create.isPending} disabled={!canSubmit}>
+            {mode === 'invite' ? t('access.sendInvite') : t('tenants.superadmins.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
