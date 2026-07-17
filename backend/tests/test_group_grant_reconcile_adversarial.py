@@ -7,6 +7,10 @@ Isolations-Invarianten wahren:
    die `is_provider_account`-Gate ist die ERSTE Zeile (fail-closed), vor jedem DB-Zugriff.
 2. **Ein `source='manual'`-Grant wird NIE angefasst** (nicht konvertiert, nicht gelöscht) --
    ein manueller Superadmin-Grant gewinnt und bleibt `source='manual'`.
+3. **Rollen-Flip-Sicherheit:** Gruppen-Grants existieren IMMER NUR in der Zieltabelle der
+   AKTUELLEN Rolle -- ein Reconcile räumt bei jedem Aufruf zusätzlich verwaiste
+   `source='group'`-Zeilen der ANDEREN Zieltabelle auf (kein dauerhafter Übergewähr bei
+   admin<->auditor-Rollenwechsel eines Provider-Kontos).
 
 Angriffs-orientiert: die Tests treiben `reconcile_group_grants` DIREKT an (wie
 `test_assignment_bulk_cross_grant_lock.py` seine Route direkt treibt) und beweisen das
@@ -15,8 +19,20 @@ Verhalten an echtem Postgres.
 NICHT-VAKUOS: `test_customer_a_homed_admin_never_group_granted_foreign_tenant` /
 `test_null_home_account_never_group_granted` mappen ein Team, dessen Kunde OHNE die Gate
 tatsächlich als Grant geschrieben würde -- erst die Gate lässt sie mit ZERO Zeilen enden.
-`test_manual_grant_precedence_*` bricht, sobald der Manual-Vorrang entfernt würde (die Zeile
-würde zu `source='group'` konvertiert bzw. beim leeren Reconcile mit-gelöscht).
+`test_role_flip_stale_other_kind_group_grant_is_cleaned` bricht gegen den Vor-Fix-Stand: dort
+würde die alte `admin_tenant(A, group)`-Zeile nach einer Demotion zu `auditor` erhalten
+bleiben, weil der Reconcile vor dem Fix nur die Zieltabelle der NEUEN Rolle anfasst.
+
+KORREKTUR (Sicherheitsreview, Minor-Finding): `test_manual_grant_precedence_*` prüft die
+tragenden Kontrollen -- dass die manuelle Zeile `source='manual'` bleibt (nicht konvertiert)
+und dass genau EINE Zeile für `(user, A)` existiert, sowie dass sie bei `groups=[]` persistiert.
+Der `- manual_now`-Term in der Add-Menge ist dabei NICHT die tragende Schutzschicht -- er ist
+redundante Defense-in-Depth. Die tragende Schicht ist der Composite-PK zusammen mit
+`add_grant`s `on_conflict_do_nothing()`: eine bestehende manuelle Zeile blockiert das
+Gruppen-INSERT bereits auf DB-Ebene, eine "Konvertierung" zu `source='group'` ist technisch
+unmöglich (ON CONFLICT DO NOTHING lässt die bestehende Zeile unverändert). Der frühere Bericht
+(`cg2-task-4-report.md`) behauptete fälschlich, ohne den Manual-Vorrang würde die Zeile "zu
+`source='group'` konvertiert" -- siehe die Korrektur-Notiz dort.
 
 Die savepoint-isolierte `session`-Fixture (`conftest.py`) IST der Aufräum-Mechanismus:
 `add_grant`/`remove_grant` committen intern, unter der Fixture werden das Savepoints, der
@@ -250,3 +266,83 @@ async def test_inactive_tenant_in_team_is_skipped(session: AsyncSession) -> None
     await assignment_group_repo.reconcile_group_grants(session, admin, [t3])
     assert await _admin_row(session, admin.id, tenant_c.id) is None
     assert await _admin_rows(session, admin.id) == []
+
+
+# ---- ROLE-FLIP SAFETY (Important finding, security review): stale other-kind group grant --- #
+# ---- must not survive a role change; a manual grant of the other kind must never be moved -- #
+
+
+async def test_role_flip_stale_other_kind_group_grant_is_cleaned(session: AsyncSession) -> None:
+    """Non-vacuous against the pre-fix code: a provider admin holds `admin_tenant(A, group)`
+    from Team T1. Entra then flips the account's role to `auditor` (a demotion, no group
+    membership change). The NEXT reconcile (still groups=[T1]) must:
+    - remove the now-stale `admin_tenant(A, group)` row entirely (the old role's kind is no
+      longer `_grant_kind(user.role)` -- it is `other_kind`), and
+    - materialize `auditor_tenant(A, group)` for the new role.
+
+    Against the pre-fix code, the reconcile only ever touched `kind = _grant_kind(user.role)`
+    (here `auditor` after the flip) and never looked at the OTHER kind's rows -- so the stale
+    `admin_tenant(A, group)` row would survive untouched and this assertion would fail (the
+    demoted account would silently retain write access to tenant A via `admin_tenants(user)`).
+    """
+    default = await tenant_repo.default_tenant(session)
+    tenant_a = await _mk_tenant(session)
+    assert tenant_a.id is not None
+    t1 = await _mk_team(session, [tenant_a.id])
+
+    account = await _mk_user(session, role="admin", tenant_id=default.id)
+    assert account.id is not None
+
+    # Login #1 as admin: gains admin_tenant(A, group).
+    await assignment_group_repo.reconcile_group_grants(session, account, [t1])
+    assert {(r.tenant_id, r.source) for r in await _admin_rows(session, account.id)} == {
+        (tenant_a.id, "group")
+    }
+    assert await _auditor_rows(session, account.id) == []
+
+    # Entra demotes the account to auditor (role flip, no group-membership change).
+    account.role = "auditor"
+    await session.flush()
+
+    # Login #2 as auditor, same team membership.
+    await assignment_group_repo.reconcile_group_grants(session, account, [t1])
+
+    # The stale admin_tenant(A, group) row from the PREVIOUS role must be gone.
+    assert await _admin_rows(session, account.id) == []
+    # The new role's kind holds the group grant.
+    assert {(r.tenant_id, r.source) for r in await _auditor_rows(session, account.id)} == {
+        (tenant_a.id, "group")
+    }
+
+
+async def test_role_flip_cleanup_never_touches_manual_grant_of_other_kind(
+    session: AsyncSession,
+) -> None:
+    """A provider account has a MANUAL auditor_tenant(A) grant (e.g. from a prior superadmin
+    assignment) and role=admin. Reconciling as admin must clean only STALE GROUP rows of the
+    other kind (auditor_tenant here) -- a manual row of the other kind is out of scope for this
+    reconcile (governed by the assignment API / set_role instead) and must persist untouched."""
+    default = await tenant_repo.default_tenant(session)
+    tenant_a = await _mk_tenant(session)
+    assert tenant_a.id is not None
+    t1 = await _mk_team(session, [tenant_a.id])
+
+    account = await _mk_user(session, role="admin", tenant_id=default.id)
+    assert account.id is not None
+
+    # Pre-existing MANUAL auditor grant on A (the OTHER kind relative to the current role).
+    await tenant_repo.add_grant(
+        session, user_id=account.id, tenant_id=tenant_a.id, kind="auditor", source="manual"
+    )
+
+    await assignment_group_repo.reconcile_group_grants(session, account, [t1])
+
+    # The manual auditor grant on A persists untouched.
+    aud = await _auditor_rows(session, account.id)
+    assert len(aud) == 1
+    assert aud[0].tenant_id == tenant_a.id
+    assert aud[0].source == "manual"
+    # The current role's kind gained the expected group grant.
+    assert {(r.tenant_id, r.source) for r in await _admin_rows(session, account.id)} == {
+        (tenant_a.id, "group")
+    }

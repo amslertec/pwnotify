@@ -157,11 +157,26 @@ async def reconcile_group_grants(
        explizit aus der Add-Menge ausgeschlossen), und der Remove-Zweig entfernt nur
        `source='group'`-Zeilen.
 
+    **Rollen-Flip-Sicherheit (Sicherheitsreview Task 4, "Important"-Finding):** Gruppen-Grants
+    werden IMMER NUR in der Zieltabelle der AKTUELLEN Rolle (`kind = _grant_kind(user.role)`)
+    materialisiert -- niemals in beiden. Flippt die Entra-Rolle eines Provider-Kontos zwischen
+    zwei Logins (admin->auditor oder umgekehrt), würde ein Reconcile, der nur `kind` anfasst,
+    eine ALTE `source='group'`-Zeile der VORHERIGEN Rolle dauerhaft verwaist zurücklassen (z.B.
+    bliebe `admin_tenant(A, group)` nach einer Demotion zu `auditor` bestehen -- der Auditor
+    behielte damit stillschweigend Schreibzugriff). Deshalb räumt dieser Reconcile bei JEDEM
+    Aufruf ZUSÄTZLICH die ANDERE Zieltabelle auf: jede `source='group'`-Zeile des Kontos in
+    `other_kind` (der Kind, der NICHT der aktuellen Rolle entspricht) wird entfernt. `source=
+    'manual'`-Zeilen in `other_kind` bleiben unangetastet (Invariante 2 gilt auch dort -- ein
+    manueller Grant der anderen Kapazität ist Sache der Zuweisungs-API/`set_role`, nicht dieses
+    Reconciles). Ergebnis-Garantie nach jedem Reconcile: das Konto hat Gruppen-Grants
+    AUSSCHLIESSLICH in der Zieltabelle der aktuellen Rolle, und ZERO Gruppen-Grants in der
+    anderen.
+
     `entra_group_ids` falsy (kein Team) -> leere Wunschmenge -> alle bestehenden
-    `source='group'`-Zeilen des Kontos werden entfernt (ein Provider, der jedes Team verlassen
-    hat, behält nur seine manuellen Grants). Inaktive Ziel-Tenants werden beim Anlegen still
-    übersprungen (Verfügbarkeit, kein Sicherheitsproblem) -- eine bestehende Gruppen-Zeile auf
-    einen zwischenzeitlich deaktivierten Tenant bleibt hingegen, solange die Gruppe ihn noch
+    `source='group'`-Zeilen des Kontos (in `kind`) werden entfernt (ein Provider, der jedes Team
+    verlassen hat, behält nur seine manuellen Grants). Inaktive Ziel-Tenants werden beim Anlegen
+    still übersprungen (Verfügbarkeit, kein Sicherheitsproblem) -- eine bestehende Gruppen-Zeile
+    auf einen zwischenzeitlich deaktivierten Tenant bleibt hingegen, solange die Gruppe ihn noch
     abbildet (kein Aktiv-Filter auf der Ist-Menge).
 
     Kein eigenes `commit`: die einzeln genutzten `add_grant`/`remove_grant` committen bereits
@@ -174,6 +189,7 @@ async def reconcile_group_grants(
 
     desired = await tenant_ids_for_entra_groups(session, set(entra_group_ids or []))
     kind = _grant_kind(user.role)
+    other_kind = "auditor" if kind == "admin" else "admin"
     rows = await tenant_repo.list_grant_rows(session, user.id, kind)
     group_now = {tid for tid, src in rows if src == "group"}
     manual_now = {tid for tid, src in rows if src == "manual"}
@@ -190,3 +206,11 @@ async def reconcile_group_grants(
     # in `group_now` (eine Zeile pro Paar), also werden manuelle Grants hier nie berührt.
     for tid in group_now - desired:
         await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=kind)
+
+    # (3) ROLLEN-FLIP: verwaiste `source='group'`-Zeilen der ANDEREN Zieltabelle aufräumen.
+    # Nur `source='group'` -- eine manuelle Zeile in `other_kind` gehört nicht in dieses
+    # Reconcile und bleibt unangetastet.
+    other_rows = await tenant_repo.list_grant_rows(session, user.id, other_kind)
+    for tid, src in other_rows:
+        if src == "group":
+            await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=other_kind)
