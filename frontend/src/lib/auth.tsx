@@ -11,6 +11,12 @@ import { setLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n'
 /** Merkt für die Login-Seite, dass die Abmeldung wegen Inaktivität erfolgte. */
 export const IDLE_LOGOUT_FLAG = 'pwnotify-idle-logout'
 
+/** Superadmin besitzt alle Admin-Rechte (superadmin ⊇ admin). Zentrale Prüfung, damit
+ *  die Access-Modell-Migration einen Superadmin nicht aus der Admin-Oberfläche aussperrt. */
+export function hasAdminRights(role: string | undefined | null): boolean {
+  return role === 'admin' || role === 'superadmin'
+}
+
 interface AuthContextValue {
   user: User | null
   loading: boolean

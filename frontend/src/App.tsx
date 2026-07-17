@@ -8,7 +8,7 @@ import { AppLayout } from './components/layout/app-layout'
 import { Toaster } from './components/toaster'
 import { api } from './lib/api'
 import AuditPage from './pages/audit'
-import { useAuth } from './lib/auth'
+import { hasAdminRights, useAuth } from './lib/auth'
 import type { SetupStatus } from './lib/types'
 import AccessPage from './pages/access'
 import DashboardPage from './pages/dashboard'
@@ -41,7 +41,7 @@ function Guarded() {
 /** Nur für Admins erreichbar; Auditoren werden aufs Dashboard umgeleitet. */
 function AdminOnly({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  if (user && user.role !== 'admin') return <Navigate to="/" replace />
+  if (user && !hasAdminRights(user.role)) return <Navigate to="/" replace />
   return children
 }
 

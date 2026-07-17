@@ -7,7 +7,7 @@ import { TenantSwitcher } from './tenant-switcher'
 import { Logo } from '../logo'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const NAV = [
@@ -31,7 +31,7 @@ export function Sidebar({
   onNavigate?: () => void
 }) {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const nav = NAV.filter((item) => isAdmin || !item.adminOnly)
   return (
     <aside

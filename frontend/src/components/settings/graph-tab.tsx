@@ -11,7 +11,7 @@ import { Field, Section } from './section'
 import { LockableInput } from './lockable-input'
 import { GraphResultCard } from '@/pages/setup'
 import type { SettingsTabProps } from '@/pages/settings'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
@@ -19,7 +19,7 @@ import type { DashboardData, GraphTestResult } from '@/lib/types'
 
 export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   // Steigt nach jedem Speichern — sperrt die geschützten Felder danach wieder.
   const [lockSignal, setLockSignal] = useState(0)
   const [tenant, setTenant] = useState(String(settings['graph.tenant_id'] ?? ''))

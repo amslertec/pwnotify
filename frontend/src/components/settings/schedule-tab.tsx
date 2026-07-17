@@ -8,13 +8,13 @@ import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { fmtDateTime } from '@/lib/format'
 
 export function ScheduleTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const [cron, setCron] = useState(String(settings['schedule.cron'] ?? '0 8 * * *'))
   const [tz, setTz] = useState(String(settings['schedule.timezone'] ?? 'Europe/Zurich'))
   const [dryRun, setDryRun] = useState(Boolean(settings['schedule.dry_run']))

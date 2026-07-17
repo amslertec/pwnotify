@@ -6,11 +6,11 @@ import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
 import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 
 export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const [lockSignal, setLockSignal] = useState(0)
   const [enabled, setEnabled] = useState(Boolean(settings['oidc.enabled'] ?? false))
   const [groupId, setGroupId] = useState(String(settings['oidc.admin_group_id'] ?? ''))

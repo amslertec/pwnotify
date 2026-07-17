@@ -21,7 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate } from '@/lib/format'
 import type { Tenant } from '@/lib/types'
@@ -31,7 +31,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 export default function TenantsPage() {
   const { t } = useTranslation()
   const { user: me } = useAuth()
-  const isAdmin = me?.role === 'admin'
+  const isAdmin = hasAdminRights(me?.role)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Tenant | null>(null)
   const [deleting, setDeleting] = useState<Tenant | null>(null)

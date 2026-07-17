@@ -28,7 +28,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import type { AdminUser, AdminUsers } from '@/lib/types'
@@ -41,7 +41,7 @@ export default function AccessPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { user: me } = useAuth()
-  const isAdmin = me?.role === 'admin'
+  const isAdmin = hasAdminRights(me?.role)
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({

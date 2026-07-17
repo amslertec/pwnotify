@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Field, Section } from './section'
 import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
 import { MASK_MARKER } from '@/lib/constants'
@@ -20,7 +20,7 @@ const STRATEGIES = ['primary', 'alternate', 'both', 'alternate_fallback_primary'
 
 export function MailTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const [lockSignal, setLockSignal] = useState(0)
   const [backend, setBackend] = useState(String(settings['mail.backend'] ?? 'graph'))
   const [from, setFrom] = useState(String(settings['mail.from'] ?? ''))

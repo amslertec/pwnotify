@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate } from '@/lib/format'
 import type { EntraUser, Page } from '@/lib/types'
@@ -55,7 +55,7 @@ const STATUS_OPTIONS = [
 
 export default function UsersPage() {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')

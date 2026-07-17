@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDateTime } from '@/lib/format'
 import type { Notification, Page } from '@/lib/types'
@@ -29,7 +29,7 @@ const PAGE_SIZE = 10
 
 export default function NotificationsPage() {
   const { t } = useTranslation()
-  const isAdmin = useAuth().user?.role === 'admin'
+  const isAdmin = hasAdminRights(useAuth().user?.role)
   const qc = useQueryClient()
   const [status, setStatus] = useState('all')
   const [search, setSearch] = useState('')

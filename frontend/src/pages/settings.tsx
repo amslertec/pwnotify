@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import type { Settings } from '@/lib/types'
 import { AlertsTab } from '@/components/settings/alerts-tab'
@@ -75,7 +75,7 @@ export default function SettingsPage() {
         title={t('settingsPage.header.title')}
         description={t('settingsPage.header.description')}
       />
-      {user?.role !== 'admin' && (
+      {!hasAdminRights(user?.role) && (
         <div className="border-border bg-muted/40 text-muted-foreground mb-4 rounded-lg border px-4 py-3 text-sm">
           {t('settingsPage.readOnlyNotice')}
         </div>
