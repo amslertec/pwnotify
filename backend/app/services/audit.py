@@ -38,6 +38,9 @@ USER_DELETED = "user.deleted"
 USER_ROLE_CHANGED = "user.role_changed"
 SETTINGS_CHANGED = "settings.changed"
 SECRET_CHANGED = "settings.secret_changed"
+TENANT_CREATED = "tenant.created"
+TENANT_UPDATED = "tenant.updated"
+TENANT_DELETED = "tenant.deleted"
 
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.

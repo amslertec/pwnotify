@@ -17,9 +17,10 @@ Sicherheitsgrenze -- drei Kontoarten, default-deny bei jedem unerwarteten Zustan
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.errors import ConflictError, NotFoundError
 from ..models.tenant import AuditorTenant, Tenant
 from ..models.user import AppUser
 
@@ -48,6 +49,86 @@ async def get_by_entra_tid(session: AsyncSession, tid: str) -> Tenant | None:
         select(Tenant).where(Tenant.entra_tenant_id == tid, Tenant.is_active.is_(True))
     )
     return res.scalar_one_or_none()
+
+
+async def get_by_slug(session: AsyncSession, slug: str) -> Tenant | None:
+    res = await session.execute(select(Tenant).where(Tenant.slug == slug))
+    return res.scalar_one_or_none()
+
+
+async def _get_by_entra_tid_any(session: AsyncSession, entra_tenant_id: str) -> Tenant | None:
+    """Wie `get_by_entra_tid`, aber ohne den `is_active`-Filter -- die CRUD-Eindeutigkeitsprüfung
+    muss auch gegen einen bereits deaktivierten Tenant blocken (die Spalte ist global unique,
+    unabhängig vom Aktivstatus)."""
+    res = await session.execute(select(Tenant).where(Tenant.entra_tenant_id == entra_tenant_id))
+    return res.scalar_one_or_none()
+
+
+async def list_all(session: AsyncSession) -> list[Tenant]:
+    """ALLE Tenants inkl. inaktiver, für die Verwaltungsübersicht -- anders als `list_active`."""
+    res = await session.execute(select(Tenant).order_by(Tenant.name))
+    return list(res.scalars().all())
+
+
+async def count_sso_users(session: AsyncSession, tid: int) -> int:
+    res = await session.execute(
+        select(func.count(AppUser.id)).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tid)
+    )
+    return int(res.scalar_one())
+
+
+async def create(
+    session: AsyncSession, *, name: str, slug: str, entra_tenant_id: str | None = None
+) -> Tenant:
+    if await get_by_slug(session, slug) is not None:
+        raise ConflictError("Dieser Slug wird bereits verwendet.", code="tenant_slug_taken")
+    if entra_tenant_id is not None and await _get_by_entra_tid_any(session, entra_tenant_id):
+        raise ConflictError(
+            "Diese Entra-Tenant-ID wird bereits verwendet.", code="tenant_entra_tid_taken"
+        )
+    tenant = Tenant(name=name, slug=slug, entra_tenant_id=entra_tenant_id)
+    session.add(tenant)
+    await session.commit()
+    await session.refresh(tenant)
+    return tenant
+
+
+async def update(
+    session: AsyncSession,
+    tid: int,
+    *,
+    name: str | None = None,
+    entra_tenant_id: str | None = None,
+    is_active: bool | None = None,
+) -> Tenant:
+    """Nur übergebene Felder anwenden. Der Default-Tenant-Schutz (slug='default' darf nicht
+    deaktiviert werden) ist Sache der Route (Task 2), nicht dieser Funktion."""
+    tenant = await session.get(Tenant, tid)
+    if tenant is None:
+        raise NotFoundError("Mandant nicht gefunden.", code="tenant_not_found")
+    if entra_tenant_id is not None and entra_tenant_id != tenant.entra_tenant_id:
+        existing = await _get_by_entra_tid_any(session, entra_tenant_id)
+        if existing is not None and existing.id != tid:
+            raise ConflictError(
+                "Diese Entra-Tenant-ID wird bereits verwendet.", code="tenant_entra_tid_taken"
+            )
+    if name is not None:
+        tenant.name = name
+    if entra_tenant_id is not None:
+        tenant.entra_tenant_id = entra_tenant_id
+    if is_active is not None:
+        tenant.is_active = is_active
+    await session.commit()
+    await session.refresh(tenant)
+    return tenant
+
+
+async def delete(session: AsyncSession, tid: int) -> None:
+    """Nur die reine Zeile -- Kaskade/SSO-Aufräumlogik ist Sache der Route (Task 2)."""
+    tenant = await session.get(Tenant, tid)
+    if tenant is not None:
+        await session.delete(tenant)
+        await session.commit()
 
 
 async def _is_active(session: AsyncSession, tid: int) -> bool:
