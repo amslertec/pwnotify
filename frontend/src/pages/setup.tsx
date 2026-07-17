@@ -154,6 +154,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
@@ -162,7 +163,8 @@ function AdminStep({ onNext }: { onNext: () => void }) {
     setBusy(true)
     try {
       const display_name = `${firstName} ${lastName}`.trim() || null
-      await api.post('/setup/admin', { username, password, display_name })
+      const default_tenant_name = companyName.trim() || undefined
+      await api.post('/setup/admin', { username, password, display_name, default_tenant_name })
       await refresh()
       // Cache SOFORT korrigieren (nicht nur invalidieren): ab jetzt existiert ein Admin,
       // also needs_setup=false. Sonst liest der Router-Guard beim Abschluss den alten
@@ -198,6 +200,13 @@ function AdminStep({ onNext }: { onNext: () => void }) {
         </Field>
         <Field label={t('setup.admin.confirmPassword')}>
           <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </Field>
+        <Field
+          label={t('setup.admin.companyNameLabel')}
+          hint={t('setup.admin.companyNameHint')}
+          className="sm:col-span-2"
+        >
+          <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
         </Field>
       </div>
       <div className="flex justify-end">

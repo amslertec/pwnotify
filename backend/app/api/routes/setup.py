@@ -11,7 +11,7 @@ from sqlalchemy import text
 from ...core.errors import ConflictError
 from ...core.security import hash_password, hash_token, issue_token_pair
 from ...db.migrate import run_migrations
-from ...repositories import user_repo
+from ...repositories import tenant_repo, user_repo
 from ...schemas.auth import UserOut
 from ...schemas.common import Message
 from ...schemas.settings import GraphTestRequest, GraphTestResult, MailTestRequest
@@ -39,6 +39,9 @@ class AdminCreate(BaseModel):
     username: str = Field(min_length=3, max_length=150)
     password: str = Field(min_length=10, max_length=1024)
     display_name: str | None = Field(default=None, max_length=320)
+    # Optional: benennt den vom Phase-1-Migration bereits angelegten Default-Tenant
+    # (Slug 'default') auf den Firmennamen um -- Setup legt ihn NICHT neu an (Design §9.2).
+    default_tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 async def _admin_count(session: SessionDep) -> int:
@@ -99,12 +102,24 @@ async def create_admin(
 ) -> UserOut:
     if await _admin_count(session) > 0:
         raise ConflictError("Es existiert bereits ein Administrator.", code="admin_exists")
+    # Das erste Setup-Konto ist IMMER der (lokale) Superadmin -- instanzweit, nicht der
+    # alte "Drei-Wege"-Admin (Design §9.1). Multi-Tenant-Mode bleibt dabei AUS (in Task 1
+    # false geseedet) -- Setup schaltet ihn nicht ein, das macht der Superadmin bewusst
+    # später über Settings->General.
     user = await user_repo.create(
         session,
         username=body.username,
         password_hash=hash_password(body.password),
+        role="superadmin",
         display_name=body.display_name,
+        is_sso=False,
     )
+    if body.default_tenant_name is not None:
+        # Der Default-Tenant existiert bereits (Phase-1-Migration) -- Setup NENNT ihn nur,
+        # legt ihn nicht an. Slug bleibt 'default' (kein Slug-Feld hier, wie in InstanceUpdate).
+        default = await tenant_repo.default_tenant(session)
+        assert default.id is not None
+        await tenant_repo.update(session, default.id, name=body.default_tenant_name)
     # Auto-Login, damit der Wizard nahtlos mit Graph/Mail weitermacht.
     pair = issue_token_pair(str(user.id))
     await user_repo.create_session(

@@ -818,7 +818,7 @@
     "subtitle": "Ready to go in just a few steps.",
     "stepper": {
       "db": "Database",
-      "admin": "Administrator",
+      "admin": "Superadmin",
       "graph": "Microsoft Graph",
       "mail": "Email",
       "done": "Done"
@@ -833,17 +833,19 @@
       "initialized": "Database initialized"
     },
     "admin": {
-      "title": "Create administrator",
-      "description": "This account manages PwNotify.",
+      "title": "Create superadmin",
+      "description": "This account is the global superadmin and manages the entire instance.",
       "firstName": "First name",
       "lastName": "Last name",
       "username": "Username",
       "password": "Password (at least 10 characters)",
       "confirmPassword": "Confirm password",
+      "companyNameLabel": "Company name (optional)",
+      "companyNameHint": "Name of your main tenant — can be changed later anytime in Settings → General.",
       "submitButton": "Create account & continue",
       "passwordTooShort": "Password must be at least 10 characters",
       "passwordMismatch": "Passwords do not match",
-      "created": "Administrator created"
+      "created": "Superadmin created"
     },
     "graph": {
       "title": "Connect Microsoft Graph",

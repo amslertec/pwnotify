@@ -46,10 +46,15 @@ function AdminOnly({ children }: { children: ReactNode }) {
 }
 
 /** Nur für Superadmins erreichbar (Kunden-/Zuweisungs-Konsole, Access-Modell-Phase);
- *  Admins und Auditoren werden aufs Dashboard umgeleitet. */
+ *  Admins und Auditoren werden aufs Dashboard umgeleitet. Zusätzlich an den Multi-Tenant-
+ *  Mode-Schalter gekoppelt (Task 7, Concern 2): ist der Schalter aus, sieht PwNotify für
+ *  ALLE Konten -- auch den Superadmin -- exakt wie eine Einzel-Kunden-Instanz aus; die
+ *  Konsole ist sonst per Direkt-URL erreichbar, obwohl sie nirgends verlinkt ist. Der
+ *  Superadmin aktiviert den Modus zuerst über Einstellungen -> Allgemein. */
 function SuperadminOnly({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  if (user && user.role !== 'superadmin') return <Navigate to="/" replace />
+  if (user && (user.role !== 'superadmin' || !user.multi_tenant_mode))
+    return <Navigate to="/" replace />
   return children
 }
 

@@ -818,7 +818,7 @@
     "subtitle": "In wenigen Schritten einsatzbereit.",
     "stepper": {
       "db": "Datenbank",
-      "admin": "Administrator",
+      "admin": "Superadmin",
       "graph": "Microsoft Graph",
       "mail": "E-Mail",
       "done": "Fertig"
@@ -833,17 +833,19 @@
       "initialized": "Datenbank initialisiert"
     },
     "admin": {
-      "title": "Administrator anlegen",
-      "description": "Dieses Konto verwaltet PwNotify.",
+      "title": "Superadmin anlegen",
+      "description": "Dieses Konto ist der globale Superadmin und verwaltet die gesamte Instanz.",
       "firstName": "Vorname",
       "lastName": "Nachname",
       "username": "Benutzername",
       "password": "Passwort (mind. 10 Zeichen)",
       "confirmPassword": "Passwort bestätigen",
+      "companyNameLabel": "Firmenname (optional)",
+      "companyNameHint": "Name deines Haupt-Mandanten — lässt sich später jederzeit in Einstellungen → Allgemein ändern.",
       "submitButton": "Konto erstellen & weiter",
       "passwordTooShort": "Passwort mind. 10 Zeichen",
       "passwordMismatch": "Passwörter stimmen nicht überein",
-      "created": "Administrator angelegt"
+      "created": "Superadmin angelegt"
     },
     "graph": {
       "title": "Microsoft Graph verbinden",
