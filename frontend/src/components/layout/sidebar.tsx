@@ -19,6 +19,7 @@ import { Logo } from '../logo'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { hasAdminRights, useAuth } from '@/lib/auth'
+import type { User } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -49,6 +50,25 @@ const NAV: NavItem[] = [
   { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false, adminOnly: true },
 ]
 
+/** Reine Filterfunktion (aus dem Komponentenkörper gezogen, damit sie ohne Rendering
+ *  testbar ist). superadminOnly-Einträge (z. B. "/tenants") verlangen zusätzlich den
+ *  instanzweiten Mandantenfähigkeits-Schalter -- ist er aus (Default), bleibt die
+ *  Kunden-Navigation für jeden, auch Superadmins, unsichtbar (Task 7: identisch zum
+ *  Einzel-Kunden-Stand). Zusätzlich (Context-Gating v2, Task 5): nur im Default-Kontext
+ *  sichtbar -- ein Superadmin, der in einen Kunden-Kontext gewechselt hat, sieht die
+ *  Konsole nicht (Design Matrix B §4). Der Umschalter selbst bleibt davon unberührt. */
+export function visibleNavItems(user: User | null | undefined): NavItem[] {
+  const isAdmin = hasAdminRights(user?.role)
+  const isSuperadmin = user?.role === 'superadmin'
+  return NAV.filter((item) =>
+    item.superadminOnly
+      ? isSuperadmin && !!user?.multi_tenant_mode && !!user?.active_tenant_is_default
+      : item.adminOnly
+        ? isAdmin
+        : true,
+  )
+}
+
 export function Sidebar({
   collapsed,
   onToggle,
@@ -60,18 +80,7 @@ export function Sidebar({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const isAdmin = hasAdminRights(user?.role)
-  const isSuperadmin = user?.role === 'superadmin'
-  // superadminOnly-Einträge (z. B. "/tenants") verlangen zusätzlich den instanzweiten
-  // Mandantenfähigkeits-Schalter -- ist er aus (Default), bleibt die Kunden-Navigation
-  // für jeden, auch Superadmins, unsichtbar (Task 7: identisch zum Einzel-Kunden-Stand).
-  const nav = NAV.filter((item) =>
-    item.superadminOnly
-      ? isSuperadmin && !!user?.multi_tenant_mode
-      : item.adminOnly
-        ? isAdmin
-        : true,
-  )
+  const nav = visibleNavItems(user)
   return (
     <aside
       className={cn(

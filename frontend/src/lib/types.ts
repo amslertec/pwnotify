@@ -23,6 +23,11 @@ export interface User {
   /** Instanzweiter Schalterstand (Access-Modell/Superadmin-Phase) — steuert, ob die
    *  Mandantenfähigkeit (Kunden-Umschalter, Zuweisungen) überhaupt aktiv ist. */
   multi_tenant_mode: boolean
+  /** True nur, wenn der aktive Mandant des Aufrufers der Standard-/Provider-Kunde ist
+   *  (Context-Gating v2, Task 4/5). Steuert, ob provider-only Oberflächen (Kunden-Konsole,
+   *  Modus-Schalter, Settings-General-Tab) sichtbar sind — auch für einen Superadmin,
+   *  der gerade in einen Kunden-Kontext gewechselt hat. */
+  active_tenant_is_default: boolean
 }
 
 export interface LoginResponse {

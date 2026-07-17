@@ -4,19 +4,24 @@ import { useTranslation } from 'react-i18next'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useAuth } from '@/lib/auth'
+import type { User } from '@/lib/types'
 
-/** Kunden-Umschalter (Multi-Tenant) — ganz oben in der Sidebar, über dem
- *  Dashboard-Eintrag. Nur sichtbar, wenn (a) die instanzweite Mandantenfähigkeit
- *  eingeschaltet ist (Task 7 — Default ist AUS) UND (b) das Konto zu mehr als einem
- *  Kunden wechseln darf (Single-Tenant-Konten sehen wie bisher nichts). */
+/** Reine Sichtbarkeits-Prüfung (aus der Komponente gezogen, damit sie ohne Rendering
+ *  testbar ist). Sichtbar, wenn (a) die instanzweite Mandantenfähigkeit eingeschaltet
+ *  ist (Task 7 — Default ist AUS) UND (b) das Konto zu mehr als einem Kunden wechseln
+ *  darf (Single-Tenant-Konten sehen wie bisher nichts). Bewusst UNABHÄNGIG von
+ *  `active_tenant_is_default` (Context-Gating v2, Task 5): der Umschalter muss auch in
+ *  einem Kunden-Kontext sichtbar bleiben, damit der Superadmin zurück in den
+ *  Default-Kontext wechseln kann. */
+export function isSwitcherVisible(user: User | null | undefined): user is User {
+  return !!user && user.multi_tenant_mode && user.switchable_tenants.length > 1
+}
+
 export function TenantSwitcher({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation()
   const { user, switchTenant } = useAuth()
 
-  // Instanzweiter Schalter (Task 7) zuerst: ist die Mandantenfähigkeit aus (Default),
-  // bleibt der Umschalter für JEDES Konto unsichtbar -- unabhängig davon, wie viele
-  // Kunden ein Konto theoretisch zugewiesen hat.
-  if (!user || !user.multi_tenant_mode || user.switchable_tenants.length <= 1) return null
+  if (!isSwitcherVisible(user)) return null
 
   const activeId = user.active_tenant ? String(user.active_tenant.id) : undefined
   const activeName = user.active_tenant?.name ?? t('tenant.switcher_label')

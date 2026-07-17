@@ -10,7 +10,7 @@ import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { isDefaultContext, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import type { InstanceSettings, VersionInfo } from '@/lib/types'
 
@@ -202,7 +202,7 @@ function MultiTenantSection() {
   const { data: instance, isLoading } = useQuery({
     queryKey: ['admin-instance'],
     queryFn: () => api.get<InstanceSettings>('/admin/instance'),
-    enabled: me?.role === 'superadmin',
+    enabled: isDefaultContext(me),
   })
 
   // Einmaliger Seed aus dem Server-Stand -- danach steuert nur noch die lokale Eingabe
@@ -240,7 +240,9 @@ function MultiTenantSection() {
     onError: (e) => toast.error(translateError(e)),
   })
 
-  if (me?.role !== 'superadmin') return null
+  // Belt-and-braces: die Tab-Ausblendung in settings.tsx deckt das schon ab, aber diese
+  // Komponente soll auch stand-alone (z. B. bei künftiger Wiederverwendung) korrekt gaten.
+  if (!isDefaultContext(me)) return null
 
   return (
     <Section

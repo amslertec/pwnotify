@@ -17,6 +17,15 @@ export function hasAdminRights(role: string | undefined | null): boolean {
   return role === 'admin' || role === 'superadmin'
 }
 
+/** Default-Kontext (Context-Gating v2, Task 5): true nur für einen Superadmin, dessen
+ *  aktiver Mandant der Standard-/Provider-Kunde ist. Ein Superadmin, der in einen
+ *  Kunden-Kontext gewechselt hat (`active_tenant_is_default === false`), sieht wie
+ *  jeder andere Kunden-Account KEINE provider-only Oberflächen (Konsole, Modus-Schalter,
+ *  Settings-General-Tab) — siehe Design Matrix B §4. */
+export function isDefaultContext(user: User | null | undefined): boolean {
+  return user?.role === 'superadmin' && !!user?.active_tenant_is_default
+}
+
 interface AuthContextValue {
   user: User | null
   loading: boolean
@@ -121,7 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, verify2fa, logout, refresh, switchTenant }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, verify2fa, logout, refresh, switchTenant }}
+    >
       {children}
     </AuthContext.Provider>
   )

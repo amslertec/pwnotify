@@ -6,9 +6,9 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
-import { hasAdminRights, useAuth } from '@/lib/auth'
+import { hasAdminRights, isDefaultContext, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
-import type { Settings } from '@/lib/types'
+import type { Settings, User } from '@/lib/types'
 import { AlertsTab } from '@/components/settings/alerts-tab'
 import { BrandingTab } from '@/components/settings/branding-tab'
 import { GeneralTab } from '@/components/settings/general-tab'
@@ -37,12 +37,27 @@ const TABS = [
   { value: 'general', labelKey: 'settingsPage.tabs.general' },
 ]
 
+/** General ist die Instanz-Einstellungs-Oberfläche und laut Matrix-B (Design §4) auf
+ *  Superadmin + Default-Kontext beschränkt — Admins bekommen sie ausdrücklich NICHT,
+ *  und ein Superadmin in einem Kunden-Kontext (nach Umschalten) auch nicht. */
+export function showGeneralTab(me: User | null | undefined): boolean {
+  return isDefaultContext(me)
+}
+
+/** Fällt auf den Default-Tab zurück, wenn ein `?tab=general`-Deep-Link ohne Rechte
+ *  aufgerufen wird -- sonst strandet der Aufrufer auf einem ausgeblendeten Tab. */
+export function resolveTab(requestedTab: string, showGeneral: boolean): string {
+  return requestedTab === 'general' && !showGeneral ? 'graph' : requestedTab
+}
+
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') ?? 'graph'
+  const showGeneral = showGeneralTab(user)
+  const tab = resolveTab(params.get('tab') ?? 'graph', showGeneral)
+  const visibleTabs = TABS.filter((item) => item.value !== 'general' || showGeneral)
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -83,9 +98,9 @@ export default function SettingsPage() {
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v })}>
         <div className="overflow-x-auto pb-1">
           <TabsList>
-            {TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {t(tab.labelKey)}
+            {visibleTabs.map((tabItem) => (
+              <TabsTrigger key={tabItem.value} value={tabItem.value}>
+                {t(tabItem.labelKey)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -117,9 +132,11 @@ export default function SettingsPage() {
             <TabsContent value="template">
               <TemplateTab {...tabProps} />
             </TabsContent>
-            <TabsContent value="general">
-              <GeneralTab {...tabProps} />
-            </TabsContent>
+            {showGeneral && (
+              <TabsContent value="general">
+                <GeneralTab {...tabProps} />
+              </TabsContent>
+            )}
           </>
         )}
       </Tabs>

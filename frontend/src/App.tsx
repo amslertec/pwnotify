@@ -50,10 +50,17 @@ function AdminOnly({ children }: { children: ReactNode }) {
  *  Mode-Schalter gekoppelt (Task 7, Concern 2): ist der Schalter aus, sieht PwNotify für
  *  ALLE Konten -- auch den Superadmin -- exakt wie eine Einzel-Kunden-Instanz aus; die
  *  Konsole ist sonst per Direkt-URL erreichbar, obwohl sie nirgends verlinkt ist. Der
- *  Superadmin aktiviert den Modus zuerst über Einstellungen -> Allgemein. */
+ *  Superadmin aktiviert den Modus zuerst über Einstellungen -> Allgemein. Zusätzlich
+ *  (Context-Gating v2, Task 5) an den Default-Kontext gekoppelt: ein Superadmin, der in
+ *  einen Kunden-Kontext gewechselt hat, sieht die Konsole nicht -- sie ist Provider-only
+ *  (Design Matrix B §4). Der Kunden-Umschalter bleibt dabei sichtbar, damit er zurück
+ *  wechseln kann. */
 function SuperadminOnly({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  if (user && (user.role !== 'superadmin' || !user.multi_tenant_mode))
+  if (
+    user &&
+    (user.role !== 'superadmin' || !user.multi_tenant_mode || !user.active_tenant_is_default)
+  )
     return <Navigate to="/" replace />
   return children
 }
