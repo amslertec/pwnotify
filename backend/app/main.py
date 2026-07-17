@@ -21,6 +21,7 @@ from starlette.types import Scope
 from . import __version__
 from .api.deps import limiter
 from .api.routes import (
+    admin_tenants,
     admin_users,
     audit,
     auth,
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
         setup.router,
         users.router,
         admin_users.router,
+        admin_tenants.router,
         notifications.router,
         runs.router,
         settings_routes.router,

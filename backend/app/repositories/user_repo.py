@@ -80,6 +80,27 @@ async def delete(session: AsyncSession, user_id: int) -> None:
         await session.commit()
 
 
+async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:
+    """Alle PER SSO an diesen Tenant gebundenen Konten löschen (samt ihren Sitzungen) --
+    Teil der harten Tenant-Löschkaskade (`admin_tenants.delete_tenant`): der FK
+    `app_user.tenant_id` steht auf `ON DELETE SET NULL`, würde diese Konten beim Löschen
+    des Tenants also nicht mitnehmen, sondern zu instanzweit aussehenden Waisenkonten
+    machen. Sitzungen zuerst, aus demselben Grund wie in `delete()`: kein ORM-Relationship
+    zwischen `AppUser` und `UserSession`, ein direktes DELETE erzwingt die Reihenfolge.
+
+    Gibt die Anzahl gelöschter Konten zurück (für Audit-Details der aufrufenden Route).
+    """
+    res = await session.execute(
+        select(AppUser.id).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tenant_id)
+    )
+    ids = list(res.scalars().all())
+    if ids:
+        await session.execute(sa_delete(UserSession).where(UserSession.user_id.in_(ids)))
+        await session.execute(sa_delete(AppUser).where(AppUser.id.in_(ids)))
+        await session.commit()
+    return len(ids)
+
+
 # ---- Sessions (Refresh-Token-Rotation) ------------------------------------- #
 async def create_session(
     session: AsyncSession,
