@@ -203,7 +203,10 @@ function GroupRow({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => {
+              setExpanded((v) => !v)
+              setPage(1)
+            }}
             aria-label={
               expanded ? t('tenants.groups.collapseMembers') : t('tenants.groups.expandMembers')
             }
@@ -247,7 +250,7 @@ function GroupRow({
               aria-label={t('tenants.groups.sync')}
               title={t('tenants.groups.sync')}
             >
-              <RefreshCw className="size-4" />
+              {!sync.isPending && <RefreshCw className="size-4" />}
             </Button>
             <Button
               variant="ghost"
