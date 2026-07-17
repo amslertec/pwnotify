@@ -31,42 +31,67 @@ router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
 @router.get("")
-async def list_users(user: CurrentUser, session: SessionDep) -> dict[str, list[AdminUserOut]]:
-    """Gescopte Kontoliste für die Access-Seite (Access-Modell/Superadmin-Phase, Task 3).
+async def list_users(
+    user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+) -> dict[str, list[AdminUserOut]]:
+    """Gescopte Kontoliste für die Access-Seite (Access-Rescope, Sicherheitsfix).
 
-    Der Sicherheitsfix: vormals `user_repo.list_all(session)` instanzweit -- JEDER Tenant
-    sah dieselbe volle Kontoliste (Leselecke). Jetzt pro Rolle:
+    **Der Sicherheitsfix:** vormals sah ein Superadmin über `user_repo.list_all(session)`
+    IMMER die volle, instanzweite Kontoliste -- unabhängig vom aktiven Mandanten. Beim
+    Wechsel zwischen Kunden zeigte die Access-Seite also jedes Mal dieselbe globale Liste,
+    statt sich mitzuwechseln. Jetzt gilt für JEDEN Aufrufer (Superadmin eingeschlossen) das
+    bestätigte Modell: die Access-Seite zeigt ausschliesslich Konten, deren HEIMAT
+    (`app_user.tenant_id`) der AKTIVE Mandant ist.
 
-    - **Superadmin** (`not is_sso and role=='superadmin'`): sieht ALLES -- alle lokalen
-      Nicht-Superadmin-Konten, alle SSO-Konten, UND zusätzlich die eigene
-      `superadmins`-Liste (NUR für diese Rolle im Antwortobjekt vorhanden).
-    - **Lokaler Admin** (`not is_sso and role=='admin'`): NUR Konten der Tenants, die er
-      selbst hält (`tenant_repo.admin_tenants`) -- SSO-Konten dieser Tenants plus lokale
-      Admins/Auditoren mit einer Zuweisung auf einen dieser Tenants. NIE Superadmins, NIE
-      Konten un-gehaltener Tenants. Kein `superadmins`-Schlüssel in der Antwort.
+    **Aktiven Mandanten auflösen:** der rohe `active_tenant`-Claim (`ActiveTenantClaim`,
+    unautorisiert, s. `deps.py`) falls vorhanden, sonst der Default-Tenant
+    (`deps.default_tenant_id`) -- dieselbe Fallback-Regel wie beim Login/Tenant-Wechsel.
+
+    **Autorisierung:** der aufgelöste Tenant wird IMMER geprüft, bevor er etwas liefert.
+    Ein Superadmin darf jeden (aktiven) Tenant sehen -- keine zusätzliche Prüfung nötig.
+    Jeder andere Aufrufer muss `tenant_repo.is_allowed(session, user, tid)` bestehen; sonst
+    default-deny (leere Listen) -- das verhindert, dass ein lokaler Admin über einen
+    gefälschten/veralteten `active_tenant`-Claim einen Tenant auflistet, den er gar nicht
+    hält.
+
+    Ergebnis pro Rolle:
+    - **Superadmin** (`not is_sso and role=='superadmin'`): Heim-Konten des aktiven
+      Tenants (lokal + SSO). Zusätzlich die eigene `superadmins`-Liste (instanzweit, ALLE
+      Superadmins) -- aber NUR, wenn der aktive Tenant der DEFAULT-Tenant ist (Provider-
+      Kontext); in einem Kunden-Kontext fehlt der `superadmins`-Schlüssel komplett, auch
+      für den Superadmin. Provider-Personal (heim am Default-Tenant) erscheint deshalb nur
+      in der Default-Ansicht, nicht in irgendeiner Kunden-Ansicht -- Cross-Tenant-Zuweisungen
+      laufen über `/admin/assignments`, nicht über diese Seite.
+    - **Lokaler Admin** (`not is_sso and role=='admin'`): Heim-Konten NUR des aktiven
+      Tenants (lokal + SSO), sofern er diesen Tenant hält (s. Autorisierung oben). Nie
+      Superadmins, nie ein `superadmins`-Schlüssel.
     - **Alles andere** (Auditor, SSO-Konto, unbekannter Zustand): default-deny -> leere
       Listen. Die `/access`-Seite ist zwar admin-only im Frontend, dieses Gate gilt aber
       unabhängig davon hier ebenfalls.
     """
-    if not user.is_sso and user.role == "superadmin":
-        rows = await user_repo.list_all(session)
-        out = [AdminUserOut.model_validate(u, from_attributes=True) for u in rows]
-        return {
-            "local": [u for u in out if not u.is_sso and u.role != "superadmin"],
-            "sso": [u for u in out if u.is_sso],
-            "superadmins": [u for u in out if not u.is_sso and u.role == "superadmin"],
-        }
+    if user.is_sso or user.role not in ("admin", "superadmin"):
+        return {"local": [], "sso": []}
 
-    if not user.is_sso and user.role == "admin":
-        tids = await tenant_repo.admin_tenants(session, user)
-        sso_rows = await user_repo.list_sso_in_tenants(session, tids)
-        local_rows = await user_repo.list_local_granted_to_tenants(session, tids)
-        return {
-            "local": [AdminUserOut.model_validate(u, from_attributes=True) for u in local_rows],
-            "sso": [AdminUserOut.model_validate(u, from_attributes=True) for u in sso_rows],
-        }
+    is_superadmin_caller = user.role == "superadmin"
+    tid = active_tenant if active_tenant is not None else await default_tenant_id(session)
 
-    return {"local": [], "sso": []}
+    if not is_superadmin_caller and not await tenant_repo.is_allowed(session, user, tid):
+        return {"local": [], "sso": []}
+
+    local_rows = await user_repo.list_local_homed_in_tenant(session, tid)
+    sso_rows = await user_repo.list_sso_in_tenants(session, {tid})
+    out: dict[str, list[AdminUserOut]] = {
+        "local": [AdminUserOut.model_validate(u, from_attributes=True) for u in local_rows],
+        "sso": [AdminUserOut.model_validate(u, from_attributes=True) for u in sso_rows],
+    }
+
+    if is_superadmin_caller and tid == await default_tenant_id(session):
+        superadmin_rows = [u for u in await user_repo.list_all(session) if u.role == "superadmin"]
+        out["superadmins"] = [
+            AdminUserOut.model_validate(u, from_attributes=True) for u in superadmin_rows
+        ]
+
+    return out
 
 
 @router.post("", response_model=AdminUserOut)

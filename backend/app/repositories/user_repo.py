@@ -107,6 +107,27 @@ async def list_sso_in_tenants(session: AsyncSession, tenant_ids: set[int]) -> li
     return list(res.scalars().all())
 
 
+async def list_local_homed_in_tenant(session: AsyncSession, tenant_id: int) -> list[AppUser]:
+    """Lokale (nicht-SSO) Nicht-Superadmin-Konten, deren HEIMAT (`tenant_id`) exakt der
+    aktive Mandant ist -- Grundlage der Access-Rescope (Sicherheitsfix): die Access-Seite
+    zeigt jedem Aufrufer (Superadmin eingeschlossen) NUR die HEIM-Konten des jeweils
+    AKTIVEN Tenants, nie eine Zuweisungs-Vereinigung (`list_local_granted_to_tenants`, die
+    weiterhin für Grants gilt, s.u.) und nie eine instanzweite oder andere Tenant-Liste.
+    Schliesst Superadmins IMMER aus (`role != 'superadmin'`) -- sie sind instanzweit und
+    gehören keinem Kunden-Heim an; ihre eigene Liste liefert `list_users` separat nur im
+    DEFAULT-Kontext (`superadmins`-Schlüssel)."""
+    res = await session.execute(
+        select(AppUser)
+        .where(
+            AppUser.is_sso.is_(False),
+            AppUser.tenant_id == tenant_id,
+            AppUser.role != "superadmin",
+        )
+        .order_by(AppUser.username)
+    )
+    return list(res.scalars().all())
+
+
 async def list_local_granted_to_tenants(
     session: AsyncSession, tenant_ids: set[int]
 ) -> list[AppUser]:

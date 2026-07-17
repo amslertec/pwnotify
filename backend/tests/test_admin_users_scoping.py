@@ -1,17 +1,30 @@
-"""TDD für Task 3 der Access-Modell/Superadmin-Phase: die Access-Seite (`admin_users.py`)
-gescopt statt instanzweit.
+"""TDD für die Access-Rescope (Sicherheitsfix): die Access-Seite (`admin_users.list_users`)
+scopt JETZT für JEDEN Aufrufer -- Superadmin eingeschlossen -- auf den AKTIVEN Mandanten.
 
-**THE bug, den dieser Test beweist:** `list_users` rief vormals `user_repo.list_all(session)`
-instanzweit auf -- JEDER Tenant sah dieselbe volle Kontoliste (Leselecke). Die Tests hier
-seeden zwei Tenants A und B (je ein SSO-Admin + SSO-Auditor) und beweisen NON-VAKUOS, dass
-ein an A gebundener lokaler Admin NIE ein Konto von B sieht (B wird tatsächlich befüllt,
-nicht nur behauptet).
+**THE bug, den dieser Test beweist:** `list_users` lieferte für einen Superadmin vormals
+`user_repo.list_all(session)` instanzweit -- unabhängig vom aktiven Tenant sah ein
+Superadmin beim Wechsel zwischen Kunden immer dieselbe volle Kontoliste (Leselecke: die
+Access-Seite eines Kunden zeigte fremde Konten). Die Tests hier seeden drei Tenants
+(Default, A, B; je ein SSO-Admin + SSO-Auditor bei A/B, ein lokaler Admin heim am
+Default-Tenant) und beweisen NON-VAKUOS, dass:
+- ein an A gebundener lokaler Admin NIE ein Konto von B sieht (B wird tatsächlich befüllt),
+- ein Superadmin im DEFAULT-Kontext NUR Default-Heim-Konten (+ die `superadmins`-Liste)
+  sieht, NIE A's oder B's,
+- derselbe Superadmin, in den Kontext A geschaltet, NUR A's Heim-Konten sieht (KEIN
+  `superadmins`-Schlüssel, NIE Default's oder B's Konten),
+- der Wechsel A -> B das Ergebnis tatsächlich ändert,
+- ein gefälschter `active_tenant`-Claim auf einen nicht gehaltenen Tenant leer bleibt
+  (default-deny), nie ein stiller Fallback auf "alles".
 
 Treibt die Route-Funktionen direkt an (wie `test_admin_tenants.py`) -- die Routen öffnen
 selbst keine zusätzliche Session (kein `tenant_scoped_session`/eigene Verbindung), die
 gewöhnliche savepoint-isolierte `session`-Fixture (echtes Postgres, siehe `conftest.py`)
 genügt: der äussere Rollback macht die Suite ohne manuelles Aufräumen rückstandsfrei,
-zweimal hintereinander ausführbar.
+zweimal hintereinander ausführbar. `list_users` erwartet seit der Rescope zusätzlich den
+rohen `active_tenant`-Claim als drittes Argument (`ActiveTenantClaim`, unautorisiert -- die
+Autorisierung passiert INNERHALB der Route über `tenant_repo.is_allowed`, s. dort) -- hier
+direkt als Plain-`int | None` übergeben, exakt wie `create_local`s `active_tenant`-Parameter
+es in diesem Testmodul bereits vormacht.
 """
 
 from __future__ import annotations
@@ -19,6 +32,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from app.api.deps import default_tenant_id
 from app.api.routes.admin_users import create_local, delete_user, list_users, set_role
 from app.core.errors import ForbiddenError
 from app.models.tenant import AdminTenant, AuditorTenant, Tenant
@@ -57,9 +71,11 @@ async def _mk_user(
 
 
 class _Seed:
+    default_id: int
     a_id: int
     b_id: int
     superadmin: AppUser
+    default_local_admin: AppUser
     local_admin_a: AppUser
     sso_admin_a: AppUser
     sso_auditor_a: AppUser
@@ -68,16 +84,20 @@ class _Seed:
 
 
 async def _seed(session: AsyncSession) -> _Seed:
-    """Zwei Tenants A und B, je mit einem SSO-Admin + SSO-Auditor (B wird also WIRKLICH
-    befüllt -- non-vakuöser Beweis, dass B nie an A leckt). Ein lokaler Admin NUR auf A
-    zugewiesen (`admin_tenant`), ein Superadmin."""
+    """Default-Tenant (real, aus der Migration) + zwei Kunden-Tenants A und B, je mit einem
+    SSO-Admin + SSO-Auditor (B wird also WIRKLICH befüllt -- non-vakuöser Beweis, dass B nie
+    an A oder den Default-Kontext leckt). Ein lokaler Admin heim am DEFAULT-Tenant (Provider-
+    Personal -- non-vakuöser Beweis für die superadmin-default-Sicht), ein lokaler Admin NUR
+    auf A zugewiesen (`admin_tenant`), ein Superadmin."""
+    default_id = await default_tenant_id(session)
     a = await _mk_tenant(session)
     b = await _mk_tenant(session)
     assert a.id is not None and b.id is not None
 
     superadmin = await _mk_user(session, role="superadmin")
+    default_local_admin = await _mk_user(session, role="admin", tenant_id=default_id)
 
-    local_admin_a = await _mk_user(session, role="admin")
+    local_admin_a = await _mk_user(session, role="admin", tenant_id=a.id)
     assert local_admin_a.id is not None
     session.add(AdminTenant(user_id=local_admin_a.id, tenant_id=a.id))
 
@@ -88,8 +108,10 @@ async def _seed(session: AsyncSession) -> _Seed:
     await session.flush()
 
     seed = _Seed()
+    seed.default_id = default_id
     seed.a_id, seed.b_id = a.id, b.id
     seed.superadmin = superadmin
+    seed.default_local_admin = default_local_admin
     seed.local_admin_a = local_admin_a
     seed.sso_admin_a = sso_admin_a
     seed.sso_auditor_a = sso_auditor_a
@@ -98,7 +120,7 @@ async def _seed(session: AsyncSession) -> _Seed:
     return seed
 
 
-# ---- list_users: gescopt pro Rolle --------------------------------------------------------- #
+# ---- list_users: gescopt auf den AKTIVEN Mandanten, für JEDEN Aufrufer -------------------- #
 
 
 async def test_local_admin_a_sees_only_a_accounts_no_superadmins_key(
@@ -106,7 +128,7 @@ async def test_local_admin_a_sees_only_a_accounts_no_superadmins_key(
 ) -> None:
     seed = await _seed(session)
 
-    out = await list_users(seed.local_admin_a, session)  # type: ignore[arg-type]
+    out = await list_users(seed.local_admin_a, session, seed.a_id)  # type: ignore[arg-type]
 
     assert "superadmins" not in out
     sso_ids = {u.id for u in out["sso"]}
@@ -121,14 +143,22 @@ async def test_local_admin_a_sees_only_a_accounts_no_superadmins_key(
     assert seed.sso_admin_b.id not in sso_ids
     assert seed.sso_auditor_b.id not in sso_ids
 
+    # Auch das Default-Heim-Konto (Provider-Personal) darf in A's Sicht nie erscheinen.
+    assert seed.default_local_admin.id not in local_ids
+
     # Kein Superadmin taucht jemals in der lokalen Liste eines Nicht-Superadmins auf.
     assert seed.superadmin.id not in local_ids
 
 
-async def test_superadmin_sees_everyone_and_the_superadmins_key(session: AsyncSession) -> None:
+async def test_superadmin_default_context_sees_only_default_homed_plus_superadmins(
+    session: AsyncSession,
+) -> None:
+    """Superadmin OHNE aktiven Kontextwechsel (Default-Kontext, Provider-Ebene): sieht NUR
+    die Heim-Konten des DEFAULT-Tenants -- niemals A's oder B's -- plus zusätzlich die
+    instanzweite `superadmins`-Liste (nur in diesem Kontext vorhanden)."""
     seed = await _seed(session)
 
-    out = await list_users(seed.superadmin, session)  # type: ignore[arg-type]
+    out = await list_users(seed.superadmin, session, seed.default_id)  # type: ignore[arg-type]
 
     assert "superadmins" in out
     superadmin_ids = {u.id for u in out["superadmins"]}
@@ -138,22 +168,84 @@ async def test_superadmin_sees_everyone_and_the_superadmins_key(session: AsyncSe
 
     local_ids = {u.id for u in out["local"]}
     sso_ids = {u.id for u in out["sso"]}
-    assert seed.local_admin_a.id in local_ids
+
+    # Default-Heim-Konto ist da (non-vakuös) ...
+    assert seed.default_local_admin.id in local_ids
     # Superadmins tauchen nicht nochmal in "local" auf.
     assert seed.superadmin.id not in local_ids
-    assert {
-        seed.sso_admin_a.id,
-        seed.sso_auditor_a.id,
-        seed.sso_admin_b.id,
-        seed.sso_auditor_b.id,
-    } <= sso_ids
+
+    # ... aber A's und B's Heim-Konten NIE -- weder lokal noch SSO.
+    assert seed.local_admin_a.id not in local_ids
+    assert seed.sso_admin_a.id not in sso_ids
+    assert seed.sso_auditor_a.id not in sso_ids
+    assert seed.sso_admin_b.id not in sso_ids
+    assert seed.sso_auditor_b.id not in sso_ids
+
+
+async def test_superadmin_switched_into_customer_a_sees_only_a_no_superadmins_key(
+    session: AsyncSession,
+) -> None:
+    """Derselbe Superadmin, in den Kontext A geschaltet: sieht NUR A's Heim-Konten -- KEIN
+    `superadmins`-Schlüssel (der nur im Default-Kontext erscheint), NIE Default's
+    Provider-Personal, NIE B's Konten."""
+    seed = await _seed(session)
+
+    out = await list_users(seed.superadmin, session, seed.a_id)  # type: ignore[arg-type]
+
+    assert "superadmins" not in out
+    local_ids = {u.id for u in out["local"]}
+    sso_ids = {u.id for u in out["sso"]}
+
+    assert seed.local_admin_a.id in local_ids
+    assert seed.sso_admin_a.id in sso_ids
+    assert seed.sso_auditor_a.id in sso_ids
+
+    assert seed.default_local_admin.id not in local_ids
+    assert seed.superadmin.id not in local_ids
+    assert seed.sso_admin_b.id not in sso_ids
+    assert seed.sso_auditor_b.id not in sso_ids
+
+
+async def test_superadmin_switching_active_tenant_changes_the_returned_set(
+    session: AsyncSession,
+) -> None:
+    """Wechsel A -> B ändert das Ergebnis TATSÄCHLICH -- kein Caching/Vermischen: A's Konten
+    sind abwesend, sobald aktiv B ist, und umgekehrt."""
+    seed = await _seed(session)
+
+    out_a = await list_users(seed.superadmin, session, seed.a_id)  # type: ignore[arg-type]
+    out_b = await list_users(seed.superadmin, session, seed.b_id)  # type: ignore[arg-type]
+
+    a_sso_ids = {u.id for u in out_a["sso"]}
+    b_sso_ids = {u.id for u in out_b["sso"]}
+
+    assert seed.sso_admin_a.id in a_sso_ids
+    assert seed.sso_admin_a.id not in b_sso_ids
+    assert seed.sso_admin_b.id in b_sso_ids
+    assert seed.sso_admin_b.id not in a_sso_ids
+    assert a_sso_ids != b_sso_ids
 
 
 async def test_unassigned_local_admin_sees_nothing(session: AsyncSession) -> None:
     """Default-Deny: ein lokaler Admin OHNE JEDE `admin_tenant`-Zuweisung sieht -- anders
-    als vor dem Fix -- nicht die volle Liste, sondern gar nichts."""
+    als vor dem Fix -- nicht die volle Liste, sondern gar nichts (kein Claim -> Fallback auf
+    den Default-Tenant, den er ebenfalls nicht hält -> `is_allowed` verweigert)."""
     unassigned = await _mk_user(session, role="admin")
-    out = await list_users(unassigned, session)  # type: ignore[arg-type]
+    out = await list_users(unassigned, session, None)  # type: ignore[arg-type]
+    assert out == {"local": [], "sso": []}
+
+
+async def test_local_admin_forged_claim_for_unheld_tenant_is_denied(
+    session: AsyncSession,
+) -> None:
+    """Sicherheitskritisch: A's lokaler Admin mit einem gefälschten/veralteten
+    `active_tenant`-Claim auf B (den er nicht hält) bekommt -- trotz des rohen Claims --
+    default-deny statt B's (oder irgendwelche) Konten (non-vakuöser Beweis: B ist
+    tatsächlich befüllt, die leere Antwort ist also KEIN Zufall)."""
+    seed = await _seed(session)
+
+    out = await list_users(seed.local_admin_a, session, seed.b_id)  # type: ignore[arg-type]
+
     assert out == {"local": [], "sso": []}
 
 
@@ -166,7 +258,7 @@ async def test_auditor_caller_gets_empty_scoped_lists(session: AsyncSession) -> 
     session.add(AuditorTenant(user_id=auditor.id, tenant_id=seed.a_id))
     await session.flush()
 
-    out = await list_users(auditor, session)  # type: ignore[arg-type]
+    out = await list_users(auditor, session, seed.a_id)  # type: ignore[arg-type]
     assert out == {"local": [], "sso": []}
 
 
@@ -216,7 +308,7 @@ async def test_local_admin_creates_auditor_grants_auditor_tenant_on_active_tenan
     assert b_row is None
 
     # Erscheint danach in A's gescopter Liste.
-    listed = await list_users(seed.local_admin_a, session)  # type: ignore[arg-type]
+    listed = await list_users(seed.local_admin_a, session, seed.a_id)  # type: ignore[arg-type]
     assert out.id in {u.id for u in listed["local"]}
 
 

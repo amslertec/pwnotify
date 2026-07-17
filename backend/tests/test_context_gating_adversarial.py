@@ -22,11 +22,15 @@ actually invoke the real production route, which would then either succeed unexp
 regression is caught, unlike a bare isolated guard call.
 
 **The nine account kinds** (Design SS2-4, Task-6-Brief):
-1. Superadmin, default context -- sees all; instance/console/assignments succeed.
+1. Superadmin, default context -- instance/console/assignments succeed and are instance-wide
+   (e.g. `/admin/tenants` sees A and B); `/access` (Access-Rescope), however, is scoped to the
+   active (default) tenant even for the superadmin -- default-homed accounts + `superadmins`,
+   never A's or B's.
 2. Superadmin, switched into customer A -- operative view of A only; instance/console/
    assignments -> 403 `default_context_required`; A's data readable, B's not (RLS-scoped by
    the active claim, not a categorical block -- the superadmin COULD switch to B too, that is
-   not an attack).
+   not an attack); `/access` likewise switches with it -- A's homed accounts only, no
+   `superadmins` key.
 3. Provider local admin (home=default, granted A) -- A read+write; B -> 403; no console.
 4. Provider local auditor (home=default, granted A) -- A read-only; any write -> 403; no
    audit-of-B.
@@ -534,19 +538,36 @@ async def _entra_ids_visible(session: AsyncSession) -> set[int]:
 # 1. Superadmin, DEFAULT context -- sees all; instance/console/assignments succeed.
 # ========================================================================================= #
 async def test_kind1_superadmin_default_context(seed: _Seed) -> None:
+    """(Access-Rescope) `/access` is now scoped to the ACTIVE tenant for EVERY caller,
+    superadmin included: in the DEFAULT context this means the default tenant's OWN homed
+    accounts (provider staff) plus the instance-wide `superadmins` list -- NOT a global,
+    all-tenants dump. `admin_tenants.list_tenants` remains instance-wide for the superadmin
+    (a DIFFERENT route, not context-gated by design SS2) -- that assertion is unchanged."""
     superadmin = seed.superadmin
     assert superadmin.id is not None
 
-    # (a) data isolation -- sees BOTH A and B through the tenant-list AND the access list.
+    # (a) data isolation -- `/admin/tenants` sees BOTH A and B (unaffected, different route).
     async with _owner_ctx(superadmin.id, seed.default_id) as (_, user, session):
         tenants_out = await admin_tenants.list_tenants(user, session)
         tenant_ids = {t.id for t in tenants_out}
         assert seed.a_id in tenant_ids and seed.b_id in tenant_ids
 
-        access_out = await admin_users.list_users(user, session)
+        # `/access` in the DEFAULT context -- default-homed provider staff + `superadmins`,
+        # NEVER A's or B's homed accounts (non-vacuous: A/B are genuinely populated).
+        access_out = await admin_users.list_users(user, session, seed.default_id)
         assert "superadmins" in access_out
         superadmin_ids = {u.id for u in access_out["superadmins"]}
         assert superadmin.id in superadmin_ids
+
+        local_ids = {u.id for u in access_out["local"]}
+        sso_ids = {u.id for u in access_out["sso"]}
+        assert seed.provider_admin.id in local_ids
+        assert seed.provider_auditor.id in local_ids
+        assert seed.provider_sso_admin.id in sso_ids
+        assert seed.a_admin.id not in local_ids
+        assert seed.b_admin.id not in local_ids
+        assert seed.a_sso_admin.id not in sso_ids
+        assert seed.b_sso_admin.id not in sso_ids
 
     # Audit: instance-wide (owner session, no RLS scoping) -- sees both A's and B's rows.
     async with _audit_ctx(superadmin.id, seed.default_id) as (_, admin_user, audit_session):
@@ -645,11 +666,29 @@ async def test_kind2_superadmin_switched_into_customer_a(seed: _Seed) -> None:
             )
         assert exc.value.code == "default_context_required"
 
-        # `/admin/tenants`/`/access` themselves are NOT provider-console routes (`CurrentUser`,
-        # not `SuperadminDefaultContextUser`) -- the superadmin still enumerates everything,
+        # `/admin/tenants` itself is NOT a provider-console route (`CurrentUser`, not
+        # `SuperadminDefaultContextUser`) -- the superadmin still enumerates every tenant,
         # switched context or not (Design SS2: only the CONSOLE ACTIONS are context-gated).
         tenants_out = await admin_tenants.list_tenants(superadmin, owner)
         assert {seed.a_id, seed.b_id} <= {t.id for t in tenants_out}
+
+    # `/access` (Access-Rescope), by contrast, IS scoped to the active tenant for every
+    # caller, superadmin included: switched into A, it returns ONLY A's homed accounts --
+    # no `superadmins` key (that only appears in the DEFAULT context, see kind 1), never
+    # B's accounts, never the default context's provider staff.
+    async with _owner_ctx(superadmin.id, seed.a_id) as (_, current_user, session):
+        access_out = await admin_users.list_users(current_user, session, seed.a_id)
+    assert "superadmins" not in access_out
+    local_ids = {u.id for u in access_out["local"]}
+    sso_ids = {u.id for u in access_out["sso"]}
+    assert seed.a_admin.id in local_ids
+    assert seed.a_auditor.id in local_ids
+    assert seed.a_sso_admin.id in sso_ids
+    assert seed.a_sso_auditor.id in sso_ids
+    assert seed.b_admin.id not in local_ids
+    assert seed.b_sso_admin.id not in sso_ids
+    assert seed.provider_admin.id not in local_ids
+    assert seed.superadmin.id not in local_ids
 
 
 # ========================================================================================= #
@@ -790,7 +829,7 @@ async def test_kind6_customer_a_local_admin(seed: _Seed) -> None:
 
     # (a) `/access` -- A's own accounts, NEVER B, NEVER superadmins.
     async with _owner_ctx(user.id, seed.a_id) as (_, current_user, session):
-        access_out = await admin_users.list_users(current_user, session)
+        access_out = await admin_users.list_users(current_user, session, seed.a_id)
     assert "superadmins" not in access_out
     all_ids = {u.id for u in access_out["local"]} | {u.id for u in access_out["sso"]}
     assert seed.a_admin.id in all_ids
