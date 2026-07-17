@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/auth'
 const TITLE_KEYS: Record<string, string> = {
   '/': 'nav.dashboard',
   '/users': 'nav.users',
+  '/tenants': 'nav.tenants',
   '/access': 'nav.access',
   '/profile': 'nav.profile',
   '/notifications': 'nav.notifications',
