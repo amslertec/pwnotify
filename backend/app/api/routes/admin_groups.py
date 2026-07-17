@@ -16,17 +16,32 @@ tenant_ids_for_entra_groups`, die Task 4 fuer den Login-Reconcile konsumiert."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from ...core.errors import NotFoundError
+from ...core.logging import get_logger
 from ...models.assignment_group import AssignmentGroup
-from ...repositories import assignment_group_repo
-from ...schemas.assignment_group import GroupCreate, GroupOut, GroupTenants, GroupUpdate
+from ...repositories import assignment_group_member_repo, assignment_group_repo
+from ...schemas.assignment_group import (
+    GroupCreate,
+    GroupMemberOut,
+    GroupMemberPage,
+    GroupOut,
+    GroupSyncResult,
+    GroupTenants,
+    GroupUpdate,
+)
 from ...schemas.common import Message
-from ...services import audit
+from ...services import audit, group_sync
+from ...services.group_sync import GroupSyncError
+from ...services.settings_service import SettingsService
 from ..deps import SessionDep, SuperadminDefaultContextUser
 
 router = APIRouter(prefix="/admin/groups", tags=["admin-groups"])
+
+log = get_logger("admin_groups")
+
+_MAX_PAGE_SIZE = 200
 
 
 async def _to_out(session: SessionDep, group: AssignmentGroup) -> GroupOut:
@@ -36,7 +51,23 @@ async def _to_out(session: SessionDep, group: AssignmentGroup) -> GroupOut:
         name=group.name,
         entra_group_id=group.entra_group_id,
         tenant_ids=await assignment_group_repo.list_tenant_ids(session, group.id),
+        member_count=await assignment_group_member_repo.count(session, group.id),
+        last_synced_at=group.last_synced_at,
     )
+
+
+async def _auto_sync(session: SessionDep, group_id: int) -> None:
+    """Best-effort-Sync nach `create_group`/`set_group_tenants` (Design §5): die primäre
+    Mutation ist bereits committet, ein Graph-Fehler hier darf sie NICHT zurückrollen oder
+    als 500 durchschlagen -- der Sync ist über den Button jederzeit erneut auslösbar."""
+    try:
+        settings = await SettingsService(session).get_all()
+        await group_sync.sync_group(session, settings, group_id)
+        await session.commit()
+    except GroupSyncError as exc:
+        log.warning("group_auto_sync_failed", group_id=group_id, message=exc.message)
+    except Exception:  # pragma: no cover - unerwarteter Fehler, darf primäre Mutation nie stören
+        log.exception("group_auto_sync_unexpected_error", group_id=group_id)
 
 
 @router.get("")
@@ -64,6 +95,8 @@ async def create_group(
         detail={"entra_group_id": group.entra_group_id},
     )
     await session.commit()
+    assert group.id is not None
+    await _auto_sync(session, group.id)
     return await _to_out(session, group)
 
 
@@ -135,4 +168,41 @@ async def set_group_tenants(
         detail={"tenant_ids": sorted(body.tenant_ids)},
     )
     await session.commit()
+    await _auto_sync(session, group_id)
     return await _to_out(session, group)
+
+
+@router.post("/{group_id}/sync", response_model=GroupSyncResult)
+async def sync_group_route(
+    _: SuperadminDefaultContextUser,
+    group_id: int,
+    session: SessionDep,
+) -> GroupSyncResult:
+    settings = await SettingsService(session).get_all()
+    result = await group_sync.sync_group(session, settings, group_id)
+    await session.commit()
+    return GroupSyncResult(**result)
+
+
+@router.get("/{group_id}/members", response_model=GroupMemberPage)
+async def list_group_members(
+    _: SuperadminDefaultContextUser,
+    group_id: int,
+    session: SessionDep,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=25, ge=1, le=_MAX_PAGE_SIZE),
+) -> GroupMemberPage:
+    if await assignment_group_repo.get(session, group_id) is None:
+        raise NotFoundError("Gruppe nicht gefunden.", code="group_not_found")
+    rows, total = await assignment_group_member_repo.list_members_page(
+        session, group_id, page, size
+    )
+    return GroupMemberPage(
+        items=[
+            GroupMemberOut(entra_id=r.entra_id, upn=r.upn, display_name=r.display_name, mail=r.mail)
+            for r in rows
+        ],
+        total=total,
+        page=page,
+        size=size,
+    )

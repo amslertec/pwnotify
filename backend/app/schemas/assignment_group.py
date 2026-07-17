@@ -6,6 +6,8 @@ Phase-2-Erweiterung vertagte Vereinfachung, kein Versehen."""
 
 from __future__ import annotations
 
+import datetime as dt
+
 from pydantic import BaseModel, Field
 
 
@@ -27,3 +29,32 @@ class GroupOut(BaseModel):
     name: str
     entra_group_id: str
     tenant_ids: list[int]
+    member_count: int
+    last_synced_at: dt.datetime | None
+
+
+class GroupSyncResult(BaseModel):
+    """Rückgabe von `POST /admin/groups/{id}/sync` -- identisch zum Rückgabewert von
+    `services.group_sync.sync_group` (Task 3)."""
+
+    member_count: int
+    materialized: int
+    added: int
+    removed: int
+
+
+class GroupMemberOut(BaseModel):
+    """Eine Zeile des Mitglieder-Snapshots (`assignment_group_member`, Task 3) für die
+    paginierte Gruppen-Detail-API."""
+
+    entra_id: str
+    upn: str
+    display_name: str | None
+    mail: str | None
+
+
+class GroupMemberPage(BaseModel):
+    items: list[GroupMemberOut]
+    total: int
+    page: int
+    size: int
