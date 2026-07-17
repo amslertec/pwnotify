@@ -32,6 +32,10 @@ SETTINGS: dict[str, SettingSpec] = {
     "app.public_url": SettingSpec(""),
     # Prüft periodisch das neueste GitHub-Release und zeigt bei neuerer Version einen Hinweis.
     "app.update_check": SettingSpec(True),
+    # Mandantenfähigkeit umschalten (Access-Model-Phase). Default AUS: eine frische wie
+    # eine bestehende Instanz bleibt im bisherigen Einzelmandant-Verhalten, bis ein
+    # Superadmin bewusst umschaltet. Speicherort (Default-Tenant) + gated Write: Task 5.
+    "instance.multi_tenant_mode": SettingSpec(False),
     # ---- Anmeldung ----
     # Zwei-Faktor-Pflicht für LOKALE Konten. Ist sie aktiv, entsteht ohne eingerichtetes
     # 2FA gar keine vollwertige Sitzung: Nach dem Passwort führt der Weg direkt in die

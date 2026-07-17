@@ -33,3 +33,19 @@ class AuditorTenant(SQLModel, table=True):
 
     user_id: int = Field(foreign_key="app_user.id", primary_key=True)
     tenant_id: int = Field(foreign_key="tenant.id", primary_key=True)
+
+
+class AdminTenant(SQLModel, table=True):
+    """Zuordnung: welcher LOKALE Admin darf welche Kunden verwalten (many-to-many).
+
+    Pendant zu `AuditorTenant` für Admins unterhalb des Superadmins: der Superadmin
+    (role='superadmin') bleibt instanzweit und braucht keine Zeile hier; jeder andere
+    lokale Admin (role='admin') wird explizit auf seine(n) Kunden gebunden. FK-Kaskade
+    lebt in der Migration (siehe `cd755854e58c`), nicht im Model -- exakt wie bei
+    `AuditorTenant`/`a2b3c4d5e6f7`.
+    """
+
+    __tablename__ = "admin_tenant"
+
+    user_id: int = Field(foreign_key="app_user.id", primary_key=True)
+    tenant_id: int = Field(foreign_key="tenant.id", primary_key=True)
