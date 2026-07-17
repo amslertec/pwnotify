@@ -43,6 +43,9 @@ class OidcResult:
     allowed: bool
     role: str = "admin"
     reason: str | None = None
+    tid: str | None = None
+    """Entra-Tenant-ID (`tid`-Claim) des ID-Tokens -- Grundlage für das SSO-Tenant-Mapping
+    (Phase 4a Task 4). ``None`` nur, wenn das Token den Claim ausnahmsweise nicht enthält."""
 
 
 def is_configured(settings: dict[str, Any]) -> bool:
@@ -119,6 +122,7 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
     claims: dict[str, Any] = result.get("id_token_claims", {})
     username = claims.get("preferred_username") or claims.get("email") or claims.get("upn") or ""
     display_name = claims.get("name") or username
+    tid = claims.get("tid")
 
     admin_group = str(settings.get("oidc.admin_group_id") or "")
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
@@ -140,6 +144,7 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
             reason="Keine Gruppeninformationen im Token und Rückfrage bei Microsoft Graph "
             "nicht möglich. Bitte im App-Manifest 'groupMembershipClaims' auf "
             "'SecurityGroup' setzen.",
+            tid=tid,
         )
     # Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
     if admin_group and admin_group in groups:
@@ -154,6 +159,7 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
         allowed=allowed,
         role=role,
         reason=None if allowed else "Nicht Mitglied einer berechtigten Gruppe.",
+        tid=tid,
     )
 
 

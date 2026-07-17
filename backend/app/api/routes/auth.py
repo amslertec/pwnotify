@@ -740,6 +740,39 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
+    # Tenant-Mapping (Phase 4a Task 4): der `tid`-Claim bestimmt den GENAU EINEN Tenant,
+    # an den dieses SSO-Konto gebunden wird -- kein stiller Fallback auf "irgendeinen"
+    # Tenant, sonst könnte ein fremder Entra-Tenant Zugriff auf falsche Kundendaten
+    # bekommen (die Tenant-Isolation greift erst über `active_tenant`, siehe Task 3).
+    tenant = await tenant_repo.get_by_entra_tid(session, result.tid) if result.tid else None
+    configured_tid = str(settings.get("graph.tenant_id") or "")
+    if tenant is None and result.tid and configured_tid and result.tid == configured_tid:
+        # Übergangs-Fallback: die bestehende Single-Tenant-Instanz hat auf ihrem
+        # Default-Tenant noch keinen `entra_tenant_id` gesetzt (nullable bis SSO für
+        # Multi-Tenant konfiguriert ist). Kommt der Benutzer aus GENAU DEM Entra-Tenant,
+        # der für DIESE Instanz konfiguriert ist, bleibt SSO ohne Migrationsschritt
+        # funktionsfähig -- und der Default-Tenant wird für künftige Logins direkt an
+        # diesen `tid` gebunden (Bootstrap, nur einmal nötig).
+        tenant = await tenant_repo.default_tenant(session)
+        if tenant.entra_tenant_id is None:
+            tenant.entra_tenant_id = result.tid
+
+    if tenant is None:
+        # Unbekannter/fremder `tid`: nicht anmelden. Ein Angreifer aus einem fremden
+        # Entra-Tenant, der zufällig in einer gleichnamigen Gruppen-ID landet, darf sich
+        # so nicht in eine bestehende Instanz einklinken.
+        log.warning("oidc_unknown_tenant", tid=result.tid, username=result.username)
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_username=result.username,
+            outcome="failure",
+            request=request,
+            detail={"sso": True, "reason": "unknown_tenant"},
+        )
+        await session.commit()
+        return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
+
     user = await user_repo.get_by_username(session, result.username)
     if user is None:
         # SSO-Nutzer ohne lokales Passwort (unbrauchbarer Zufalls-Hash).
@@ -756,6 +789,11 @@ async def oidc_callback(
         user.display_name = result.display_name
         user.role = result.role  # Rolle folgt der Entra-Gruppenmitgliedschaft
 
+    # SSO-Konto ist an genau diesen einen Tenant gebunden (Task 4) -- `tenant_repo`
+    # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) liest ausschliesslich
+    # `AppUser.tenant_id` für SSO-Konten.
+    user.tenant_id = tenant.id
+
     # Muss hier stehen, weil dieser Pfad bewusst nicht über `_complete_login` läuft
     # (Redirect statt JSON-Antwort). Ohne diesen Eintrag fehlten ausgerechnet die
     # SSO-Anmeldungen im Protokoll — bei aktiviertem SSO also praktisch alle.
@@ -767,7 +805,10 @@ async def oidc_callback(
         detail={"sso": True, "role": user.role},
     )
     user.last_login_at = utcnow()
-    pair = issue_token_pair(str(user.id))
+    # `active_tenant` schliesst den Task-3-Defer: die SSO-Sitzung trägt den Tenant-Claim
+    # direkt ab dem Login, statt ihn bei jedem Request über `resolve_initial_tenant` neu
+    # aufzulösen.
+    pair = issue_token_pair(str(user.id), active_tenant=tenant.id)
     await user_repo.create_session(
         session,
         user_id=user.id,  # type: ignore[arg-type]
@@ -776,6 +817,7 @@ async def oidc_callback(
         expires_at=pair.refresh_expires,
         user_agent=request.headers.get("user-agent"),
         ip=request.client.host if request.client else None,
+        active_tenant_id=tenant.id,
     )
     await session.commit()
     # Profilfoto aus Entra holen und cachen (best effort; blockiert Login nicht bei Fehler).
