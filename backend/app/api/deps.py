@@ -287,6 +287,34 @@ async def require_superadmin(user: CurrentUser) -> AppUser:
 SuperadminUser = Annotated[AppUser, Depends(require_superadmin)]
 
 
+async def require_superadmin_default_context(
+    request: Request, user: SuperadminUser, session: SessionDep
+) -> AppUser:
+    """Wie `require_superadmin`, aber zusätzlich nur im DEFAULT-Kontext (Context-Gating v2,
+    Design §4/§4-notes, Matrix B).
+
+    Schaltet der Superadmin in einen Kunden-Kontext um, sieht er dessen operative Sicht wie
+    ein Kunden-Admin -- Instanz-Einstellungen (Mode-Schalter + Default-Umbenennung), die
+    Mandanten-Konsole (CRUD) und die Zuweisungs-Konsole sind Provider-Ebene-Aktionen, die NUR
+    aus dem Default-Kontext heraus erlaubt sind. Das Frontend blendet sie dort aus (Task 5);
+    dieses Gate ist die Backend-Verteidigungslinie dahinter, damit eine manipulierte Anfrage
+    (z. B. direkt gegen die API, mit einem `active_tenant`-Claim auf einen Kundentenant) das
+    nicht umgehen kann.
+
+    `_resolve_authorized_tenant` liefert bei einem Superadmin OHNE `active_tenant`-Claim
+    (z. B. ein frisch ausgestelltes Token vor dem ersten Umschalten) über
+    `tenant_repo.resolve_initial_tenant` den Default-Tenant zurück -- der Default-Kontext ist
+    damit der natürliche Ausgangszustand, kein Sonderfall, den man hier gesondert behandeln
+    müsste."""
+    active = await _resolve_authorized_tenant(request, user, session)
+    if active != await default_tenant_id(session):
+        raise ForbiddenError("Nur im Standard-Kontext möglich.", code="default_context_required")
+    return user
+
+
+SuperadminDefaultContextUser = Annotated[AppUser, Depends(require_superadmin_default_context)]
+
+
 def _cookie_kwargs() -> dict[str, object]:
     settings = get_settings()
     return {

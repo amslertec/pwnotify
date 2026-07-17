@@ -6,6 +6,12 @@ innerhalb seiner zugewiesenen Kunden, weist aber selbst keine Kunden zu und legt
 neuen an. `list_tenants` bleibt für jedes Konto erreichbar, scopet die Ausgabe aber über
 `tenant_repo.allowed_tenant_ids` (Superadmin -> alle, sonst nur die eigenen).
 
+Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
+(`SuperadminDefaultContextUser`, `default_context_required`): schaltet der Superadmin in
+einen Kunden-Kontext um, ist die Mandanten-Konsole (Create/Update/Delete) gesperrt -- sie
+ist Provider-Ebene, kein Werkzeug, das man aus der operativen Sicht eines Kunden heraus
+bedient. `list_tenants` bleibt unverändert in jedem Kontext lesbar.
+
 Guard-Rails leben bewusst HIER, nicht in `tenant_repo` (siehe dessen Docstrings zu
 `update`/`delete`): der Default-Tenant (`is_default=true`, von der Migration angelegt --
 NICHT mehr über `slug == "default"` erkannt, da der Slug umbenennbar ist) darf weder
@@ -36,7 +42,7 @@ from ...repositories import tenant_repo, user_repo
 from ...schemas.common import Message
 from ...schemas.tenant import TenantCreate, TenantOut, TenantUpdate
 from ...services import audit
-from ..deps import CurrentUser, SessionDep, SuperadminUser
+from ..deps import CurrentUser, SessionDep, SuperadminDefaultContextUser
 
 router = APIRouter(prefix="/admin/tenants", tags=["admin-tenants"])
 
@@ -74,7 +80,7 @@ async def list_tenants(user: CurrentUser, session: SessionDep) -> list[TenantOut
 
 @router.post("", response_model=TenantOut)
 async def create_tenant(
-    request: Request, admin: SuperadminUser, body: TenantCreate, session: SessionDep
+    request: Request, admin: SuperadminDefaultContextUser, body: TenantCreate, session: SessionDep
 ) -> TenantOut:
     tenant = await tenant_repo.create(
         session, name=body.name, slug=body.slug, entra_tenant_id=body.entra_tenant_id
@@ -93,7 +99,11 @@ async def create_tenant(
 
 @router.patch("/{tenant_id}", response_model=TenantOut)
 async def update_tenant(
-    request: Request, admin: SuperadminUser, tenant_id: int, body: TenantUpdate, session: SessionDep
+    request: Request,
+    admin: SuperadminDefaultContextUser,
+    tenant_id: int,
+    body: TenantUpdate,
+    session: SessionDep,
 ) -> TenantOut:
     tenant = await tenant_repo.get(session, tenant_id)
     if tenant is None:
@@ -131,7 +141,7 @@ async def update_tenant(
 
 @router.delete("/{tenant_id}", response_model=Message)
 async def delete_tenant(
-    request: Request, admin: SuperadminUser, tenant_id: int, session: SessionDep
+    request: Request, admin: SuperadminDefaultContextUser, tenant_id: int, session: SessionDep
 ) -> Message:
     tenant = await tenant_repo.get(session, tenant_id)
     if tenant is None:

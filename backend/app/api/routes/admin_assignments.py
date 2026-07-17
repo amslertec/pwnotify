@@ -1,6 +1,9 @@
 """Zuweisungs-API (Access-Modell/Superadmin-Phase, Task 4): welchen (aktiven) Mandanten
 darf ein Admin/Auditor-Konto zusätzlich zu seinem Heim-Tenant verwalten/einsehen --
-SUPERADMIN-only auf ALLEN Routen (`SuperadminUser`, Design §4/§6).
+SUPERADMIN-only auf ALLEN Routen (`SuperadminUser`, Design §4/§6). Seit Context-Gating v2
+(Matrix B) zusätzlich nur im DEFAULT-Kontext (`SuperadminDefaultContextUser`,
+`default_context_required`) -- die Zuweisungs-Konsole ist Provider-Ebene und aus einem
+Kunden-Kontext heraus gesperrt, genau wie die Instanz- und Mandanten-Konsole.
 
 **Kernentscheidung (bewusste Abweichung vom Task-4-Brief):** der Zuweisungstyp
 (`admin_tenant` vs. `auditor_tenant`) wird NICHT vom Aufrufer per Dual-Liste
@@ -41,7 +44,7 @@ from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...repositories import tenant_repo, user_repo
 from ...schemas.assignment import AssignmentOut, AssignmentUpdate
 from ...services import audit
-from ..deps import SessionDep, SuperadminUser
+from ..deps import SessionDep, SuperadminDefaultContextUser
 
 router = APIRouter(prefix="/admin/assignments", tags=["admin-assignments"])
 
@@ -53,7 +56,9 @@ def _grant_kind(role: str) -> str:
 
 
 @router.get("/{user_id}", response_model=AssignmentOut)
-async def get_assignments(_: SuperadminUser, user_id: int, session: SessionDep) -> AssignmentOut:
+async def get_assignments(
+    _: SuperadminDefaultContextUser, user_id: int, session: SessionDep
+) -> AssignmentOut:
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -68,7 +73,7 @@ async def get_assignments(_: SuperadminUser, user_id: int, session: SessionDep) 
 @router.put("/{user_id}", response_model=AssignmentOut)
 async def set_assignments(
     request: Request,
-    admin: SuperadminUser,
+    admin: SuperadminDefaultContextUser,
     user_id: int,
     body: AssignmentUpdate,
     session: SessionDep,

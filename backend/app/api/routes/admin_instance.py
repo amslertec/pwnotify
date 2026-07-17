@@ -6,6 +6,10 @@ um sein Chrome zu gaten (Mandanten-Umschalter/-Verwaltung nur sichtbar, wenn Mul
 Mode aktiv ist), unabhängig von der Rolle. `PUT` ist SUPERADMIN-only (Design §6): nur er
 darf die Instanz global umschalten oder den Default-Kunden umbenennen (der Slug bleibt
 dabei immer `'default'` -- `TenantUpdate`/hier `InstanceUpdate` kennen kein Slug-Feld).
+Zusätzlich (Context-Gating v2, Matrix B) nur im DEFAULT-Kontext: schaltet der Superadmin in
+einen Kunden-Kontext um, ist diese Route gesperrt (`SuperadminDefaultContextUser`,
+`default_context_required`) -- Instanz-Mode/Default-Umbenennung sind Provider-Ebene-
+Aktionen, kein Kunden-Admin-Werkzeug.
 
 Der Schalter selbst lebt IMMER als `setting`-Zeile des Default-Tenants (siehe
 `services.instance_settings`), NICHT als rohe Owner-Zeile -- `instance.multi_tenant_mode`
@@ -21,7 +25,7 @@ from fastapi import APIRouter, Request
 from ...repositories import tenant_repo
 from ...schemas.instance import InstanceOut, InstanceUpdate
 from ...services import audit, instance_settings
-from ..deps import CurrentUser, SessionDep, SuperadminUser
+from ..deps import CurrentUser, SessionDep, SuperadminDefaultContextUser
 
 router = APIRouter(prefix="/admin/instance", tags=["admin-instance"])
 
@@ -36,7 +40,7 @@ async def get_instance(_: CurrentUser, session: SessionDep) -> InstanceOut:
 
 @router.put("", response_model=InstanceOut)
 async def update_instance(
-    request: Request, admin: SuperadminUser, body: InstanceUpdate, session: SessionDep
+    request: Request, admin: SuperadminDefaultContextUser, body: InstanceUpdate, session: SessionDep
 ) -> InstanceOut:
     if body.multi_tenant_mode is not None:
         await instance_settings.write_mode(session, body.multi_tenant_mode)

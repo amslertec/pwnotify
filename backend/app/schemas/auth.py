@@ -49,6 +49,12 @@ class UserOut(BaseModel):
     # braucht ihn, um sein Chrome zu gaten (Mandanten-Umschalter/-Verwaltung nur sichtbar,
     # wenn Multi-Tenant-Mode aktiv ist). Default AUS, wie der zugrundeliegende Setting-Key.
     multi_tenant_mode: bool = False
+    # True, wenn `active_tenant` der Default-Tenant ist (Context-Gating v2, Matrix B) --
+    # das einzige Feld, über das das Frontend Default-Kontext-Chrome gatet (Instanz-
+    # Einstellungen, Mandanten-/Zuweisungs-Konsole; siehe `deps.require_superadmin_default_
+    # context` für die serverseitige Durchsetzung). False, wenn `active_tenant` None ist
+    # (kein Tenant zugeordnet -- niemals stillschweigend "Default" behaupten).
+    active_tenant_is_default: bool = False
 
 
 class LanguageUpdate(BaseModel):

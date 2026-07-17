@@ -144,7 +144,10 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
     Tenant steht dabei IMMER an Position 0 von `switchable_tenants` (Rest nach Name, Design
     §8) -- damit jeder Konsument dieselbe, deterministische Reihenfolge sieht. Zusätzlich
     trägt `UserOut.multi_tenant_mode` (Task 5) den instanzweiten Schalterstand, gelesen über
-    `services.instance_settings.read_mode` (immer default-tenant-gescopt, siehe dort)."""
+    `services.instance_settings.read_mode` (immer default-tenant-gescopt, siehe dort).
+    `UserOut.active_tenant_is_default` (Context-Gating v2, Matrix B) meldet, ob der aktive
+    Mandant der Default-Tenant ist -- reuse des `default` unten (bereits für den
+    switchable-first-Sort aufgelöst), keine zusätzliche Abfrage."""
     path = _avatar_path(user.id) if user.id is not None else None
     exists = bool(path and path.exists())
 
@@ -178,6 +181,7 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
         active_tenant=active_tenant,
         switchable_tenants=switchable,
         multi_tenant_mode=await instance_settings.read_mode(session),
+        active_tenant_is_default=active_tenant_id is not None and active_tenant_id == default.id,
     )
 
 
