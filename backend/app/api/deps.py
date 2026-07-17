@@ -37,20 +37,20 @@ async def get_settings_service(session: SessionDep) -> SettingsService:
 SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
 
 # Cache für die Default-Tenant-Id: die Zeile wird von der Phase-1-Migration einmalig
-# angelegt (`slug='default'`) und nie mehr geändert -- ein Modul-Cache erspart bei jedem
-# Lookup eine eigene Owner-Session. Wird noch für zwei Dinge gebraucht: die öffentlichen
-# (unauthentifizierten) Branding-Routen (`get_public_tenant_session`, unten) und als
-# Fallback-Tenant für den lokalen Admin in `tenant_repo.resolve_initial_tenant`.
+# angelegt (`is_default=true`) und ihre IDENTITÄT ändert sich nie mehr -- nur ihr Slug kann
+# umbenannt werden -- ein Modul-Cache erspart bei jedem Lookup eine eigene Owner-Session.
+# Wird noch für zwei Dinge gebraucht: die öffentlichen (unauthentifizierten) Branding-Routen
+# (`get_public_tenant_session`, unten) und als Fallback-Tenant für den lokalen Admin in
+# `tenant_repo.resolve_initial_tenant`.
 _default_tenant_id_cache: int | None = None
 
 
 async def default_tenant_id(session: AsyncSession) -> int:
-    """Id des Default-Tenants (`tenant.slug = 'default'`), gecached."""
+    """Id des Default-Tenants (`tenant.is_default = true`), gecached -- der Cache bleibt auch
+    nach einer Slug-Umbenennung gültig, da `is_default` die Identität trägt, nicht der Slug."""
     global _default_tenant_id_cache
     if _default_tenant_id_cache is None:
-        tid = (
-            await session.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))
-        ).scalar_one()
+        tid = (await session.execute(text("SELECT id FROM tenant WHERE is_default"))).scalar_one()
         _default_tenant_id_cache = int(tid)
     return _default_tenant_id_cache
 

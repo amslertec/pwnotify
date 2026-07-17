@@ -7,11 +7,12 @@ neuen an. `list_tenants` bleibt für jedes Konto erreichbar, scopet die Ausgabe 
 `tenant_repo.allowed_tenant_ids` (Superadmin -> alle, sonst nur die eigenen).
 
 Guard-Rails leben bewusst HIER, nicht in `tenant_repo` (siehe dessen Docstrings zu
-`update`/`delete`): der Default-Tenant (`slug == "default"`, von der Migration angelegt)
-darf weder gelöscht noch deaktiviert werden, und der letzte AKTIVE Tenant darf nicht
-gelöscht werden -- sonst könnte sich niemand mehr anmelden (jeder Login löst über einen
-Tenant auf, siehe `tenant_repo.resolve_initial_tenant`). Ein Slug-Wechsel ist bereits
-schemaseitig unmöglich: `TenantUpdate` kennt kein `slug`-Feld.
+`update`/`delete`): der Default-Tenant (`is_default=true`, von der Migration angelegt --
+NICHT mehr über `slug == "default"` erkannt, da der Slug umbenennbar ist) darf weder
+gelöscht noch deaktiviert werden, und der letzte AKTIVE Tenant darf nicht gelöscht werden --
+sonst könnte sich niemand mehr anmelden (jeder Login löst über einen Tenant auf, siehe
+`tenant_repo.resolve_initial_tenant`). Ein Slug-Wechsel ist bereits schemaseitig unmöglich:
+`TenantUpdate` kennt kein `slug`-Feld.
 
 Löschen ist hart und kaskadierend (Design §6): die sechs Datentabellen
 (`entra_user`/`exclusion`/`notification_log`/`run`/`setting`) und `auditor_tenant` hängen
@@ -98,9 +99,9 @@ async def update_tenant(
     if tenant is None:
         raise NotFoundError("Mandant nicht gefunden.", code="tenant_not_found")
     # Der Default-Kunde darf nicht deaktiviert werden -- ohne ihn hat der lokale Admin
-    # keinen Fallback-Tenant mehr (siehe `resolve_initial_tenant`). Ein Slug-Wechsel ist
-    # bereits unmöglich: `TenantUpdate` besitzt kein `slug`-Feld.
-    if tenant.slug == "default" and body.is_active is False:
+    # keinen Fallback-Tenant mehr (siehe `resolve_initial_tenant`). Geprüft über `is_default`,
+    # nicht `slug == "default"` -- der Slug ist umbenennbar, `is_default` nicht.
+    if tenant.is_default and body.is_active is False:
         raise ConflictError(
             "Der Standard-Mandant kann nicht deaktiviert werden.",
             code="cannot_deactivate_default_tenant",
@@ -135,7 +136,7 @@ async def delete_tenant(
     tenant = await tenant_repo.get(session, tenant_id)
     if tenant is None:
         raise NotFoundError("Mandant nicht gefunden.", code="tenant_not_found")
-    if tenant.slug == "default":
+    if tenant.is_default:
         raise ConflictError(
             "Der Standard-Mandant kann nicht gelöscht werden.", code="cannot_delete_default_tenant"
         )

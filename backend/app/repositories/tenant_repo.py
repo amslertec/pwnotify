@@ -55,9 +55,11 @@ async def get(session: AsyncSession, tid: int) -> Tenant | None:
 
 
 async def default_tenant(session: AsyncSession) -> Tenant:
-    """Der Default-Tenant (`slug='default'`) -- wird von der Migration angelegt und muss
-    daher in jeder migrierten Instanz existieren."""
-    res = await session.execute(select(Tenant).where(Tenant.slug == "default"))
+    """Der Default-Tenant (`is_default=true`, NICHT mehr über `slug='default'` identifiziert --
+    der Slug ist umbenennbar, siehe Task 2) -- wird von der Migration angelegt und muss daher
+    in jeder migrierten Instanz existieren (partieller Unique-Index garantiert höchstens
+    einen)."""
+    res = await session.execute(select(Tenant).where(Tenant.is_default.is_(True)))
     return res.scalar_one()
 
 

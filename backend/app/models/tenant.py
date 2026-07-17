@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Boolean, Column, DateTime, String, text
 from sqlmodel import Field, SQLModel
 
 from ._base import utcnow
@@ -21,6 +21,13 @@ class Tenant(SQLModel, table=True):
         default=None, sa_column=Column(String(64), unique=True, index=True)
     )
     is_active: bool = Field(default=True)
+    # Der EINE instanzweite Heim-Tenant für lokale Konten (Superadmin/Admin/Auditor ohne
+    # eigene Kunden-Zuordnung) -- ersetzt den bisherigen `slug == "default"`-Vergleich, damit
+    # der Slug umbenannt werden kann, ohne diese Identität zu verlieren (Migration
+    # `4035552093e2` garantiert per partiellem Unique-Index höchstens eine Zeile mit `true`).
+    is_default: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, server_default=text("false"))
+    )
     created_at: dt.datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )

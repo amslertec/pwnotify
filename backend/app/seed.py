@@ -65,7 +65,7 @@ async def run_seed(session_factory: async_sessionmaker[AsyncSession]) -> None:
         # der Schreibzugriff sonst fehl.
         if not await svc.has_any():
             default_tenant_id = (
-                await session.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))
+                await session.execute(text("SELECT id FROM tenant WHERE is_default"))
             ).scalar_one_or_none()
             values = _env_to_settings(settings)
             if values and default_tenant_id is not None:
