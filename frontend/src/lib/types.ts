@@ -28,6 +28,10 @@ export interface User {
    *  Modus-Schalter, Settings-General-Tab) sichtbar sind — auch für einen Superadmin,
    *  der gerade in einen Kunden-Kontext gewechselt hat. */
   active_tenant_is_default: boolean
+  /** E-Mail-Adresse (Console+Groups+Invite Task 5/8) — bei lokalen Konten selbst pflegbar
+   *  (`POST /auth/profile`), bei SSO-Konten schreibgeschützt (kommt aus Entra). Der
+   *  Reset-Trigger (Access-Seite) verschickt genau an diese Adresse. */
+  email: string | null
 }
 
 export interface LoginResponse {
@@ -278,6 +282,36 @@ export interface AuditEntry {
   ip_address: string | null
   user_agent: string | null
   detail: Record<string, unknown>
+}
+
+/** Zweck eines öffentlichen Einmal-Tokens (`GET /public/token/info`, Task 8). */
+export type TokenPurpose = 'invite' | 'reset'
+
+/** Antwort auf `GET /public/token/info?token=&purpose=` — bei JEDEM ungültigen Zustand
+ *  (nie existiert, falscher purpose, abgelaufen, bereits verbraucht) IMMER
+ *  `valid=false, email=null, purpose=null`. Niemals ein Hinweis, ob ein Token/Konto je
+ *  existiert hat (keine Enumeration) — s. Backend `schemas/auth.py::TokenInfo`. */
+export interface TokenInfo {
+  valid: boolean
+  email: string | null
+  purpose: TokenPurpose | null
+}
+
+/** Body für `POST /public/token/accept` (Einladung annehmen). Kein `email`-Feld: die
+ *  Zieladresse ist bereits über das Token an das Konto gebunden. */
+export interface TokenAcceptRequest {
+  token: string
+  first_name: string
+  last_name: string
+  username: string
+  password: string
+}
+
+/** Body für `POST /public/token/reset`. Bewusst kein `username` — das Konto ist über das
+ *  Token bereits fixiert. */
+export interface TokenResetRequest {
+  token: string
+  password: string
 }
 
 export interface AuditPage {

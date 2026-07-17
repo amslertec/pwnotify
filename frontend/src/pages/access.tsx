@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
+import { KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -276,6 +276,18 @@ function UserRow({
     onError: (e) => toast.error(translateError(e)),
   })
 
+  // Passwort-Reset-Link auslösen (§7c) -- nur für lokale, bereits aktivierte Konten
+  // sinnvoll (SSO setzt sein Passwort über Entra zurück; ein noch nicht angenommenes
+  // `pending:`-Einladungskonto hat gar kein Passwort, das man zurücksetzen könnte).
+  // Ob eine E-Mail hinterlegt ist, weiss das Frontend hier nicht (`AdminUserOut` liefert
+  // sie nicht) -- ein Konto ohne E-Mail lehnt der Server mit `email_required` ab, das
+  // landet als Toast (`translateError`).
+  const resetMut = useMutation({
+    mutationFn: () => api.post<{ message: string }>(`/admin/users/${u.id}/reset`),
+    onSuccess: (r) => toast.success(r.message),
+    onError: (e) => toast.error(translateError(e)),
+  })
+
   return (
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-2.5">
@@ -321,6 +333,18 @@ function UserRow({
               </SelectContent>
             </Select>
           )}
+          {!sso && isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={!u.is_active || resetMut.isPending}
+              onClick={() => resetMut.mutate()}
+              aria-label={t('access.sendReset')}
+              title={!u.is_active ? t('access.resetPendingHint') : t('access.sendReset')}
+            >
+              <Send className="size-4" />
+            </Button>
+          )}
           {isAdmin && (
             <Button
               variant="ghost"
@@ -339,6 +363,12 @@ function UserRow({
   )
 }
 
+/** 'password': bestehender Direktanlage-Pfad (Benutzername + Passwort sofort gesetzt).
+ *  'invite': Einladungsmodus (Task 5 §7b) -- nur E-Mail + Rolle, `POST /admin/users` OHNE
+ *  `password` -> legt ein `pending:`-Platzhalterkonto an und verschickt eine Einladungs-Mail;
+ *  der Einladungsempfänger vergibt Benutzername + Passwort erst beim Annehmen (`/einladung`). */
+type CreateMode = 'password' | 'invite'
+
 function CreateDialog({
   open,
   onOpenChange,
@@ -348,58 +378,107 @@ function CreateDialog({
 }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
+  const [mode, setMode] = useState<CreateMode>('password')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
   const [role, setRole] = useState('admin')
+
+  const resetForm = () => {
+    setMode('password')
+    setFirstName('')
+    setLastName('')
+    setUsername('')
+    setPassword('')
+    setEmail('')
+    setRole('admin')
+  }
 
   const create = useMutation({
     mutationFn: () =>
-      api.post('/admin/users', {
-        username,
-        password,
-        role,
-        display_name: `${firstName} ${lastName}`.trim() || null,
-      }),
+      mode === 'invite'
+        ? api.post('/admin/users', { email: email.trim(), role })
+        : api.post('/admin/users', {
+            username,
+            password,
+            role,
+            display_name: `${firstName} ${lastName}`.trim() || null,
+          }),
     onSuccess: () => {
-      toast.success(t('access.userCreated'))
+      toast.success(mode === 'invite' ? t('access.inviteSent') : t('access.userCreated'))
       void qc.invalidateQueries({ queryKey: ['admin-users'] })
-      setFirstName('')
-      setLastName('')
-      setUsername('')
-      setPassword('')
-      setRole('admin')
+      resetForm()
       onOpenChange(false)
     },
     onError: (e) => toast.error(translateError(e)),
   })
 
+  const emailValid = /.+@.+\..+/.test(email.trim())
+  const canSubmit = mode === 'invite' ? emailValid : username.length >= 3 && password.length >= 10
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o)
+        if (!o) resetForm()
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('access.createTitle')}</DialogTitle>
         </DialogHeader>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as CreateMode)}>
+          <TabsList className="w-full">
+            <TabsTrigger value="password" className="flex-1">
+              {t('access.modeSetPassword')}
+            </TabsTrigger>
+            <TabsTrigger value="invite" className="flex-1">
+              {t('access.modeInvite')}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          {mode === 'password' ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>{t('access.firstName')}</Label>
+                  <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('access.lastName')}</Label>
+                  <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('access.username')}</Label>
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('access.passwordLabel')}</Label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </>
+          ) : (
             <div className="space-y-1.5">
-              <Label>{t('access.firstName')}</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              <Label>{t('access.emailLabel')}</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoFocus
+              />
+              <p className="text-muted-foreground text-xs">{t('access.inviteHint')}</p>
             </div>
-            <div className="space-y-1.5">
-              <Label>{t('access.lastName')}</Label>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('access.username')}</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t('access.passwordLabel')}</Label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
+          )}
           <div className="space-y-1.5">
             <Label>{t('access.roleLabel')}</Label>
             <Select value={role} onValueChange={setRole}>
@@ -414,12 +493,8 @@ function CreateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button
-            onClick={() => create.mutate()}
-            loading={create.isPending}
-            disabled={username.length < 3 || password.length < 10}
-          >
-            {t('access.create')}
+          <Button onClick={() => create.mutate()} loading={create.isPending} disabled={!canSubmit}>
+            {mode === 'invite' ? t('access.sendInvite') : t('access.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

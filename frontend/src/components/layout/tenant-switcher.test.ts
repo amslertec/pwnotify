@@ -23,6 +23,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     ],
     multi_tenant_mode: true,
     active_tenant_is_default: true,
+    email: null,
     ...overrides,
   }
 }

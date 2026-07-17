@@ -292,7 +292,12 @@
     "cannot_delete_last_superadmin": "The last superadmin cannot be deleted.",
     "superadmin_must_be_local": "A superadmin must be a local account.",
     "group_exists": "This Entra group ID is already in use.",
-    "group_not_found": "Group not found."
+    "group_not_found": "Group not found.",
+    "token_invalid": "This link is invalid or has expired.",
+    "password_policy": "The password does not meet the policy (at least 10 characters, upper/lowercase letter, digit, special character).",
+    "sso_no_reset": "SSO accounts reset their password through Microsoft Entra.",
+    "email_required": "No email address is set for this account.",
+    "user_not_in_scope": "Account outside your own customer scope."
   },
   "access": {
     "title": "User management",
@@ -329,7 +334,15 @@
     "roleAuditors": "Auditors",
     "roleSuperadmin": "Superadmin",
     "emptyRole": "No users in this role.",
-    "lastAdminHint": "last administrator"
+    "lastAdminHint": "last administrator",
+    "modeSetPassword": "Set password now",
+    "modeInvite": "Send invitation by email",
+    "emailLabel": "Email address",
+    "inviteHint": "The recipient chooses their own username and password when accepting the invitation.",
+    "sendInvite": "Send invitation",
+    "inviteSent": "Invitation sent",
+    "sendReset": "Send password reset",
+    "resetPendingHint": "Invitation not yet accepted — no password to reset."
   },
   "account": {
     "avatarTitle": "Profile picture",
@@ -345,6 +358,8 @@
     "save": "Save",
     "firstName": "First name",
     "lastName": "Last name",
+    "emailLabel": "Email address",
+    "emailInvalid": "Invalid email address",
     "pwTitle": "Change password",
     "pwDesc": "For your PwNotify sign-in account.",
     "pwChanged": "Password changed",
@@ -824,7 +839,38 @@
       "lower": "One lowercase letter",
       "digit": "One number",
       "special": "One special character"
-    }
+    },
+    "show": "Show",
+    "hide": "Hide"
+  },
+  "invite": {
+    "title": "Accept invitation",
+    "subtitle": "Set up your account to get started.",
+    "loading": "Checking invitation …",
+    "invalidTitle": "Invitation invalid or expired",
+    "invalidDescription": "This invitation link is invalid or has expired. Please contact your administrator for a new invitation.",
+    "backToLogin": "Back to sign in",
+    "emailLabel": "Email address",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "submitButton": "Create account",
+    "usernameTaken": "This username is already taken. Please choose another one.",
+    "accepted": "Account created. You can sign in now."
+  },
+  "passwordReset": {
+    "title": "Set a new password",
+    "subtitle": "Choose a new password for your account.",
+    "loading": "Checking link …",
+    "invalidTitle": "Link invalid or expired",
+    "invalidDescription": "This password reset link is invalid or has expired. Please ask your administrator for a new link.",
+    "backToLogin": "Back to sign in",
+    "password": "New password",
+    "confirmPassword": "Confirm password",
+    "submitButton": "Save password",
+    "success": "Password changed successfully. You can sign in now."
   },
   "setup": {
     "title": "Initial setup",

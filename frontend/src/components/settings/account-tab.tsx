@@ -43,9 +43,17 @@ function IdentityCard() {
   const nameParts = (user?.display_name ?? '').split(' ')
   const [firstName, setFirstName] = useState(nameParts[0] ?? '')
   const [lastName, setLastName] = useState(nameParts.slice(1).join(' '))
+  // E-Mail (Console+Groups+Invite Task 5/8) -- nur für lokale Konten pflegbar; die
+  // Reset-Trigger (Access-Seite) verschickt genau an diese Adresse. Wird IMMER aus dem
+  // aktuellen Wert initialisiert und bei jedem Speichern mitgesendet (s. saveIdentity
+  // unten) -- der Server behandelt ein fehlendes `email`-Feld als "löschen"
+  // (`email = body.email or None`), ein reines Namens-Save darf die Adresse also nie
+  // stillschweigend leeren.
+  const [email, setEmail] = useState(user?.email ?? '')
   const [nameBusy, setNameBusy] = useState(false)
   const [lockSignal, setLockSignal] = useState(0)
   const hadName = !!user?.display_name
+  const emailValid = email.trim() === '' || /.+@.+\..+/.test(email.trim())
 
   const avatarRef = useRef<HTMLInputElement>(null)
   const uploadAvatar = async (file?: File) => {
@@ -68,10 +76,15 @@ function IdentityCard() {
     }
   }
 
-  const saveName = async () => {
+  const saveIdentity = async () => {
     setNameBusy(true)
     try {
-      await api.post('/auth/profile', { display_name: `${firstName} ${lastName}`.trim() || null })
+      // email IMMER mitsenden (aktueller Feldwert, nicht nur bei Änderung) -- s. Kommentar
+      // beim `email`-State oben.
+      await api.post('/auth/profile', {
+        display_name: `${firstName} ${lastName}`.trim() || null,
+        email: email.trim() || null,
+      })
       await refresh()
       setLockSignal((n) => n + 1)
       toast.success(t('account.nameSaved'))
@@ -136,6 +149,10 @@ function IdentityCard() {
                 </p>
                 <p className="text-lg font-medium">{user?.display_name || user?.username}</p>
                 <p className="text-muted-foreground mt-1 text-sm">{user?.username}</p>
+                {/* E-Mail schreibgeschützt anzeigen -- Entra-eigen, hier keine Bearbeitung. */}
+                {user?.email && (
+                  <p className="text-muted-foreground mt-1 text-sm">{user.email}</p>
+                )}
               </div>
             ) : (
               <>
@@ -158,9 +175,22 @@ function IdentityCard() {
                       canUnlock
                     />
                   </Field>
+                  <Field label={t('account.emailLabel')} className="sm:col-span-2">
+                    <LockableInput
+                      type="email"
+                      value={email}
+                      onChange={setEmail}
+                      hasSavedValue={!!user?.email}
+                      lockSignal={lockSignal}
+                      canUnlock
+                    />
+                    {!emailValid && (
+                      <p className="text-danger mt-1 text-xs">{t('account.emailInvalid')}</p>
+                    )}
+                  </Field>
                 </div>
                 <div className="mt-4 flex justify-end">
-                  <Button onClick={saveName} loading={nameBusy}>
+                  <Button onClick={saveIdentity} loading={nameBusy} disabled={!emailValid}>
                     {t('account.save')}
                   </Button>
                 </div>

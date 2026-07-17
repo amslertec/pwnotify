@@ -292,7 +292,12 @@
     "cannot_delete_last_superadmin": "Der letzte Superadmin kann nicht gelöscht werden.",
     "superadmin_must_be_local": "Ein Superadmin muss ein lokales Konto sein.",
     "group_exists": "Diese Entra-Gruppen-ID wird bereits verwendet.",
-    "group_not_found": "Gruppe nicht gefunden."
+    "group_not_found": "Gruppe nicht gefunden.",
+    "token_invalid": "Der Link ist ungültig oder abgelaufen.",
+    "password_policy": "Das Passwort erfüllt die Richtlinie nicht (mind. 10 Zeichen, Gross-/Kleinbuchstabe, Ziffer, Sonderzeichen).",
+    "sso_no_reset": "SSO-Konten setzen ihr Passwort über Microsoft Entra zurück.",
+    "email_required": "Für dieses Konto ist keine E-Mail-Adresse hinterlegt.",
+    "user_not_in_scope": "Konto ausserhalb des eigenen Kundenbereichs."
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -329,7 +334,15 @@
     "roleAuditors": "Auditoren",
     "roleSuperadmin": "Superadmin",
     "emptyRole": "Keine Benutzer in dieser Rolle.",
-    "lastAdminHint": "letzter Administrator"
+    "lastAdminHint": "letzter Administrator",
+    "modeSetPassword": "Passwort jetzt festlegen",
+    "modeInvite": "Einladung per E-Mail",
+    "emailLabel": "E-Mail-Adresse",
+    "inviteHint": "Der Empfänger vergibt Benutzername und Passwort selbst beim Annehmen der Einladung.",
+    "sendInvite": "Einladung senden",
+    "inviteSent": "Einladung versendet",
+    "sendReset": "Passwort-Reset senden",
+    "resetPendingHint": "Einladung noch nicht angenommen — kein Passwort zum Zurücksetzen."
   },
   "account": {
     "avatarTitle": "Profilbild",
@@ -345,6 +358,8 @@
     "save": "Speichern",
     "firstName": "Vorname",
     "lastName": "Nachname",
+    "emailLabel": "E-Mail-Adresse",
+    "emailInvalid": "Ungültige E-Mail-Adresse",
     "pwTitle": "Passwort ändern",
     "pwDesc": "Für Ihr PwNotify-Anmeldekonto.",
     "pwChanged": "Passwort geändert",
@@ -824,7 +839,38 @@
       "lower": "Ein Kleinbuchstabe",
       "digit": "Eine Zahl",
       "special": "Ein Sonderzeichen"
-    }
+    },
+    "show": "Anzeigen",
+    "hide": "Verbergen"
+  },
+  "invite": {
+    "title": "Einladung annehmen",
+    "subtitle": "Lege dein Konto an, um loszulegen.",
+    "loading": "Einladung wird geprüft …",
+    "invalidTitle": "Einladung ungültig oder abgelaufen",
+    "invalidDescription": "Dieser Einladungslink ist ungültig oder abgelaufen. Bitte wende dich an deinen Administrator für eine neue Einladung.",
+    "backToLogin": "Zurück zur Anmeldung",
+    "emailLabel": "E-Mail-Adresse",
+    "firstName": "Vorname",
+    "lastName": "Nachname",
+    "username": "Benutzername",
+    "password": "Passwort",
+    "confirmPassword": "Passwort bestätigen",
+    "submitButton": "Konto erstellen",
+    "usernameTaken": "Dieser Benutzername ist bereits vergeben. Bitte einen anderen wählen.",
+    "accepted": "Konto erstellt. Du kannst dich jetzt anmelden."
+  },
+  "passwordReset": {
+    "title": "Neues Passwort festlegen",
+    "subtitle": "Wähle ein neues Passwort für dein Konto.",
+    "loading": "Link wird geprüft …",
+    "invalidTitle": "Link ungültig oder abgelaufen",
+    "invalidDescription": "Dieser Link zum Zurücksetzen des Passworts ist ungültig oder abgelaufen. Bitte fordere über deinen Administrator einen neuen Link an.",
+    "backToLogin": "Zurück zur Anmeldung",
+    "password": "Neues Passwort",
+    "confirmPassword": "Passwort bestätigen",
+    "submitButton": "Passwort speichern",
+    "success": "Passwort erfolgreich geändert. Du kannst dich jetzt anmelden."
   },
   "setup": {
     "title": "Ersteinrichtung",

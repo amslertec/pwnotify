@@ -10,9 +10,11 @@ import { api } from './lib/api'
 import AuditPage from './pages/audit'
 import { hasAdminRights, useAuth } from './lib/auth'
 import type { SetupStatus } from './lib/types'
+import AcceptInvitationPage from './pages/accept-invitation'
 import AccessPage from './pages/access'
 import DashboardPage from './pages/dashboard'
 import LoginPage from './pages/login'
+import ResetPasswordPage from './pages/reset-password'
 import NotificationsPage from './pages/notifications'
 import ProfilePage from './pages/profile'
 import RunsPage from './pages/runs'
@@ -73,6 +75,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/setup" element={<SetupPage />} />
+        <Route path="/einladung" element={<AcceptInvitationPage />} />
+        <Route path="/passwort-neu" element={<ResetPasswordPage />} />
         <Route element={<Guarded />}>
           <Route index element={<DashboardPage />} />
           <Route path="/users" element={<UsersPage />} />
