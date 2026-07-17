@@ -73,6 +73,9 @@ class RecoveryCodesOut(BaseModel):
     recovery_codes: list[str]
 
 
+# `admin_users.list_users` gibt `dict[str, list[AdminUserOut]]` zurück -- die Schlüssel
+# `local`/`sso` sind für jeden Aufrufer gescopt (Task 3); der optionale Schlüssel
+# `superadmins` existiert NUR in der Antwort an einen Superadmin-Aufrufer.
 class AdminUserOut(BaseModel):
     id: int
     username: str

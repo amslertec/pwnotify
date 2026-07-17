@@ -8,6 +8,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.tenant import AdminTenant, AuditorTenant
 from ..models.user import AppUser, UserSession
 
 
@@ -87,6 +88,52 @@ async def list_sso_for_tenant(session: AsyncSession, tenant_id: int) -> list[App
     """
     res = await session.execute(
         select(AppUser).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tenant_id)
+    )
+    return list(res.scalars().all())
+
+
+async def list_sso_in_tenants(session: AsyncSession, tenant_ids: set[int]) -> list[AppUser]:
+    """SSO-Konten, deren Heim-`tenant_id` in `tenant_ids` liegt -- Grundlage für die
+    gescopte Access-Seite eines lokalen Admins (Task 3): er darf NUR SSO-Konten der
+    Kunden sehen, die er selbst hält (`tenant_repo.admin_tenants`), nie die volle,
+    instanzweite SSO-Liste."""
+    if not tenant_ids:
+        return []
+    res = await session.execute(
+        select(AppUser)
+        .where(AppUser.is_sso.is_(True), AppUser.tenant_id.in_(tenant_ids))
+        .order_by(AppUser.username)
+    )
+    return list(res.scalars().all())
+
+
+async def list_local_granted_to_tenants(
+    session: AsyncSession, tenant_ids: set[int]
+) -> list[AppUser]:
+    """Lokale (nicht-SSO) Admins/Auditoren mit einer `admin_tenant`- ODER
+    `auditor_tenant`-Zuweisung auf einen der `tenant_ids` -- Pendant zu
+    `list_sso_in_tenants` für lokale Konten auf der gescopten Access-Seite (Task 3).
+
+    Schliesst Superadmins IMMER aus (`role != 'superadmin'`) -- sie sind instanzweit und
+    dürfen einem lokalen Admin nie angezeigt werden, selbst wenn (was nicht vorkommen
+    sollte) irgendeine Zuweisungszeile existierte."""
+    if not tenant_ids:
+        return []
+    res = await session.execute(
+        select(AppUser)
+        .where(
+            AppUser.is_sso.is_(False),
+            AppUser.role != "superadmin",
+            or_(
+                AppUser.id.in_(
+                    select(AdminTenant.user_id).where(AdminTenant.tenant_id.in_(tenant_ids))
+                ),
+                AppUser.id.in_(
+                    select(AuditorTenant.user_id).where(AuditorTenant.tenant_id.in_(tenant_ids))
+                ),
+            ),
+        )
+        .order_by(AppUser.username)
     )
     return list(res.scalars().all())
 

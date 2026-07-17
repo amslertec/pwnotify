@@ -34,6 +34,7 @@ Effektive Mengen (Design §2, Kern-Invariante):
 from __future__ import annotations
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import ConflictError, NotFoundError
@@ -234,6 +235,23 @@ async def is_allowed(
         return tid in await admin_tenants(session, user) and await _is_active(session, tid)
     allowed = await allowed_tenant_ids(session, user)
     return allowed is not None and tid in allowed and await _is_active(session, tid)
+
+
+async def add_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind: str) -> None:
+    """Idempotente Zuweisung -- INSERT ... ON CONFLICT DO NOTHING auf dem zusammengesetzten
+    Primärschlüssel (`user_id`, `tenant_id`). `kind` wählt die Zieltabelle: `"admin"` ->
+    `admin_tenant` (Schreib-Kapazität), `"auditor"` -> `auditor_tenant` (nur lesend).
+
+    Task 3 (`admin_users.create_local`): der lokale Admin erhält beim Anlegen eines neuen
+    Kontos automatisch genau die zum neuen Konto passende Zuweisung auf seinen aktiven
+    Tenant. Task 4 (Superadmin weist Konten Tenants zu) nutzt dieselbe Funktion --
+    deshalb hier in `tenant_repo`, nicht in der Route."""
+    if kind not in ("admin", "auditor"):
+        raise ValueError(f"Unbekannte Zuweisungsart: {kind!r}")
+    table = AdminTenant.__table__ if kind == "admin" else AuditorTenant.__table__
+    stmt = pg_insert(table).values(user_id=user_id, tenant_id=tenant_id).on_conflict_do_nothing()
+    await session.execute(stmt)
+    await session.commit()
 
 
 async def resolve_initial_tenant(session: AsyncSession, user: AppUser) -> int | None:

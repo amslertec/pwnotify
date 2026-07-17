@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from ...core.errors import ConflictError, NotFoundError
+from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...core.security import hash_password
 from ...db.tenant_context import tenant_scoped_session
 from ...repositories import tenant_repo, user_repo
@@ -12,28 +12,89 @@ from ...schemas.auth import AdminUserCreate, AdminUserOut, RoleUpdate
 from ...schemas.common import Message
 from ...services import audit
 from ...services.settings_service import SettingsService
-from ..deps import AdminUser, CurrentUser, SessionDep
+from ..deps import ActiveTenantClaim, AdminUser, CurrentUser, SessionDep
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
 @router.get("")
-async def list_users(_: CurrentUser, session: SessionDep) -> dict[str, list[AdminUserOut]]:
-    rows = await user_repo.list_all(session)
-    out = [AdminUserOut.model_validate(u, from_attributes=True) for u in rows]
-    return {
-        "local": [u for u in out if not u.is_sso],
-        "sso": [u for u in out if u.is_sso],
-    }
+async def list_users(user: CurrentUser, session: SessionDep) -> dict[str, list[AdminUserOut]]:
+    """Gescopte Kontoliste für die Access-Seite (Access-Modell/Superadmin-Phase, Task 3).
+
+    Der Sicherheitsfix: vormals `user_repo.list_all(session)` instanzweit -- JEDER Tenant
+    sah dieselbe volle Kontoliste (Leselecke). Jetzt pro Rolle:
+
+    - **Superadmin** (`not is_sso and role=='superadmin'`): sieht ALLES -- alle lokalen
+      Nicht-Superadmin-Konten, alle SSO-Konten, UND zusätzlich die eigene
+      `superadmins`-Liste (NUR für diese Rolle im Antwortobjekt vorhanden).
+    - **Lokaler Admin** (`not is_sso and role=='admin'`): NUR Konten der Tenants, die er
+      selbst hält (`tenant_repo.admin_tenants`) -- SSO-Konten dieser Tenants plus lokale
+      Admins/Auditoren mit einer Zuweisung auf einen dieser Tenants. NIE Superadmins, NIE
+      Konten un-gehaltener Tenants. Kein `superadmins`-Schlüssel in der Antwort.
+    - **Alles andere** (Auditor, SSO-Konto, unbekannter Zustand): default-deny -> leere
+      Listen. Die `/access`-Seite ist zwar admin-only im Frontend, dieses Gate gilt aber
+      unabhängig davon hier ebenfalls.
+    """
+    if not user.is_sso and user.role == "superadmin":
+        rows = await user_repo.list_all(session)
+        out = [AdminUserOut.model_validate(u, from_attributes=True) for u in rows]
+        return {
+            "local": [u for u in out if not u.is_sso and u.role != "superadmin"],
+            "sso": [u for u in out if u.is_sso],
+            "superadmins": [u for u in out if not u.is_sso and u.role == "superadmin"],
+        }
+
+    if not user.is_sso and user.role == "admin":
+        tids = await tenant_repo.admin_tenants(session, user)
+        sso_rows = await user_repo.list_sso_in_tenants(session, tids)
+        local_rows = await user_repo.list_local_granted_to_tenants(session, tids)
+        return {
+            "local": [AdminUserOut.model_validate(u, from_attributes=True) for u in local_rows],
+            "sso": [AdminUserOut.model_validate(u, from_attributes=True) for u in sso_rows],
+        }
+
+    return {"local": [], "sso": []}
 
 
 @router.post("", response_model=AdminUserOut)
 async def create_local(
-    request: Request, admin: AdminUser, body: AdminUserCreate, session: SessionDep
+    request: Request,
+    admin: AdminUser,
+    body: AdminUserCreate,
+    session: SessionDep,
+    active_tenant: ActiveTenantClaim,
 ) -> AdminUserOut:
+    """Legt ein lokales Konto an -- gescopt nach Aufrufer (Task 3).
+
+    Superadmin: uneingeschränkt, KEINE automatische Zuweisung (Tenants weist der
+    Superadmin später gezielt zu, Task 4). Jeder andere Admin-Aufrufer (lokaler Admin
+    oder SSO-Admin): das neue Konto wird automatisch auf den AKTIVEN Tenant des
+    Aufrufers zugewiesen -- mit der zur neuen Rolle passenden Zuweisungsart
+    (`role=='admin'` -> `admin_tenant`, `role=='auditor'` -> `auditor_tenant`), damit ein
+    `role=='admin'`-Konto nie NUR eine `auditor_tenant`-Zuweisung hat (das würde ihm über
+    das Rollen-Gate Schreibzugriff verschaffen, den die Zuweisung selbst nicht hergibt).
+
+    Der `active_tenant`-Claim wird NICHT blind übernommen (er ist laut `ActiveTenantClaim`
+    unautorisiert, nur zur Anzeige gedacht) -- stattdessen zusätzlich über
+    `tenant_repo.is_allowed(..., write=True)` geprüft. Fehlt der Claim oder besteht keine
+    Schreib-Mitgliedschaft, wird klar abgelehnt statt ein unsichtbares, nicht zugewiesenes
+    Konto anzulegen.
+    """
     existing = await user_repo.get_by_username(session, body.username)
     if existing is not None:
         raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+
+    is_superadmin_caller = not admin.is_sso and admin.role == "superadmin"
+    grant_tenant_id: int | None = None
+    if not is_superadmin_caller:
+        if active_tenant is None or not await tenant_repo.is_allowed(
+            session, admin, active_tenant, write=True
+        ):
+            raise ForbiddenError(
+                "Kein aktiver Mandant mit Verwaltungsrechten.", code="tenant_required"
+            )
+        grant_tenant_id = active_tenant
+
     user = await user_repo.create(
         session,
         username=body.username,
@@ -42,13 +103,23 @@ async def create_local(
         role=body.role,
         is_sso=False,
     )
+    assert user.id is not None  # gerade committet, hat also eine id
+
+    if grant_tenant_id is not None:
+        kind = "admin" if body.role == "admin" else "auditor"
+        await tenant_repo.add_grant(session, user_id=user.id, tenant_id=grant_tenant_id, kind=kind)
+
+    detail: dict[str, object] = {"role": body.role, "sso": False}
+    if grant_tenant_id is not None:
+        detail["granted_tenant_id"] = grant_tenant_id
+
     await audit.record(
         session,
         action=audit.USER_CREATED,
         actor=admin,
         target=body.username,
         request=request,
-        detail={"role": body.role, "sso": False},
+        detail=detail,
     )
     await session.commit()
     return AdminUserOut.model_validate(user, from_attributes=True)
