@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -15,6 +15,11 @@ from ._base import utcnow
 
 class EntraUser(SQLModel, table=True):
     __tablename__ = "entra_user"
+    # entra_id ist NICHT global unique: derselbe Entra-User kann in zwei Kunden gespiegelt
+    # werden. Ein globaler Unique-Constraint wäre außerdem ein Cross-Tenant-Existence-Oracle
+    # (ein Tenant könnte per Duplicate-Key-Fehler erraten, ob ein entra_id in einem ANDEREN
+    # Tenant existiert). Stattdessen: Unique pro (tenant_id, entra_id).
+    __table_args__ = (UniqueConstraint("tenant_id", "entra_id", name="uq_entra_tenant_entra_id"),)
 
     id: int | None = Field(default=None, primary_key=True)
     tenant_id: int = Field(
@@ -23,7 +28,7 @@ class EntraUser(SQLModel, table=True):
         nullable=False,
         default_factory=current_tenant_or_none,
     )
-    entra_id: str = Field(sa_column=Column(String(64), unique=True, index=True, nullable=False))
+    entra_id: str = Field(sa_column=Column(String(64), index=True, nullable=False))
     upn: str = Field(sa_column=Column(String(320), index=True, nullable=False))
     display_name: str = Field(default="", sa_column=Column(String(320), nullable=False))
     mail: str | None = Field(default=None, sa_column=Column(String(320)))
