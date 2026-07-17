@@ -149,6 +149,26 @@ async def set_role(
             "Superadmin-Rollenwechsel nur über die Superadmin-Verwaltung möglich.",
             code="superadmin_required",
         )
+    # Cross-Tenant-Fix (Sicherheitsreview, Whole-Branch-Review Access-Modell/Superadmin-
+    # Phase): Task 3 hat `list_users`/`create_local` gescopt, aber `set_role` blieb nur über
+    # `AdminUser` (jeder Admin/Superadmin JEDER Tenant) gegatet und löste `target` ohne RLS
+    # auf `app_user` (instanzweit) auf -- ein lokaler Admin von Tenant A konnte so die Rolle
+    # eines Kontos ändern, das AUSSCHLIESSLICH zu Tenant B gehört (IDs sind sequentiell
+    # enumerierbar). Ein Superadmin-Aufrufer überspringt diese Prüfung (voller Zugriff,
+    # bereits durch den obigen Guard beschränkt). Für jeden anderen Aufrufer muss die GESAMTE
+    # Tenant-Zugehörigkeit des Ziels innerhalb der vom Aufrufer VERWALTETEN Tenants liegen
+    # (Teilmengen-Regel, nicht bloss Schnittmenge) -- `app_user` ist instanzweit, ein Konto
+    # kann also zusätzlich einem Tenant angehören, den der Aufrufer nicht hält; ein reiner
+    # Schnittmengen-Test würde die Rollenänderung trotzdem durchlassen und so ungewollt auch
+    # den fremden Tenant treffen. Ein Ziel ganz ohne Tenant-Zugehörigkeit (leere Menge) darf
+    # NUR ein Superadmin anfassen -- daher `not target_scope` als eigener Ablehnungsgrund.
+    if admin.is_sso or admin.role != "superadmin":
+        target_scope = await tenant_repo.allowed_tenant_ids(session, target)
+        caller_admin_tenants = await tenant_repo.admin_tenants(session, admin)
+        if not target_scope or not target_scope <= caller_admin_tenants:
+            raise ForbiddenError(
+                "Konto ausserhalb des eigenen Kundenbereichs.", code="user_not_in_scope"
+            )
     # Den letzten Administrator nicht herabstufen — sonst kann niemand mehr verwalten.
     # Deckt auch den Selbstentzug ab, wenn man der einzige Admin ist.
     if (
@@ -308,6 +328,22 @@ async def delete_user(
             "Superadmin-Löschung nur durch einen Superadmin möglich.",
             code="superadmin_required",
         )
+    # Cross-Tenant-Fix (Sicherheitsreview, Whole-Branch-Review Access-Modell/Superadmin-
+    # Phase) -- analog zum Scope-Check in `set_role` oben: `delete_user` war nur über
+    # `AdminUser` gegatet und löste `target` ohne RLS auf, ein lokaler Admin von Tenant A
+    # konnte so einen NUR zu Tenant B gehörenden Benutzer löschen. Ein Superadmin-Aufrufer
+    # überspringt diese Prüfung (voller Zugriff). Für jeden anderen Aufrufer muss die GESAMTE
+    # Tenant-Zugehörigkeit des Ziels innerhalb der vom Aufrufer VERWALTETEN Tenants liegen
+    # (Teilmengen-, nicht Schnittmengen-Regel -- sonst würde das Löschen eines auch-bei-B
+    # zugewiesenen Kontos ungewollt Tenant B mittreffen, da `app_user` instanzweit ist). Ein
+    # Ziel ganz ohne Tenant-Zugehörigkeit darf NUR ein Superadmin löschen.
+    if user.is_sso or user.role != "superadmin":
+        target_scope = await tenant_repo.allowed_tenant_ids(session, target)
+        caller_admin_tenants = await tenant_repo.admin_tenants(session, user)
+        if not target_scope or not target_scope <= caller_admin_tenants:
+            raise ForbiddenError(
+                "Konto ausserhalb des eigenen Kundenbereichs.", code="user_not_in_scope"
+            )
     # Last-Superadmin-Schutz (Design §11.4) -- analog zum Last-Admin-Schutz oben, aber für
     # die instanzweite Rolle: ohne diese Prüfung könnte man den letzten Superadmin per
     # Löschung aussperren.

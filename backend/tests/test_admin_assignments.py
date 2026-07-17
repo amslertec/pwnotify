@@ -376,11 +376,20 @@ async def test_superadmin_can_delete_non_last_superadmin(session: AsyncSession) 
 
 async def test_local_admin_can_still_delete_plain_admin_and_auditor(session: AsyncSession) -> None:
     """Regressionsschutz: der neue Superadmin-Schutz betrifft NUR Superadmin-Ziele -- ein
-    lokaler Admin darf weiterhin gewöhnliche Admin-/Auditor-Konten löschen."""
+    lokaler Admin darf weiterhin gewöhnliche Admin-/Auditor-Konten löschen, SOFERN sie
+    innerhalb seines eigenen Tenant-Bereichs liegen (Cross-Tenant-Fix, s. `test_admin_users_
+    scoping.py`) -- alle drei Konten hier sind bewusst auf denselben Tenant A gescopt, damit
+    diese Regression von der neuen Scope-Prüfung unberührt bleibt."""
+    tenant_a = await _mk_tenant(session)
+    assert tenant_a.id is not None
     caller = await _mk_user(session, role="admin")
     other_admin = await _mk_user(session, role="admin")
     auditor = await _mk_user(session, role="auditor")
-    assert other_admin.id is not None and auditor.id is not None
+    assert caller.id is not None and other_admin.id is not None and auditor.id is not None
+    session.add(AdminTenant(user_id=caller.id, tenant_id=tenant_a.id))
+    session.add(AdminTenant(user_id=other_admin.id, tenant_id=tenant_a.id))
+    session.add(AuditorTenant(user_id=auditor.id, tenant_id=tenant_a.id))
+    await session.flush()
 
     out1 = await delete_user(None, caller, other_admin.id, session)  # type: ignore[arg-type]
     assert out1.message

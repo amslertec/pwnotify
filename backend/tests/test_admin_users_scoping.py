@@ -19,12 +19,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from app.api.routes.admin_users import create_local, list_users
+from app.api.routes.admin_users import create_local, delete_user, list_users, set_role
 from app.core.errors import ForbiddenError
 from app.models.tenant import AdminTenant, AuditorTenant, Tenant
 from app.models.user import AppUser
 from app.repositories import tenant_repo
-from app.schemas.auth import AdminUserCreate
+from app.schemas.auth import AdminUserCreate, RoleUpdate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -300,3 +300,115 @@ async def test_superadmin_creates_user_unrestricted_without_auto_grant(
         await session.execute(select(AuditorTenant).where(AuditorTenant.user_id == out.id))
     ).scalar_one_or_none()
     assert auditor_row is None
+
+
+# ---- set_role / delete_user: Cross-Tenant-Fix (Whole-Branch-Review) ------------------------ #
+#
+# THE bug, den dieser Block beweist: Task 3 hat `list_users`/`create_local` gescopt, aber
+# `set_role`/`delete_user` blieben nur über `AdminUser` gegatet (jeder Admin/Superadmin JEDER
+# Tenant) und lösten `target` ohne RLS auf `app_user` (instanzweit) auf -- ein lokaler Admin
+# von Tenant A konnte so die Rolle eines NUR-zu-B-gehörenden Kontos ändern oder es löschen
+# (IDs sind sequentiell enumerierbar). Non-vakuöser Beweis: B (bzw. ein Konto in BEIDEN
+# Tenants) wird tatsächlich befüllt und existiert nach dem abgelehnten Versuch unverändert
+# weiter -- nicht nur behauptet.
+
+
+async def test_local_admin_a_cannot_delete_b_only_user(session: AsyncSession) -> None:
+    seed = await _seed(session)
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await delete_user(None, seed.local_admin_a, seed.sso_auditor_b.id, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "user_not_in_scope"
+    assert await session.get(AppUser, seed.sso_auditor_b.id) is not None
+
+
+async def test_local_admin_a_cannot_set_role_on_b_only_user(session: AsyncSession) -> None:
+    seed = await _seed(session)
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await set_role(
+            None,  # type: ignore[arg-type]
+            seed.local_admin_a,
+            seed.sso_auditor_b.id,
+            RoleUpdate(role="admin"),
+            session,
+        )
+    assert exc_info.value.code == "user_not_in_scope"
+    refreshed = await session.get(AppUser, seed.sso_auditor_b.id)
+    assert refreshed is not None
+    assert refreshed.role == "auditor"
+
+
+async def test_local_admin_a_can_still_delete_own_tenant_user(session: AsyncSession) -> None:
+    """Regressionsschutz: die neue Scope-Prüfung sperrt nur FREMDE Tenants -- innerhalb des
+    eigenen Bereichs bleibt der lokale Admin voll handlungsfähig."""
+    seed = await _seed(session)
+
+    out = await delete_user(None, seed.local_admin_a, seed.sso_auditor_a.id, session)  # type: ignore[arg-type]
+    assert out.message
+    assert await session.get(AppUser, seed.sso_auditor_a.id) is None
+
+
+async def test_local_admin_a_can_still_set_role_on_own_tenant_user(session: AsyncSession) -> None:
+    seed = await _seed(session)
+
+    out = await set_role(
+        None,  # type: ignore[arg-type]
+        seed.local_admin_a,
+        seed.sso_auditor_a.id,
+        RoleUpdate(role="admin"),
+        session,
+    )
+    assert out.role == "admin"
+
+
+async def test_user_in_both_tenants_rejected_for_admin_holding_only_one(
+    session: AsyncSession,
+) -> None:
+    """Teilmengen-Regel (nicht Schnittmenge): ein Konto mit `admin_tenant`-Grants auf A UND B
+    darf NICHT von einem Aufrufer angetastet werden, der nur A hält -- eine Löschung/
+    Rollenänderung würde sonst auch B ungewollt mittreffen, weil `app_user` instanzweit ist."""
+    seed = await _seed(session)
+    both = await _mk_user(session, role="admin")
+    assert both.id is not None
+    session.add(AdminTenant(user_id=both.id, tenant_id=seed.a_id))
+    session.add(AdminTenant(user_id=both.id, tenant_id=seed.b_id))
+    await session.flush()
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await delete_user(None, seed.local_admin_a, both.id, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "user_not_in_scope"
+    assert await session.get(AppUser, both.id) is not None
+
+    with pytest.raises(ForbiddenError) as exc_info2:
+        await set_role(
+            None,  # type: ignore[arg-type]
+            seed.local_admin_a,
+            both.id,
+            RoleUpdate(role="auditor"),
+            session,
+        )
+    assert exc_info2.value.code == "user_not_in_scope"
+    refreshed = await session.get(AppUser, both.id)
+    assert refreshed is not None
+    assert refreshed.role == "admin"
+
+
+async def test_superadmin_can_delete_and_set_role_across_tenants(session: AsyncSession) -> None:
+    """Superadmin-Aufrufer: uneingeschränkte Reichweite -- die neue Scope-Prüfung gilt
+    NICHT für ihn (bestehende Last-Superadmin-/Superadmin-Ziel-Guards bleiben unberührt, sie
+    betreffen hier nicht-superadmin Ziele)."""
+    seed = await _seed(session)
+
+    out_role = await set_role(
+        None,  # type: ignore[arg-type]
+        seed.superadmin,
+        seed.sso_auditor_b.id,
+        RoleUpdate(role="admin"),
+        session,
+    )
+    assert out_role.role == "admin"
+
+    out_delete = await delete_user(None, seed.superadmin, seed.sso_admin_b.id, session)  # type: ignore[arg-type]
+    assert out_delete.message
+    assert await session.get(AppUser, seed.sso_admin_b.id) is None
