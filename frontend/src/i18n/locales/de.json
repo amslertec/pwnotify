@@ -815,6 +815,15 @@
     "livePreview": "Live-Vorschau",
     "previewTitle": "Vorschau"
   },
+  "password": {
+    "rules": {
+      "length10": "Mindestens 10 Zeichen",
+      "upper": "Ein Grossbuchstabe",
+      "lower": "Ein Kleinbuchstabe",
+      "digit": "Eine Zahl",
+      "special": "Ein Sonderzeichen"
+    }
+  },
   "setup": {
     "title": "Ersteinrichtung",
     "subtitle": "In wenigen Schritten einsatzbereit.",
@@ -840,12 +849,12 @@
       "firstName": "Vorname",
       "lastName": "Nachname",
       "username": "Benutzername",
-      "password": "Passwort (mind. 10 Zeichen)",
+      "password": "Passwort",
       "confirmPassword": "Passwort bestätigen",
       "companyNameLabel": "Firmenname (optional)",
       "companyNameHint": "Name deines Haupt-Mandanten — lässt sich später jederzeit in Einstellungen → Allgemein ändern.",
       "submitButton": "Konto erstellen & weiter",
-      "passwordTooShort": "Passwort mind. 10 Zeichen",
+      "passwordTooShort": "Passwort erfüllt nicht alle Anforderungen",
       "passwordMismatch": "Passwörter stimmen nicht überein",
       "created": "Superadmin angelegt"
     },

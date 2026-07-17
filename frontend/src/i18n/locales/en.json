@@ -815,6 +815,15 @@
     "livePreview": "Live preview",
     "previewTitle": "Preview"
   },
+  "password": {
+    "rules": {
+      "length10": "At least 10 characters",
+      "upper": "One uppercase letter",
+      "lower": "One lowercase letter",
+      "digit": "One number",
+      "special": "One special character"
+    }
+  },
   "setup": {
     "title": "Initial setup",
     "subtitle": "Ready to go in just a few steps.",
@@ -840,12 +849,12 @@
       "firstName": "First name",
       "lastName": "Last name",
       "username": "Username",
-      "password": "Password (at least 10 characters)",
+      "password": "Password",
       "confirmPassword": "Confirm password",
       "companyNameLabel": "Company name (optional)",
       "companyNameHint": "Name of your main tenant — can be changed later anytime in Settings → General.",
       "submitButton": "Create account & continue",
-      "passwordTooShort": "Password must be at least 10 characters",
+      "passwordTooShort": "Password does not meet all requirements",
       "passwordMismatch": "Passwords do not match",
       "created": "Superadmin created"
     },

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { EntraGuide } from '@/components/entra-guide'
 import { Logo } from '@/components/logo'
+import { PasswordChecklist } from '@/components/password-checklist'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +22,7 @@ import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
+import { passwordsMatch, passwordValid } from '@/lib/password'
 import type { GraphTestResult, SetupStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -158,8 +160,8 @@ function AdminStep({ onNext }: { onNext: () => void }) {
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    if (password.length < 10) return toast.error(t('setup.admin.passwordTooShort'))
-    if (password !== confirm) return toast.error(t('setup.admin.passwordMismatch'))
+    if (!passwordValid(password)) return toast.error(t('setup.admin.passwordTooShort'))
+    if (!passwordsMatch(password, confirm)) return toast.error(t('setup.admin.passwordMismatch'))
     setBusy(true)
     try {
       const display_name = `${firstName} ${lastName}`.trim() || null
@@ -197,6 +199,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
         </Field>
         <Field label={t('setup.admin.password')}>
           <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordChecklist password={password} />
         </Field>
         <Field label={t('setup.admin.confirmPassword')}>
           <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
