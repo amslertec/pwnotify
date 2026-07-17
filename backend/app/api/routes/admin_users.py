@@ -18,7 +18,14 @@ from ...schemas.auth import (
 from ...schemas.common import Message
 from ...services import audit
 from ...services.settings_service import SettingsService
-from ..deps import ActiveTenantClaim, AdminUser, CurrentUser, SessionDep, SuperadminUser
+from ..deps import (
+    ActiveTenantClaim,
+    AdminUser,
+    CurrentUser,
+    SessionDep,
+    SuperadminUser,
+    default_tenant_id,
+)
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
@@ -85,6 +92,24 @@ async def create_local(
     `tenant_repo.is_allowed(..., write=True)` geprüft. Fehlt der Claim oder besteht keine
     Schreib-Mitgliedschaft, wird klar abgelehnt statt ein unsichtbares, nicht zugewiesenes
     Konto anzulegen.
+
+    **Heim-Tenant setzen (Context-Gating v2, Task 3):** vormals bekam das neue Konto zwar
+    eine `admin_tenant`/`auditor_tenant`-Zeile, aber NIE einen `tenant_id` (Heimat) -- damit
+    hatte der Cross-Grant-Lock (Task 2, `tenant_repo.is_provider_account`,
+    `admin_assignments.set_assignments`) keine Grundlage: ein Konto ohne Heimat gilt dort
+    als Kunden-Konto mit LEERER erlaubter Menge (`tenant_id is None` -> kein Provider), also
+    über-restriktiv für ein vom Superadmin angelegtes Konto UND ohne echte Kundenheimat für
+    ein vom Kunden-Admin angelegtes Konto. Deshalb jetzt explizit:
+    - Nicht-Superadmin-Aufrufer (lokaler/SSO-Admin für seinen aktiven Kunden): Heimat =
+      `grant_tenant_id` (derselbe, bereits über `is_allowed(..., write=True)` geprüfte aktive
+      Tenant) -- das neue Konto ist also kunden-beheimatet UND passend zugewiesen, damit laut
+      Task 2 strukturell nicht auf einen fremden Tenant cross-grantbar.
+      -- ein reines Kundenstaff-Konto.
+    - Superadmin-Aufrufer: Heimat = der Default-Tenant (`deps.default_tenant_id`) -- Provider-
+      Personal ist default-beheimatet, ein so angelegtes Konto bleibt daher über die
+      Zuweisungs-API (Task 4/Cross-Grant-Lock Task 2) auf beliebige Kunden cross-grantbar.
+      (Superadmin-Anlage eines *Superadmin*-Kontos bleibt unverändert in `create_superadmin`
+      -- instanzweit, keine Heimat nötig.)
     """
     existing = await user_repo.get_by_username(session, body.username)
     if existing is not None:
@@ -101,6 +126,10 @@ async def create_local(
             )
         grant_tenant_id = active_tenant
 
+    home_tenant_id = (
+        grant_tenant_id if not is_superadmin_caller else await default_tenant_id(session)
+    )
+
     user = await user_repo.create(
         session,
         username=body.username,
@@ -108,6 +137,7 @@ async def create_local(
         display_name=body.display_name,
         role=body.role,
         is_sso=False,
+        tenant_id=home_tenant_id,
     )
     assert user.id is not None  # gerade committet, hat also eine id
 
@@ -115,7 +145,7 @@ async def create_local(
         kind = "admin" if body.role == "admin" else "auditor"
         await tenant_repo.add_grant(session, user_id=user.id, tenant_id=grant_tenant_id, kind=kind)
 
-    detail: dict[str, object] = {"role": body.role, "sso": False}
+    detail: dict[str, object] = {"role": body.role, "sso": False, "home_tenant_id": home_tenant_id}
     if grant_tenant_id is not None:
         detail["granted_tenant_id"] = grant_tenant_id
 
