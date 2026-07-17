@@ -34,7 +34,8 @@ async def read_mode(owner_session: AsyncSession) -> bool:
 
 
 async def read_default_tenant_name(owner_session: AsyncSession) -> str:
-    """`tenant.name` des Default-Tenants (`slug == 'default'`)."""
+    """`tenant.name` des Default-Tenants (`is_default=true`, NICHT über `slug == 'default'`
+    identifiziert -- der Slug ist umbenennbar, siehe `tenant_repo.default_tenant`)."""
     default = await tenant_repo.default_tenant(owner_session)
     return default.name
 

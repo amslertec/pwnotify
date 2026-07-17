@@ -215,6 +215,40 @@ async def test_set_tenants_rejects_inactive_tenant(session: AsyncSession) -> Non
     assert await _tenant_row(session, created.id, inactive.id) is None
 
 
+async def test_create_group_toctou_integrity_error_maps_to_group_exists_409(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TOCTOU-Regression: zwei parallele Creates können BEIDE den Vorab-Check
+    (`get_by_entra_group_id`) passieren und erst am DB-Unique-Index kollidieren. Hier
+    simuliert per Monkeypatch (Vorab-Check liefert IMMER `None`, also 'frei') -- der
+    zweite `create` trifft dann echt auf den Unique-Index und MUSS trotzdem denselben
+    `group_exists`-Konflikt (409) liefern, keinen rohen 500."""
+    superadmin = await _mk_superadmin(session)
+    request = await _default_context_request(session, superadmin)
+    entra_id = _entra_id()
+
+    await create_group(
+        request,  # type: ignore[arg-type]
+        superadmin,
+        GroupCreate(name="Team First", entra_group_id=entra_id),
+        session,
+    )
+
+    async def _always_free(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(assignment_group_repo, "get_by_entra_group_id", _always_free)
+
+    with pytest.raises(ConflictError) as exc_info:
+        await create_group(
+            request,  # type: ignore[arg-type]
+            superadmin,
+            GroupCreate(name="Team Second", entra_group_id=entra_id),
+            session,
+        )
+    assert exc_info.value.code == "group_exists"
+
+
 async def test_update_and_delete_unknown_group_raise_not_found(session: AsyncSession) -> None:
     superadmin = await _mk_superadmin(session)
     request = await _default_context_request(session, superadmin)

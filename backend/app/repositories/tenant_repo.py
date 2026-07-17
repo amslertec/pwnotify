@@ -133,8 +133,9 @@ async def update(
     entra_tenant_id: str | None = None,
     is_active: bool | None = None,
 ) -> Tenant:
-    """Nur übergebene Felder anwenden. Der Default-Tenant-Schutz (slug='default' darf nicht
-    deaktiviert werden) ist Sache der Route (Task 2), nicht dieser Funktion."""
+    """Nur übergebene Felder anwenden. Der Default-Tenant-Schutz (der ÜBER `is_default=true`
+    identifizierte Tenant darf nicht deaktiviert werden, NICHT mehr über `slug == 'default'`
+    erkannt -- der Slug ist umbenennbar) ist Sache der Route (Task 2), nicht dieser Funktion."""
     tenant = await session.get(Tenant, tid)
     if tenant is None:
         raise NotFoundError("Mandant nicht gefunden.", code="tenant_not_found")

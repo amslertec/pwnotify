@@ -44,7 +44,7 @@ from app.models._base import utcnow
 from app.models.tenant import AdminTenant, Tenant
 from app.models.token import UserToken
 from app.models.user import AppUser
-from app.repositories import tenant_repo
+from app.repositories import tenant_repo, user_token_repo
 from app.schemas.assignment import AssignmentUpdate
 from app.schemas.auth import AdminUserCreate, TokenAccept
 from sqlalchemy import select
@@ -299,6 +299,32 @@ async def test_accept_valid_activates_account_then_second_accept_fails(
             session,
         )
     assert exc_info.value.code == "token_invalid"
+
+
+async def test_consume_atomic_second_call_on_already_consumed_token_is_noop(
+    session: AsyncSession, fake_sender: _FakeSender
+) -> None:
+    """TOCTOU-Regression für die atomare guarded UPDATE in `user_token_repo.consume`
+    (`WHERE id=:id AND consumed_at IS NULL`): zwei 'Racer', die BEIDE dieselbe noch-gültige
+    Token-Zeile gelesen haben, bevor einer von beiden committet hat, dürfen NICHT beide
+    erfolgreich verbrauchen. Simuliert hier durch zwei direkte `consume`-Aufrufe auf
+    demselben, im Speicher unverändert gebliebenen `UserToken`-Objekt -- exakt das Bild, das
+    ein zweiter Request über `get_live_by_hash` VOR dem Commit des ersten sähe."""
+    superadmin = await _mk_user(session, role="superadmin")
+    user_id, _raw = await _mk_invite(session, fake_sender, caller=superadmin, active_tenant=None)
+    row = await _token_row(session, user_id, "invite")
+
+    first = await user_token_repo.consume(session, row)
+    assert first is True
+    consumed_at_first = (await _token_row(session, user_id, "invite")).consumed_at
+    assert consumed_at_first is not None
+
+    second = await user_token_repo.consume(session, row)
+    assert second is False
+
+    # `consumed_at` bleibt exakt der erste Zeitstempel -- kein zweites Set/Commit.
+    consumed_at_after = (await _token_row(session, user_id, "invite")).consumed_at
+    assert consumed_at_after == consumed_at_first
 
 
 async def test_expired_invite_token_is_rejected(

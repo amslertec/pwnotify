@@ -9,6 +9,7 @@ import datetime as dt
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models._base import utcnow
@@ -56,11 +57,30 @@ async def get_live_by_hash(
     return res.scalar_one_or_none()
 
 
-async def consume(session: AsyncSession, token: UserToken) -> None:
-    """Markiert das Token als verbraucht (Single-Use) -- `consumed_at` gesetzt heisst
-    endgültig unbrauchbar, auch innerhalb der eigenen Gültigkeitsspanne."""
-    token.consumed_at = utcnow()
+async def consume(session: AsyncSession, token: UserToken) -> bool:
+    """Markiert das Token als verbraucht (Single-Use) -- ATOMARE, guarded UPDATE (TOCTOU-Fix):
+    `UPDATE ... WHERE id=:id AND consumed_at IS NULL RETURNING id` statt des früheren ORM-
+    Attribut-Sets (`token.consumed_at = utcnow()`). Zwei parallele Requests, die BEIDE
+    dieselbe noch-gültige Zeile über `get_live_by_hash` gelesen haben, bevor einer von
+    beiden committet hat, dürfen nicht beide erfolgreich verbrauchen -- die `WHERE
+    consumed_at IS NULL`-Guard lässt nur den ERSTEN Commit durch, jeder weitere UPDATE auf
+    dieselbe (jetzt schon verbrauchte) Zeile liefert 0 Treffer.
+
+    Gibt `True` zurück, wenn DIESER Aufruf das Token verbraucht hat (bereits committed).
+    Gibt `False` zurück, wenn es zwischenzeitlich (von einer anderen, gleichzeitigen Anfrage)
+    bereits verbraucht wurde -- KEIN Commit in diesem Fall. Der Aufrufer MUSS `False`
+    identisch zu 'Token nie gefunden' behandeln (derselbe generische `token_invalid`-Fehler,
+    keine Enumeration, siehe `api/routes/public_tokens.py`)."""
+    res = await session.execute(
+        sa_update(UserToken)
+        .where(UserToken.id == token.id, UserToken.consumed_at.is_(None))
+        .values(consumed_at=utcnow())
+        .returning(UserToken.id)
+    )
+    if res.first() is None:
+        return False
     await session.commit()
+    return True
 
 
 async def consume_live_for_user(session: AsyncSession, *, app_user_id: int, purpose: str) -> None:

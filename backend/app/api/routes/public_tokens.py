@@ -83,7 +83,12 @@ async def accept_token(request: Request, body: TokenAccept, session: SessionDep)
     target.password_hash = hash_password(body.password)
     target.is_active = True
     target.updated_at = utcnow()
-    await user_token_repo.consume(session, row)
+    if not await user_token_repo.consume(session, row):
+        # Zwischenzeitlich bereits verbraucht (TOCTOU-Race) -- derselbe generische
+        # Fehlschlag wie 'nie existiert', keine Enumeration. Die vorstehenden, noch
+        # ungeflushten Feldänderungen werden vom automatischen Rollback der Session
+        # (`get_session`'s `async with`) rückgängig gemacht.
+        raise ForbiddenError("Einladung ungültig oder abgelaufen.", code="token_invalid")
 
     await audit.record(
         session,
@@ -114,7 +119,10 @@ async def reset_token(request: Request, body: TokenReset, session: SessionDep) -
 
     target.password_hash = hash_password(body.password)
     target.updated_at = utcnow()
-    await user_token_repo.consume(session, row)
+    if not await user_token_repo.consume(session, row):
+        # Zwischenzeitlich bereits verbraucht (TOCTOU-Race) -- derselbe generische
+        # Fehlschlag wie 'nie existiert', keine Enumeration (s. `accept_token` oben).
+        raise ForbiddenError("Link ungültig oder abgelaufen.", code="token_invalid")
 
     await audit.record(
         session,

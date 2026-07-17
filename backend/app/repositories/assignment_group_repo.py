@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import ConflictError, NotFoundError
@@ -44,7 +45,17 @@ async def create(session: AsyncSession, *, name: str, entra_group_id: str) -> As
         raise ConflictError("Diese Entra-Gruppen-ID wird bereits verwendet.", code="group_exists")
     group = AssignmentGroup(name=name, entra_group_id=entra_group_id)
     session.add(group)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # TOCTOU: zwei parallele Creates können BEIDE den Vorab-Check oben passieren und
+        # erst am DB-Unique-Index (`entra_group_id`) kollidieren -- ohne diesen Fang würde
+        # der zweite Request mit einem rohen 500 statt demselben `group_exists`-Konflikt
+        # scheitern, den der Vorab-Check für den Normalfall bereits liefert.
+        await session.rollback()
+        raise ConflictError(
+            "Diese Entra-Gruppen-ID wird bereits verwendet.", code="group_exists"
+        ) from None
     await session.refresh(group)
     return group
 

@@ -268,6 +268,54 @@ async def test_bulk_inactive_tenant_id_hard_fails_whole_request_with_zero_writes
     assert await _all_admin_rows(session, p2.id) == []
 
 
+async def test_bulk_remove_of_grant_to_now_inactive_tenant_succeeds(session: AsyncSession) -> None:
+    """Bulk `remove` darf eine Zuweisung auf einen ZWISCHENZEITLICH deaktivierten Kunden
+    entfernen -- der Vorab-Aktiv-Check gilt seit dem Fix nur noch für `action in
+    {'add', 'set'}` (Tenants, die tatsächlich HINZUGEFÜGT werden könnten). Vor dem Fix hätte
+    der pauschale Check die GESAMTE Remove-Anfrage mit `tenant_not_active` abgelehnt, obwohl
+    keine einzige Zeile neu geschrieben werden sollte -- `action="add"` mit einer inaktiven
+    Tenant-Id muss dagegen weiterhin hart scheitern."""
+    superadmin = await _mk_user(session, role="superadmin")
+    default = await tenant_repo.default_tenant(session)
+    tenant_a = await _mk_tenant(session)
+    assert tenant_a.id is not None
+    provider = await _mk_user(session, role="admin", tenant_id=default.id)
+    assert provider.id is not None
+
+    # Zuweisung anlegen, solange A noch aktiv ist.
+    await bulk_assign(
+        None,  # type: ignore[arg-type]
+        superadmin,
+        BulkAssignmentUpdate(user_ids=[provider.id], tenant_ids=[tenant_a.id], action="add"),
+        session,
+    )
+    assert await _admin_row(session, provider.id, tenant_a.id) is not None
+
+    # Kunde A wird deaktiviert.
+    await tenant_repo.update(session, tenant_a.id, is_active=False)
+
+    # Das Entfernen der Zuweisung auf den jetzt inaktiven Tenant muss trotzdem gelingen.
+    out = await bulk_assign(
+        None,  # type: ignore[arg-type]
+        superadmin,
+        BulkAssignmentUpdate(user_ids=[provider.id], tenant_ids=[tenant_a.id], action="remove"),
+        session,
+    )
+    assert out.updated == [provider.id]
+    assert out.skipped == []
+    assert await _admin_row(session, provider.id, tenant_a.id) is None
+
+    # `action="add"` auf einen inaktiven Tenant scheitert weiterhin hart.
+    with pytest.raises(ConflictError) as exc_info:
+        await bulk_assign(
+            None,  # type: ignore[arg-type]
+            superadmin,
+            BulkAssignmentUpdate(user_ids=[provider.id], tenant_ids=[tenant_a.id], action="add"),
+            session,
+        )
+    assert exc_info.value.code == "tenant_not_active"
+
+
 async def test_bulk_unknown_tenant_id_hard_fails_whole_request(session: AsyncSession) -> None:
     superadmin = await _mk_user(session, role="superadmin")
     default = await tenant_repo.default_tenant(session)

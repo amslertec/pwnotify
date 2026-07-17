@@ -136,12 +136,20 @@ async def bulk_assign(
     # Aufrufer-Fehler zuerst und VOLLSTÄNDIG vorab geprüft (s. Moduldoku): eine unbekannte/
     # inaktive Tenant-Id lehnt die GESAMTE Anfrage ab, bevor auch nur ein Konto der Charge
     # angefasst wird -- kein Teil-Schreiben quer über die Charge.
-    for tid in set(body.tenant_ids):
-        tenant = await tenant_repo.get(session, tid)
-        if tenant is None or not tenant.is_active:
-            raise ConflictError(
-                "Nur aktive Mandanten können zugewiesen werden.", code="tenant_not_active"
-            )
+    #
+    # NUR für `action in {"add", "set"}` -- diese Prüfung gilt ausschliesslich für Tenants,
+    # die tatsächlich HINZUGEFÜGT werden könnten. `action="remove"` entfernt ausschliesslich
+    # bestehende Zuweisungen; eine Zuweisung auf einen zwischenzeitlich DEAKTIVIERTEN Kunden
+    # muss weiterhin entfernbar bleiben (genau der Fall, den ein "Kunde deaktiviert" ohne
+    # vorheriges Aufräumen der Zuweisungen erzeugt) -- sonst würde dieser Check das genaue
+    # Gegenteil seines Zwecks bewirken und das Entfernen einer Alt-Zuweisung blockieren.
+    if body.action in ("add", "set"):
+        for tid in set(body.tenant_ids):
+            tenant = await tenant_repo.get(session, tid)
+            if tenant is None or not tenant.is_active:
+                raise ConflictError(
+                    "Nur aktive Mandanten können zugewiesen werden.", code="tenant_not_active"
+                )
 
     tenant_ids = set(body.tenant_ids)
     updated: list[int] = []
