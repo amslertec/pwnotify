@@ -297,7 +297,8 @@
     "password_policy": "Das Passwort erfüllt die Richtlinie nicht (mind. 10 Zeichen, Gross-/Kleinbuchstabe, Ziffer, Sonderzeichen).",
     "sso_no_reset": "SSO-Konten setzen ihr Passwort über Microsoft Entra zurück.",
     "email_required": "Für dieses Konto ist keine E-Mail-Adresse hinterlegt.",
-    "user_not_in_scope": "Konto ausserhalb des eigenen Kundenbereichs."
+    "user_not_in_scope": "Konto ausserhalb des eigenen Kundenbereichs.",
+    "sync_failed": "Gruppen-Sync fehlgeschlagen: {{detail}}"
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -1115,6 +1116,24 @@
       "colName": "Name",
       "colEntraGroupId": "Entra-Gruppen-ID",
       "colCustomers": "Zugewiesene Kunden",
+      "colMembers": "Mitglieder",
+      "memberCount": "{{count}} Mitglieder",
+      "neverSynced": "Noch nie synchronisiert",
+      "expandMembers": "Mitglieder anzeigen",
+      "collapseMembers": "Mitglieder ausblenden",
+      "sync": "Mitglieder synchronisieren",
+      "syncResult": "{{count}} Mitglieder synchronisiert ({{materialized}} übernommen)",
+      "members": {
+        "colName": "Name",
+        "colUpn": "UPN",
+        "colMail": "E-Mail",
+        "empty": "Keine Mitglieder gefunden.",
+        "pagination": {
+          "summary": "{{count}} Mitglieder gesamt",
+          "prev": "Zurück",
+          "next": "Weiter"
+        }
+      },
       "empty": "Keine Gruppen vorhanden.",
       "none": "Keine Zuweisungen",
       "create": "Gruppe anlegen",

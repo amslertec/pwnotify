@@ -106,6 +106,37 @@ export interface AssignmentGroup {
   name: string
   entra_group_id: string
   tenant_ids: number[]
+  /** Anzahl aktuell materialisierter Mitglieder (Group-Member-Sync, Task 4/5). */
+  member_count: number
+  /** Zeitpunkt des letzten erfolgreichen Sync -- null, wenn noch nie synchronisiert. */
+  last_synced_at: string | null
+}
+
+/** Einzelnes Gruppenmitglied (`GET /admin/groups/{id}/members`, Group-Member-Sync Task 4/5). */
+export interface GroupMember {
+  entra_id: string
+  upn: string
+  display_name: string | null
+  mail: string | null
+}
+
+/** Paginierte Mitgliederliste. `page` ist 1-basiert; `size` muss <= 200 sein (Server
+ *  antwortet sonst mit 422) -- das Frontend sendet immer `size=25`. Eine Seite ausserhalb
+ *  des Bereichs liefert leere `items` bei korrektem `total`, nie einen Fehler. */
+export interface GroupMemberPage {
+  items: GroupMember[]
+  total: number
+  page: number
+  size: number
+}
+
+/** Ergebnis eines Gruppen-Sync (`POST /admin/groups/{id}/sync`). Bei Graph-Fehler antwortet
+ *  die Route stattdessen mit HTTP 502 / `{code: "sync_failed", ...}`. */
+export interface GroupSyncResult {
+  member_count: number
+  materialized: number
+  added: number
+  removed: number
 }
 
 /** Bulk-Zuweisung mehrerer Konten auf mehrere Kunden in einem Rutsch (`PUT

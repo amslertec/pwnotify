@@ -297,7 +297,8 @@
     "password_policy": "The password does not meet the policy (at least 10 characters, upper/lowercase letter, digit, special character).",
     "sso_no_reset": "SSO accounts reset their password through Microsoft Entra.",
     "email_required": "No email address is set for this account.",
-    "user_not_in_scope": "Account outside your own customer scope."
+    "user_not_in_scope": "Account outside your own customer scope.",
+    "sync_failed": "Group sync failed: {{detail}}"
   },
   "access": {
     "title": "User management",
@@ -1115,6 +1116,24 @@
       "colName": "Name",
       "colEntraGroupId": "Entra group ID",
       "colCustomers": "Assigned customers",
+      "colMembers": "Members",
+      "memberCount": "{{count}} members",
+      "neverSynced": "Never synced",
+      "expandMembers": "Show members",
+      "collapseMembers": "Hide members",
+      "sync": "Sync members",
+      "syncResult": "{{count}} members synced ({{materialized}} materialized)",
+      "members": {
+        "colName": "Name",
+        "colUpn": "UPN",
+        "colMail": "Email",
+        "empty": "No members found.",
+        "pagination": {
+          "summary": "{{count}} members total",
+          "prev": "Previous",
+          "next": "Next"
+        }
+      },
       "empty": "No groups yet.",
       "none": "No assignments",
       "create": "Create group",
