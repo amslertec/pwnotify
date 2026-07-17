@@ -22,6 +22,7 @@ from . import __version__
 from .api.deps import limiter
 from .api.routes import (
     admin_assignments,
+    admin_groups,
     admin_instance,
     admin_tenants,
     admin_users,
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
         admin_users.router,
         admin_tenants.router,
         admin_assignments.router,
+        admin_groups.router,
         admin_instance.router,
         notifications.router,
         runs.router,

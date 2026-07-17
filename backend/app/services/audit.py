@@ -45,6 +45,10 @@ TENANT_ASSIGNED = "tenant.assigned"  # Zuweisung eines Kontos zu einem weiteren 
 TENANT_UNASSIGNED = "tenant.unassigned"  # Zuweisung entzogen (Task 4)
 SUPERADMIN_CREATED = "user.superadmin_created"
 INSTANCE_MODE_CHANGED = "instance.mode_changed"  # Multi-Tenant-Mode umgeschaltet (Task 5)
+GROUP_CREATED = "group.created"  # Assignment-Group angelegt (Console+Groups+Invite Task 3)
+GROUP_UPDATED = "group.updated"  # Assignment-Group umbenannt
+GROUP_DELETED = "group.deleted"
+GROUP_TENANTS_SET = "group.tenants_set"  # Kunden-Mitgliedschaft einer Gruppe reconciled
 
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.
