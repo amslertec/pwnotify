@@ -91,7 +91,8 @@ async def test_is_default_backfill_unique_guard_and_rename_safe_lookup(
 
             local_admin = _uname("local-admin")
             sso_user = _uname("sso-user")
-            seeded_users += [local_admin, sso_user]
+            legacy_customer_admin = _uname("legacy-customer-admin")
+            seeded_users += [local_admin, sso_user, legacy_customer_admin]
 
             async def _mk_user(
                 username: str, *, role: str, is_sso: bool = False, tenant_id: int | None = None
@@ -114,6 +115,19 @@ async def test_is_default_backfill_unique_guard_and_rename_safe_lookup(
             # SSO-Konto, bereits homed im Kundentenant -- muss unangetastet bleiben.
             sso_user_id = await _mk_user(
                 sso_user, role="admin", is_sso=True, tenant_id=customer_tenant_id
+            )
+            # Legacy-Kundenstaff (Finding 1, Whole-Branch-Review): ein VOR Task 3 angelegter
+            # lokaler Admin -- `tenant_id IS NULL` (die Heim-Tenant-Spalte gab es damals noch
+            # nicht), aber bereits mit einer `admin_tenant`-Zuweisung auf den (Nicht-Default-)
+            # Kundentenant. Ohne die Backfill-Ausnahme wäre dieses Konto fälschlich auf den
+            # Default-Tenant provider-geheimatet worden -- und damit über
+            # `tenant_repo.is_provider_account` fälschlich cross-grantbar geworden.
+            legacy_customer_admin_id = await _mk_user(
+                legacy_customer_admin, role="admin", tenant_id=None
+            )
+            await conn.execute(
+                text("INSERT INTO admin_tenant (user_id, tenant_id) VALUES (:uid, :tid)"),
+                {"uid": legacy_customer_admin_id, "tid": customer_tenant_id},
             )
 
         # 2. Die Migration selbst treiben: Incumbent markieren + Backfill passiert genau hier.
@@ -141,6 +155,22 @@ async def test_is_default_backfill_unique_guard_and_rename_safe_lookup(
                 )
             ).scalar_one()
             assert sso_tid == customer_tenant_id, "SSO-Konto tenant_id darf sich nicht ändern"
+
+            # -- Legacy-Kundenstaff (Finding 1): NICHT provider-geheimatet, obwohl
+            #    `tenant_id IS NULL` -- die bestehende `admin_tenant`-Zuweisung auf einen
+            #    Nicht-Default-Tenant nimmt das Konto von der Provider-Promotion aus. Home
+            #    bleibt NULL (die Zuweisung selbst gibt bereits Zugriff; NULL-Heimat ->
+            #    `is_provider_account`=False, also strukturell nicht cross-grantbar).
+            legacy_customer_admin_tid = (
+                await conn.execute(
+                    text("SELECT tenant_id FROM app_user WHERE id = :id"),
+                    {"id": legacy_customer_admin_id},
+                )
+            ).scalar_one()
+            assert legacy_customer_admin_tid is None, (
+                "Legacy-Kundenstaff mit admin_tenant-Zuweisung darf NICHT auf den "
+                "Default-Tenant provider-geheimatet werden"
+            )
 
         # -- partieller Unique-Index: ein zweiter is_default=true auf dem Kundentenant
         #    muss scheitern (höchstens ein Default gleichzeitig möglich).

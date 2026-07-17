@@ -51,10 +51,33 @@ def upgrade() -> None:
     # geheimatet (Design §2). SSO-Konten tragen bereits ihre `tenant_id` (aus dem tid-Claim)
     # und bleiben unangetastet -- der Filter `tenant_id IS NULL` trifft ohnehin nur lokale
     # Konten ohne Heimat.
+    #
+    # Sicherheitsfix (Whole-Branch-Review, Finding 1): `tenant_id IS NULL` allein trifft
+    # NICHT nur echtes Provider-Personal -- ein VOR Task 3 angelegtes lokales Konto eines
+    # Kunden-Admins/-Auditors trägt ebenfalls `tenant_id IS NULL` (die Heim-Tenant-Spalte gab
+    # es damals noch nicht), hält aber bereits eine `admin_tenant`/`auditor_tenant`-Zuweisung
+    # auf einen NICHT-Default-Tenant -- ein reines Kundenstaff-Konto. Ohne die Ausnahme unten
+    # würde ein solches Konto fälschlich auf den Default-Tenant provider-geheimatet:
+    # `tenant_repo.is_provider_account` (Task 2) läse das als Provider-Konto, der
+    # Cross-Grant-Lock würde es damit fälschlich auf beliebige fremde Kunden cross-grantbar
+    # machen -- exakt das, was "kundengeheimatete Konten sind strukturell nicht
+    # cross-grantbar" verhindern soll. Ein Konto mit IRGENDEINER Zuweisung auf einen
+    # Nicht-Default-Tenant bleibt daher explizit ausgenommen: seine Heimat bleibt NULL (die
+    # Zuweisung selbst gibt ihm bereits Zugriff; NULL-Heimat -> `is_provider_account`=False,
+    # also korrekt nicht cross-grantbar). NUR Konten OHNE jede Nicht-Default-Zuweisung werden
+    # provider-geheimatet.
     conn.execute(
         sa.text(
             "UPDATE app_user SET tenant_id = (SELECT id FROM tenant WHERE is_default) "
-            "WHERE is_sso = false AND tenant_id IS NULL"
+            "WHERE is_sso = false AND tenant_id IS NULL "
+            "AND id NOT IN ("
+            "SELECT user_id FROM admin_tenant "
+            "WHERE tenant_id <> (SELECT id FROM tenant WHERE is_default)"
+            ") "
+            "AND id NOT IN ("
+            "SELECT user_id FROM auditor_tenant "
+            "WHERE tenant_id <> (SELECT id FROM tenant WHERE is_default)"
+            ")"
         )
     )
 

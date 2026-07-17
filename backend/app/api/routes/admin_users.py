@@ -23,7 +23,7 @@ from ..deps import (
     AdminUser,
     CurrentUser,
     SessionDep,
-    SuperadminUser,
+    SuperadminDefaultContextUser,
     default_tenant_id,
 )
 
@@ -227,12 +227,20 @@ async def set_role(
 
 @router.post("/superadmin", response_model=AdminUserOut)
 async def create_superadmin(
-    request: Request, admin: SuperadminUser, body: SuperadminCreate, session: SessionDep
+    request: Request,
+    admin: SuperadminDefaultContextUser,
+    body: SuperadminCreate,
+    session: SessionDep,
 ) -> AdminUserOut:
     """Legt einen LOKALEN Superadmin an -- superadmin-only (Design §11.3: Superadmin ist
     IMMER ein lokales Konto, nie SSO). KEINE automatische Zuweisung: der Superadmin ist
     instanzweit und braucht keine `admin_tenant`/`auditor_tenant`-Zeile (anders als
-    `create_local` für gewöhnliche Admin/Auditor-Konten, Task 3)."""
+    `create_local` für gewöhnliche Admin/Auditor-Konten, Task 3).
+
+    Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
+    (`SuperadminDefaultContextUser`, `default_context_required`): die Superadmin-Verwaltung
+    ist Provider-Ebene (Design §4/§4-notes), genau wie Instanz-/Mandanten-/Zuweisungs-
+    Konsole -- aus einem Kunden-Kontext heraus gesperrt."""
     if body.is_sso:
         raise ConflictError(
             "Ein Superadmin muss ein lokales Konto sein.", code="superadmin_must_be_local"
@@ -263,13 +271,17 @@ async def create_superadmin(
 @router.post("/{user_id}/superadmin", response_model=AdminUserOut)
 async def set_superadmin(
     request: Request,
-    admin: SuperadminUser,
+    admin: SuperadminDefaultContextUser,
     user_id: int,
     body: SuperadminToggle,
     session: SessionDep,
 ) -> AdminUserOut:
     """Befördert/degradiert zum/vom Superadmin -- der EINZIGE Pfad dafür (`set_role` lehnt
     jeden Rollenwechsel eines Superadmin-Ziels hart ab, s.o.). Superadmin-only.
+
+    Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
+    (`SuperadminDefaultContextUser`, `default_context_required`): dieselbe Provider-Ebene-
+    Begründung wie bei `create_superadmin` oben.
 
     Befördern: nur ein LOKALES Ziel (`not is_sso`) darf Superadmin werden (Design §11.3,
     `code="superadmin_must_be_local"`) -- seine bisherigen `admin_tenant`/

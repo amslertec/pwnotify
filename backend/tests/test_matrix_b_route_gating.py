@@ -36,12 +36,14 @@ from app.api.deps import (
 from app.api.routes.admin_assignments import get_assignments, set_assignments
 from app.api.routes.admin_instance import update_instance
 from app.api.routes.admin_tenants import create_tenant, delete_tenant, update_tenant
+from app.api.routes.admin_users import create_superadmin, set_superadmin
 from app.api.routes.auth import me
 from app.core.errors import ForbiddenError
 from app.core.security import issue_token_pair
 from app.models.user import AppUser
-from app.repositories import tenant_repo
+from app.repositories import tenant_repo, user_repo
 from app.schemas.assignment import AssignmentUpdate
+from app.schemas.auth import SuperadminCreate, SuperadminToggle
 from app.schemas.instance import InstanceUpdate
 from app.schemas.tenant import TenantCreate, TenantUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,6 +155,28 @@ async def test_superadmin_default_context_allows_instance_tenant_and_assignment_
         session,
     )
     assert put.tenant_ids == []
+
+    # Superadmin-Verwaltung (Whole-Branch-Review Context-Gating v2, Finding 2): seit dem Fix
+    # `SuperadminDefaultContextUser`-gegatet wie die anderen Provider-Ebene-Konsolen oben --
+    # `create_superadmin` und `set_superadmin` gelingen im Default-Kontext.
+    created_superadmin = await create_superadmin(
+        request,  # type: ignore[arg-type]
+        guarded,
+        SuperadminCreate(username=f"mb-new-superadmin-{uuid.uuid4().hex[:8]}", password="x" * 12),
+        session,
+    )
+    assert created_superadmin.role == "superadmin"
+
+    promote_target = await _mk_admin(session)
+    assert promote_target.id is not None
+    promoted = await set_superadmin(
+        request,  # type: ignore[arg-type]
+        guarded,
+        promote_target.id,
+        SuperadminToggle(promote=True),
+        session,
+    )
+    assert promoted.role == "superadmin"
 
 
 async def test_superadmin_claimless_token_resolves_to_default_context(
@@ -279,6 +303,48 @@ async def test_superadmin_customer_context_blocks_assignment_console(
             session,
         )
     assert exc_info.value.code == "default_context_required"
+
+
+async def test_superadmin_customer_context_blocks_superadmin_crud(session: AsyncSession) -> None:
+    """Whole-Branch-Review Context-Gating v2, Finding 2: `create_superadmin`/
+    `set_superadmin` were only `SuperadminUser`-gated (reachable from ANY context) --
+    inconsistent with the invariant that superadmin management is Provider-Ebene, like the
+    other consoles above. Fixed to `SuperadminDefaultContextUser`; this proves the block from
+    a customer context and that neither route made ANY change (no superadmin created, target
+    role unchanged)."""
+    superadmin = await _mk_superadmin(session)
+    assert superadmin.id is not None
+    customer = await tenant_repo.create(session, name="Matrix B Customer F", slug=_slug())
+    assert customer.id is not None
+    request = _request_with_claim(superadmin.id, customer.id)
+    new_username = f"mb-blocked-superadmin-{uuid.uuid4().hex[:8]}"
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        guarded = await require_superadmin_default_context(request, superadmin, session)  # type: ignore[arg-type]
+        await create_superadmin(
+            request,  # type: ignore[arg-type]
+            guarded,
+            SuperadminCreate(username=new_username, password="x" * 12),
+            session,
+        )
+    assert exc_info.value.code == "default_context_required"
+    assert await user_repo.get_by_username(session, new_username) is None
+
+    promote_target = await _mk_admin(session)
+    assert promote_target.id is not None
+    with pytest.raises(ForbiddenError) as exc_info:
+        guarded = await require_superadmin_default_context(request, superadmin, session)  # type: ignore[arg-type]
+        await set_superadmin(
+            request,  # type: ignore[arg-type]
+            guarded,
+            promote_target.id,
+            SuperadminToggle(promote=True),
+            session,
+        )
+    assert exc_info.value.code == "default_context_required"
+    refreshed_target = await user_repo.get(session, promote_target.id)
+    assert refreshed_target is not None
+    assert refreshed_target.role == "admin"
 
 
 # ---- Guard-Reihenfolge: Nicht-Superadmin scheitert am Rollen-Gate, nicht am Kontext-Gate -- #

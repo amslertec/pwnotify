@@ -238,6 +238,8 @@
     "cannot_delete_last_tenant": "The last active customer cannot be deleted.",
     "cannot_delete_self": "You cannot delete your own account.",
     "content_type_mismatch": "The file content does not match the declared format. Please upload a real image file.",
+    "customer_account_not_grantable": "Customer accounts cannot be granted access to other tenants.",
+    "default_context_required": "Only available in the default context.",
     "export_too_large": "The export is too large. Please narrow it down using search or status.",
     "file_too_large": "File too large.",
     "generic": "Something went wrong.",

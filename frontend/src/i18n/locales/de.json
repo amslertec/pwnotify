@@ -238,6 +238,8 @@
     "cannot_delete_last_tenant": "Der letzte aktive Kunde kann nicht gelöscht werden.",
     "cannot_delete_self": "Sie können Ihr eigenes Konto nicht löschen.",
     "content_type_mismatch": "Der Dateiinhalt passt nicht zum angegebenen Format. Bitte eine echte Bilddatei hochladen.",
+    "customer_account_not_grantable": "Kunden-Konten können nicht auf fremde Mandanten berechtigt werden.",
+    "default_context_required": "Nur im Standard-Kontext möglich.",
     "export_too_large": "Der Export ist zu gross. Bitte über Suche oder Status filtern.",
     "file_too_large": "Datei zu groß.",
     "generic": "Ein Fehler ist aufgetreten.",
