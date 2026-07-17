@@ -62,8 +62,15 @@ export function Sidebar({
   const { user } = useAuth()
   const isAdmin = hasAdminRights(user?.role)
   const isSuperadmin = user?.role === 'superadmin'
+  // superadminOnly-Einträge (z. B. "/tenants") verlangen zusätzlich den instanzweiten
+  // Mandantenfähigkeits-Schalter -- ist er aus (Default), bleibt die Kunden-Navigation
+  // für jeden, auch Superadmins, unsichtbar (Task 7: identisch zum Einzel-Kunden-Stand).
   const nav = NAV.filter((item) =>
-    item.superadminOnly ? isSuperadmin : item.adminOnly ? isAdmin : true,
+    item.superadminOnly
+      ? isSuperadmin && !!user?.multi_tenant_mode
+      : item.adminOnly
+        ? isAdmin
+        : true,
   )
   return (
     <aside

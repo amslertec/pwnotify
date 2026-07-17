@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -10,7 +10,9 @@ import { Switch } from '../ui/switch'
 import { Field, Section } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
-import type { VersionInfo } from '@/lib/types'
+import { useAuth } from '@/lib/auth'
+import { translateError } from '@/lib/errors'
+import type { InstanceSettings, VersionInfo } from '@/lib/types'
 
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
@@ -178,6 +180,109 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           </Field>
         </div>
       </Section>
+
+      <MultiTenantSection />
     </div>
+  )
+}
+
+/** Instanzweiter Schalter für die Mandantenfähigkeit (Access-Modell/Superadmin-Phase,
+ *  Task 7) — nur für Superadmins sichtbar. Läuft bewusst NICHT über die
+ *  Kunden-skalierte `settings`/`save`-Props dieser Komponente, sondern direkt gegen
+ *  `GET/PUT /admin/instance` (instanzweit, nicht pro Kunde). Ist der Schalter aus,
+ *  bleibt PwNotify für alle optisch/funktional identisch mit dem Einzel-Kunden-Stand
+ *  (kein Kunden-Umschalter, keine Kunden-Navigation — siehe `sidebar.tsx` /
+ *  `tenant-switcher.tsx`). */
+function MultiTenantSection() {
+  const { t } = useTranslation()
+  const { user: me, refresh } = useAuth()
+  const qc = useQueryClient()
+  const [defaultName, setDefaultName] = useState('')
+
+  const { data: instance, isLoading } = useQuery({
+    queryKey: ['admin-instance'],
+    queryFn: () => api.get<InstanceSettings>('/admin/instance'),
+    enabled: me?.role === 'superadmin',
+  })
+
+  // Einmaliger Seed aus dem Server-Stand -- danach steuert nur noch die lokale Eingabe
+  // (kein Re-Sync bei Refetch, sonst gingen ungespeicherte Tastatureingaben verloren).
+  useEffect(() => {
+    if (instance) setDefaultName(instance.default_tenant_name)
+  }, [instance])
+
+  const toggleMode = useMutation({
+    mutationFn: (value: boolean) =>
+      api.put<InstanceSettings>('/admin/instance', { multi_tenant_mode: value }),
+    onSuccess: (data) => {
+      qc.setQueryData(['admin-instance'], data)
+      void qc.invalidateQueries({ queryKey: ['admin-instance'] })
+      // Der Schalter steuert Sidebar/Switcher über `user.multi_tenant_mode` -- ohne
+      // Refresh bliebe die Oberfläche bis zum nächsten Login/Reload veraltet.
+      void refresh()
+      toast.success(t('generalTab.multiTenant.modeSaved'))
+    },
+    onError: (e) => toast.error(translateError(e)),
+  })
+
+  const renameDefault = useMutation({
+    mutationFn: () =>
+      api.put<InstanceSettings>('/admin/instance', { default_tenant_name: defaultName.trim() }),
+    onSuccess: (data) => {
+      qc.setQueryData(['admin-instance'], data)
+      void qc.invalidateQueries({ queryKey: ['admin-instance'] })
+      // Der aktive Kunde des Aufrufers kann der umbenannte Standard-Kunde sein --
+      // Switcher/Sidebar zeigen das nur nach einem Refresh sofort.
+      void refresh()
+      void qc.invalidateQueries({ queryKey: ['admin-tenants'] })
+      toast.success(t('generalTab.multiTenant.defaultNameSaved'))
+    },
+    onError: (e) => toast.error(translateError(e)),
+  })
+
+  if (me?.role !== 'superadmin') return null
+
+  return (
+    <Section
+      title={t('generalTab.multiTenant.title')}
+      description={t('generalTab.multiTenant.description')}
+    >
+      <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
+        <span>
+          <span className="block text-sm font-medium">{t('generalTab.multiTenant.modeLabel')}</span>
+          <span className="text-muted-foreground mt-1 block text-sm">
+            {t('generalTab.multiTenant.modeHint')}
+          </span>
+        </span>
+        <Switch
+          checked={Boolean(instance?.multi_tenant_mode)}
+          disabled={isLoading || toggleMode.isPending}
+          onCheckedChange={(v) => toggleMode.mutate(v)}
+        />
+      </label>
+
+      <Field
+        label={t('generalTab.multiTenant.defaultNameLabel')}
+        hint={t('generalTab.multiTenant.defaultNameHint')}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={defaultName}
+            onChange={(e) => setDefaultName(e.target.value)}
+            disabled={isLoading}
+            className="max-w-sm"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => renameDefault.mutate()}
+            loading={renameDefault.isPending}
+            disabled={isLoading || defaultName.trim().length < 1}
+          >
+            {t('generalTab.multiTenant.defaultNameSave')}
+          </Button>
+        </div>
+      </Field>
+    </Section>
   )
 }

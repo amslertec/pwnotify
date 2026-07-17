@@ -624,6 +624,17 @@
       "saveButton": "Speichern",
       "require2fa": "Zwei-Faktor-Authentifizierung vorschreiben",
       "require2faHint": "Lokale Konten ohne 2FA müssen es beim nächsten Anmelden einrichten. Bis dahin entsteht keine Sitzung: Nach dem Passwort führt der Weg direkt in die Einrichtung. Bestehende Sitzungen laufen weiter, bis sie ablaufen."
+    },
+    "multiTenant": {
+      "title": "Mandantenfähigkeit",
+      "description": "Nur für Superadmins sichtbar. Steuert instanzweit, ob Kunden-Umschalter, Kunden-Navigation und Zuweisungen überhaupt aktiv sind.",
+      "modeLabel": "Mandantenfähigkeit aktivieren",
+      "modeHint": "Ist der Schalter aus (Standard), sieht PwNotify für alle Konten exakt wie eine Einzel-Kunden-Instanz aus — kein Kunden-Umschalter, keine Kunden-Navigation, keine Zuweisungen.",
+      "modeSaved": "Gespeichert.",
+      "defaultNameLabel": "Name des Standard-Kunden",
+      "defaultNameHint": "Der Standard-Kunde ist der Migrations-Anker dieser Instanz und kann nicht gelöscht werden. Der Name erscheint z. B. im Kunden-Umschalter, sobald die Mandantenfähigkeit aktiv ist.",
+      "defaultNameSave": "Namen speichern",
+      "defaultNameSaved": "Name gespeichert."
     }
   },
   "entraGuide": {

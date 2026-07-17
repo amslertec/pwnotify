@@ -6,13 +6,17 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useAuth } from '@/lib/auth'
 
 /** Kunden-Umschalter (Multi-Tenant) — ganz oben in der Sidebar, über dem
- *  Dashboard-Eintrag. Nur sichtbar, wenn das Konto zu mehr als einem Kunden
- *  wechseln darf (Single-Tenant-Konten sehen wie bisher nichts). */
+ *  Dashboard-Eintrag. Nur sichtbar, wenn (a) die instanzweite Mandantenfähigkeit
+ *  eingeschaltet ist (Task 7 — Default ist AUS) UND (b) das Konto zu mehr als einem
+ *  Kunden wechseln darf (Single-Tenant-Konten sehen wie bisher nichts). */
 export function TenantSwitcher({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation()
   const { user, switchTenant } = useAuth()
 
-  if (!user || user.switchable_tenants.length <= 1) return null
+  // Instanzweiter Schalter (Task 7) zuerst: ist die Mandantenfähigkeit aus (Default),
+  // bleibt der Umschalter für JEDES Konto unsichtbar -- unabhängig davon, wie viele
+  // Kunden ein Konto theoretisch zugewiesen hat.
+  if (!user || !user.multi_tenant_mode || user.switchable_tenants.length <= 1) return null
 
   const activeId = user.active_tenant ? String(user.active_tenant.id) : undefined
   const activeName = user.active_tenant?.name ?? t('tenant.switcher_label')
@@ -56,12 +60,19 @@ export function TenantSwitcher({ collapsed }: { collapsed: boolean }) {
         <Building2 className="size-3.5" /> {t('tenant.switcher_label')}
       </div>
       <Select value={activeId} onValueChange={change}>
-        <SelectTrigger aria-label={t('tenant.switcher_label')} title={`${t('tenant.current')}: ${activeName}`}>
+        <SelectTrigger
+          aria-label={t('tenant.switcher_label')}
+          title={`${t('tenant.current')}: ${activeName}`}
+        >
           <SelectValue placeholder={t('tenant.switcher_label')} />
         </SelectTrigger>
         <SelectContent>
           {user.switchable_tenants.map((tenant) => (
-            <SelectItem key={tenant.id} value={String(tenant.id)} title={t('tenant.switch_to', { name: tenant.name })}>
+            <SelectItem
+              key={tenant.id}
+              value={String(tenant.id)}
+              title={t('tenant.switch_to', { name: tenant.name })}
+            >
               {tenant.name}
             </SelectItem>
           ))}

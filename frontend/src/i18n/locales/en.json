@@ -624,6 +624,17 @@
       "saveButton": "Save",
       "require2fa": "Require two-factor authentication",
       "require2faHint": "Local accounts without 2FA must set it up at their next sign-in. Until then no session is created: after the password, the path leads straight into enrolment. Existing sessions continue until they expire."
+    },
+    "multiTenant": {
+      "title": "Multi-tenancy",
+      "description": "Superadmin-only. Controls, instance-wide, whether the tenant switcher, tenant navigation, and assignments are active at all.",
+      "modeLabel": "Enable multi-tenancy",
+      "modeHint": "When off (default), PwNotify looks exactly like a single-tenant instance for every account — no tenant switcher, no tenant navigation, no assignments.",
+      "modeSaved": "Saved.",
+      "defaultNameLabel": "Default tenant name",
+      "defaultNameHint": "The default tenant is this instance's migration anchor and cannot be deleted. Its name appears, for example, in the tenant switcher once multi-tenancy is active.",
+      "defaultNameSave": "Save name",
+      "defaultNameSaved": "Name saved."
     }
   },
   "entraGuide": {

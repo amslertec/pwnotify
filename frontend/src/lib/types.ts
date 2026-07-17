@@ -206,6 +206,14 @@ export interface PublicBranding {
 
 export type Settings = Record<string, unknown>
 
+/** Instanzweiter Schalterstand + Name des Standard-Kunden (Access-Modell/Superadmin-Phase,
+ *  Task 7) — `GET`/`PUT /admin/instance`, superadmin-only zum Schreiben. Getrennt von
+ *  `Settings`, weil diese Werte den Standard-Kunden betreffen, nicht den aktiven Mandanten. */
+export interface InstanceSettings {
+  multi_tenant_mode: boolean
+  default_tenant_name: string
+}
+
 export interface DashboardData {
   kpis: {
     total: number
