@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { ScrollText, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { fmtDateTime } from '@/lib/format'
-import type { AuditEntry, AuditPage } from '@/lib/types'
+import type { AuditEntry, AuditPage, Tenant } from '@/lib/types'
 
 const PAGE_SIZE = 25
 const ALLE = '__all__'
@@ -55,6 +56,16 @@ export default function AuditPage() {
     queryKey: ['audit-actions'],
     queryFn: () => api.get<string[]>('/audit/actions'),
   })
+
+  // Für die Detail-Spalte: `tenant_id=4` ist für Menschen bedeutungslos, der Kundenname
+  // nicht. Fehler beim Laden (z. B. keine Admin-Rechte) dürfen die Audit-Seite nicht zum
+  // Absturz bringen — dann bleibt die Map einfach leer und es wird auf `#id` zurückgefallen.
+  const { data: tenants } = useQuery({
+    queryKey: ['admin-tenants'],
+    queryFn: () => api.get<Tenant[]>('/admin/tenants'),
+    throwOnError: false,
+  })
+  const tenantNamen = new Map((tenants ?? []).map((tn) => [tn.id, tn.name]))
 
   const rows = data?.items ?? []
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
@@ -142,7 +153,7 @@ export default function AuditPage() {
                   </td>
                 </tr>
               ) : (
-                rows.map((e) => <AuditRow key={e.id} entry={e} />)
+                rows.map((e) => <AuditRow key={e.id} entry={e} tenantNamen={tenantNamen} />)
               )}
             </tbody>
           </table>
@@ -176,7 +187,13 @@ export default function AuditPage() {
   )
 }
 
-function AuditRow({ entry }: { entry: AuditEntry }) {
+function AuditRow({
+  entry,
+  tenantNamen,
+}: {
+  entry: AuditEntry
+  tenantNamen: Map<number, string>
+}) {
   const { t } = useTranslation()
   const fehler = entry.outcome === 'failure'
   const Icon = fehler ? ShieldAlert : ShieldCheck
@@ -210,16 +227,31 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
         {Object.keys(entry.detail).length === 0 ? (
           '—'
         ) : (
-          <span className="font-mono text-xs">{formatiereDetail(entry.detail)}</span>
+          <span className="font-mono text-xs">
+            {formatiereDetail(entry.detail, tenantNamen, t)}
+          </span>
         )}
       </td>
     </tr>
   )
 }
 
-/** Kompakt und lesbar: `schluessel=wert`, Listen zusammengezogen. */
-function formatiereDetail(detail: Record<string, unknown>): string {
+/** Kompakt und lesbar: `schluessel=wert`, Listen zusammengezogen. Sonderfall `tenant_id`:
+ *  wird zu einem lesbaren Kundennamen aufgelöst (Map kann leer sein — Fallback auf `#id`,
+ *  etwa wenn der Kunde inzwischen gelöscht wurde oder `/admin/tenants` noch lädt). */
+function formatiereDetail(
+  detail: Record<string, unknown>,
+  tenantNamen: Map<number, string>,
+  t: TFunction,
+): string {
   return Object.entries(detail)
-    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(', ') : String(v)}`)
+    .map(([k, v]) => {
+      if (k === 'tenant_id') {
+        const id = Number(v)
+        const name = tenantNamen.get(id)
+        return `${t('audit.detail.tenant')}: ${name ?? `#${id}`}`
+      }
+      return `${k}=${Array.isArray(v) ? v.join(', ') : String(v)}`
+    })
     .join('  ·  ')
 }

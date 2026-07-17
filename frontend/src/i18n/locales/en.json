@@ -141,11 +141,18 @@
       "auth.2fa_enabled": "2FA enabled",
       "auth.2fa_disabled": "2FA disabled",
       "auth.sessions_revoked": "Other sessions signed out",
+      "auth.tenant_switched": "Customer switched",
       "user.created": "User created",
       "user.deleted": "User deleted",
       "user.role_changed": "Role changed",
       "settings.changed": "Settings changed",
-      "settings.secret_changed": "Secret changed"
+      "settings.secret_changed": "Secret changed",
+      "tenant.created": "Customer created",
+      "tenant.updated": "Customer updated",
+      "tenant.deleted": "Customer deleted"
+    },
+    "detail": {
+      "tenant": "Customer"
     }
   },
   "validation": {
