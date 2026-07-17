@@ -25,11 +25,14 @@ import pytest
 from app.api.deps import require_superadmin
 from app.api.routes.admin_tenants import create_tenant, delete_tenant, list_tenants, update_tenant
 from app.core.errors import ConflictError, ForbiddenError
+from app.models.audit import AuditLog
 from app.models.run import Run
 from app.models.tenant import AdminTenant, AuditorTenant, Tenant
+from app.models.token import UserToken
 from app.models.user import AppUser, UserSession
 from app.repositories import tenant_repo
 from app.schemas.tenant import TenantCreate, TenantUpdate
+from app.services import audit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -474,3 +477,96 @@ async def test_superadmin_sees_full_roster_and_retains_write_access(
     msg = await delete_tenant(None, guarded_superadmin, tenant_b.id, session)  # type: ignore[arg-type]
     assert "gelöscht" in msg.message
     assert await tenant_repo.get(session, tenant_b.id) is None
+
+
+# ---- Whole-Branch-Review-Fix: `created_by`-Tokens der SSO-Konten in der harten -------------- #
+# Tenant-Löschkaskade (Cross-Task-Defekt Console+Groups+Invite) ----------------------------- #
+#
+# `user_token.created_by` (Migration `5d152bfe7585`) hat bewusst KEIN `ON DELETE` -- ein
+# gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN Nutzers nicht
+# mitreissen (siehe `user_token_repo.delete_created_by`). `delete_user` kompensiert das
+# bereits; `user_repo.delete_by_tenant` (die zweite Konto-Löschkaskade, angestossen von
+# `admin_tenants.delete_tenant` beim harten Löschen eines Kunden) tat das bislang NICHT.
+# Szenario: der SSO-Admin eines Kunden verschickt eine Einladung/einen Reset-Link
+# (`created_by = <sso admin>.id`) -- löscht der Superadmin später den Kunden, scheiterte
+# das DELETE des SSO-Admins am `created_by`-FK mit einem `IntegrityError`, WÄHREND der
+# TENANT_DELETED-Audit-Eintrag bereits committet war (falscher Erfolgsnachweis).
+
+
+async def test_delete_tenant_with_sso_admin_created_by_token_succeeds(
+    session: AsyncSession,
+) -> None:
+    """Muss gegen den unfixed Code mit `IntegrityError` fehlschlagen: der SSO-Admin des zu
+    löschenden Kunden ist Ersteller (`created_by`) eines noch gültigen Tokens für ein
+    ANDERES Konto -- die harte Löschkaskade muss trotzdem durchlaufen, und das Token muss
+    mit aufgeräumt sein (Carry-forward-Fix, analog zu `delete_user`)."""
+    superadmin = await _mk_superadmin(session)
+    victim = await _mk_tenant(session)
+    assert victim.id is not None
+    vid = victim.id
+
+    sso_admin = await _mk_sso_admin(session, tenant_id=vid)
+    assert sso_admin.id is not None
+
+    other_account = await _mk_admin(session)  # irgendein bestehendes, ANDERES Konto
+    assert other_account.id is not None
+
+    token = UserToken(
+        app_user_id=other_account.id,
+        purpose="reset",
+        token_hash=f"t2-cbtok-{uuid.uuid4().hex}",
+        expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(hours=1),
+        created_by=sso_admin.id,
+    )
+    session.add(token)
+    await session.flush()
+    token_id = token.id
+
+    msg = await delete_tenant(None, superadmin, vid, session)  # type: ignore[arg-type]
+    assert "gelöscht" in msg.message
+
+    assert await tenant_repo.get(session, vid) is None
+    assert (
+        await session.execute(select(AppUser).where(AppUser.id == sso_admin.id))
+    ).scalar_one_or_none() is None
+    # `other_account` selbst bleibt unberührt -- nur das von ihm NICHT erstellte, aber vom
+    # gelöschten SSO-Admin AUSGESTELLTE Token verschwindet.
+    assert await session.get(AppUser, other_account.id) is not None
+    assert (
+        await session.execute(select(UserToken).where(UserToken.id == token_id))
+    ).scalar_one_or_none() is None
+
+
+async def test_delete_tenant_failed_cascade_leaves_no_tenant_deleted_audit(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ordnungs-Fix: vormals stand `audit.record(TENANT_DELETED)` + dessen `commit()` VOR
+    der Löschkaskade -- ein Fehlschlag in `user_repo.delete_by_tenant` (siehe Test oben)
+    liess trotzdem einen committeten 'Mandant gelöscht'-Audit-Eintrag zurück, obwohl der
+    Tenant unangetastet blieb. Hier simuliert per Monkeypatch, dass die Kaskade fehlschlägt
+    -- danach darf KEIN TENANT_DELETED-Eintrag für diesen Kunden existieren, und der Tenant
+    muss weiterhin existieren."""
+    import app.api.routes.admin_tenants as admin_tenants_mod
+
+    superadmin = await _mk_superadmin(session)
+    victim = await _mk_tenant(session)
+    assert victim.id is not None
+    slug = victim.slug
+
+    async def _boom(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("simulated cascade failure")
+
+    monkeypatch.setattr(admin_tenants_mod.user_repo, "delete_by_tenant", _boom)
+
+    with pytest.raises(RuntimeError):
+        await delete_tenant(None, superadmin, victim.id, session)  # type: ignore[arg-type]
+
+    # Kaskade ist gescheitert -- der Tenant selbst muss unverändert weiterbestehen.
+    assert await tenant_repo.get(session, victim.id) is not None
+    # ...und es darf KEIN "erfolgreich gelöscht"-Audit-Eintrag für ihn existieren.
+    row = (
+        await session.execute(
+            select(AuditLog).where(AuditLog.action == audit.TENANT_DELETED, AuditLog.target == slug)
+        )
+    ).scalar_one_or_none()
+    assert row is None

@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.tenant import AdminTenant, AuditorTenant
+from ..models.token import UserToken
 from ..models.user import AppUser, UserSession
 
 
@@ -182,6 +183,16 @@ async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:
     machen. Sitzungen zuerst, aus demselben Grund wie in `delete()`: kein ORM-Relationship
     zwischen `AppUser` und `UserSession`, ein direktes DELETE erzwingt die Reihenfolge.
 
+    Carry-forward-Fix (Whole-Branch-Review, analog zu `delete_user`s
+    `user_token_repo.delete_created_by`-Aufruf): `user_token.created_by` hat KEIN
+    `ON DELETE` -- ein gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN
+    Nutzers nicht mitreissen. War einer der hier gelöschten SSO-Admins Ersteller eines
+    Tokens (z. B. eine von ihm verschickte Einladung/ein Reset-Link), schlug das DELETE
+    unten bislang mit einem `IntegrityError` fehl -- dieser Pfad war der EINZIGE der beiden
+    Lösch-Kaskaden, der diesen Aufräumschritt nicht kannte. Die EIGENEN Tokens der Konten
+    (`app_user_id`) kaskadieren weiterhin automatisch (`ON DELETE CASCADE`), nur die
+    `created_by`-Seite muss hier explizit geräumt werden.
+
     Gibt die Anzahl gelöschter Konten zurück (für Audit-Details der aufrufenden Route).
     """
     res = await session.execute(
@@ -189,6 +200,7 @@ async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:
     )
     ids = list(res.scalars().all())
     if ids:
+        await session.execute(sa_delete(UserToken).where(UserToken.created_by.in_(ids)))
         await session.execute(sa_delete(UserSession).where(UserSession.user_id.in_(ids)))
         await session.execute(sa_delete(AppUser).where(AppUser.id.in_(ids)))
         await session.commit()

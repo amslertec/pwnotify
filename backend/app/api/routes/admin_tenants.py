@@ -156,19 +156,31 @@ async def delete_tenant(
             code="cannot_delete_last_tenant",
         )
     sso_user_count = await tenant_repo.count_sso_users(session, tenant_id)
-    await audit.record(
-        session,
-        action=audit.TENANT_DELETED,
-        actor=admin,
-        target=tenant.slug,
-        request=request,
-        detail={"name": tenant.name, "sso_user_count": sso_user_count},
-    )
-    await session.commit()
+    # Namen/Slug VOR der Löschung sichern: `tenant` wird nach den folgenden Commits
+    # expired (SQLAlchemy) und die Zeile ist danach ohnehin weg -- ein späterer Zugriff auf
+    # `tenant.slug`/`tenant.name` für das Audit würde sonst fehlschlagen.
+    tenant_slug = tenant.slug
+    tenant_name = tenant.name
     # Harte Löschkaskade (Design §6): gebundene SSO-Konten zuerst räumen -- sonst macht sie
     # der SET-NULL-FK auf app_user.tenant_id zu instanzweit aussehenden Waisenkonten, BEVOR
     # `tenant_repo.delete` die Zeile entfernt (die sechs Datentabellen + auditor_tenant
     # kaskadieren dabei automatisch über ondelete=CASCADE).
+    #
+    # Whole-Branch-Review-Fix: das TENANT_DELETED-Audit wird ERST NACH erfolgreicher
+    # Kaskade geschrieben/committet, nicht davor -- vorher konnte ein `IntegrityError` in
+    # `delete_by_tenant` (offene `user_token.created_by`-Zeilen eines SSO-Admins, siehe
+    # dessen Docstring) die Route mit HTTP 500 abbrechen, WÄHREND der Audit-Eintrag "Mandant
+    # gelöscht" bereits committet war -- ein falscher Erfolgsnachweis für einen fehl-
+    # geschlagenen Löschvorgang.
     await user_repo.delete_by_tenant(session, tenant_id)
     await tenant_repo.delete(session, tenant_id)
+    await audit.record(
+        session,
+        action=audit.TENANT_DELETED,
+        actor=admin,
+        target=tenant_slug,
+        request=request,
+        detail={"name": tenant_name, "sso_user_count": sso_user_count},
+    )
+    await session.commit()
     return Message(message="Mandant gelöscht.")
