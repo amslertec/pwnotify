@@ -290,7 +290,9 @@
     "superadmin_required": "Nur mit Superadmin-Rechten möglich.",
     "cannot_demote_last_superadmin": "Der letzte Superadmin kann nicht herabgestuft werden.",
     "cannot_delete_last_superadmin": "Der letzte Superadmin kann nicht gelöscht werden.",
-    "superadmin_must_be_local": "Ein Superadmin muss ein lokales Konto sein."
+    "superadmin_must_be_local": "Ein Superadmin muss ein lokales Konto sein.",
+    "group_exists": "Diese Entra-Gruppen-ID wird bereits verwendet.",
+    "group_not_found": "Gruppe nicht gefunden."
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -1023,6 +1025,13 @@
     "deleteConfirmTitle": "Kunde löschen?",
     "deleteConfirmDescription": "„{{name}}“ wird endgültig gelöscht, inklusive aller zugehörigen Daten (Konten, Benachrichtigungen, Läufe, Ausnahmen, Einstellungen). {{count}} per SSO zugeordnete Benutzer verlieren die Zuordnung zu diesem Kunden. Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleteConfirmAction": "Endgültig löschen",
+    "tabs": {
+      "customers": "Kunden",
+      "assignments": "Benutzer & Zuweisungen",
+      "groups": "Gruppen",
+      "superadmins": "Superadmins",
+      "settings": "Einstellungen"
+    },
     "assignments": {
       "title": "Zuweisungen",
       "colName": "Name",
@@ -1034,7 +1043,56 @@
       "edit": "Zuweisungen bearbeiten",
       "editTitle": "Zuweisungen für „{{name}}“",
       "saved": "Zuweisungen gespeichert",
+      "noActiveTenants": "Keine aktiven Kunden vorhanden.",
+      "bulk": {
+        "selectAll": "Alle auswählen",
+        "select": "Auswählen",
+        "selectedCount": "{{n}} ausgewählt",
+        "clearSelection": "Auswahl aufheben",
+        "open": "Kunden zuweisen…",
+        "dialogTitle": "Kunden für {{count}} Konten",
+        "actionLabel": "Aktion",
+        "actionAdd": "Hinzufügen",
+        "actionRemove": "Entfernen",
+        "actionSet": "Ersetzen",
+        "customersLabel": "Kunden",
+        "submit": "Übernehmen",
+        "updatedToast": "{{count}} Konto(en) aktualisiert",
+        "skippedTitle": "Übersprungen ({{count}})",
+        "skippedHint": "Diese Konten wurden nicht geändert:",
+        "done": "Fertig"
+      }
+    },
+    "groups": {
+      "title": "Gruppen",
+      "helper": "Die Mitgliedschaft wird in Entra verwaltet — hier legst du fest, welche Kunden dieses Team sieht.",
+      "colName": "Name",
+      "colEntraGroupId": "Entra-Gruppen-ID",
+      "colCustomers": "Zugewiesene Kunden",
+      "empty": "Keine Gruppen vorhanden.",
+      "none": "Keine Zuweisungen",
+      "create": "Gruppe anlegen",
+      "createTitle": "Gruppe anlegen",
+      "created": "Gruppe erstellt",
+      "name": "Name",
+      "entraGroupId": "Entra-Gruppen-ID",
+      "entraGroupIdHint": "Freitext — die ID der Entra-Security-Gruppe.",
+      "edit": "Umbenennen",
+      "editTitle": "„{{name}}“ umbenennen",
+      "updated": "Gruppe aktualisiert",
+      "assignCustomers": "Kunden zuweisen",
+      "assignCustomersTitle": "Kunden für „{{name}}“",
+      "saved": "Zuweisung gespeichert",
+      "deleteConfirmTitle": "Gruppe löschen?",
+      "deleteConfirmDescription": "„{{name}}“ wird endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteConfirmAction": "Endgültig löschen",
+      "deleted": "Gruppe gelöscht",
       "noActiveTenants": "Keine aktiven Kunden vorhanden."
+    },
+    "settingsTab": {
+      "title": "Einstellungen",
+      "description": "Modus-Umschalter und Standard-Kunden-Name werden zentral in den Instanz-Einstellungen verwaltet.",
+      "link": "Zu den Instanz-Einstellungen"
     },
     "superadmins": {
       "title": "Superadmins",

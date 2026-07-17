@@ -94,6 +94,34 @@ export interface Tenant {
   sso_user_count: number
 }
 
+/** Team/Gruppe (Console+Groups+Invite-Phase, Task 3/7): Entra-Security-Gruppe des
+ *  Provider-Tenants, gemappt auf einen oder mehrere Kunden (`GET`/`POST`/`PUT`/`DELETE
+ *  /admin/groups*`). Mitgliedschaft wird in Entra gepflegt -- hier nur die Kunden-Zuordnung. */
+export interface AssignmentGroup {
+  id: number
+  name: string
+  entra_group_id: string
+  tenant_ids: number[]
+}
+
+/** Bulk-Zuweisung mehrerer Konten auf mehrere Kunden in einem Rutsch (`PUT
+ *  /admin/assignments/bulk`, Task 2/7). `action` bestimmt die Semantik: `add`/`remove`
+ *  ergänzen bzw. entfernen `tenant_ids` bei der bestehenden Zuweisung je Konto, `set`
+ *  ersetzt sie vollständig. */
+export interface BulkAssignment {
+  user_ids: number[]
+  tenant_ids: number[]
+  action: 'add' | 'remove' | 'set'
+}
+
+/** Ergebnis einer Bulk-Zuweisung: `updated` sind erfolgreich geänderte Konto-IDs,
+ *  `skipped` listet übersprungene Konten mit Grund (`reason` ∈ `customer_account_not_grantable`
+ *  | `cannot_assign_superadmin` | `user_not_found`, s. Backend `bulk_assign`). */
+export interface BulkAssignmentResult {
+  updated: number[]
+  skipped: { user_id: number; reason: string }[]
+}
+
 export interface Session {
   id: number
   user_agent: string | null

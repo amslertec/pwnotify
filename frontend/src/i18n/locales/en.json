@@ -290,7 +290,9 @@
     "superadmin_required": "Requires superadmin rights.",
     "cannot_demote_last_superadmin": "The last superadmin cannot be demoted.",
     "cannot_delete_last_superadmin": "The last superadmin cannot be deleted.",
-    "superadmin_must_be_local": "A superadmin must be a local account."
+    "superadmin_must_be_local": "A superadmin must be a local account.",
+    "group_exists": "This Entra group ID is already in use.",
+    "group_not_found": "Group not found."
   },
   "access": {
     "title": "User management",
@@ -1023,6 +1025,13 @@
     "deleteConfirmTitle": "Delete customer?",
     "deleteConfirmDescription": "\"{{name}}\" will be permanently deleted, including all associated data (accounts, notifications, runs, exclusions, settings). {{count}} SSO-linked users will lose their association with this customer. This action cannot be undone.",
     "deleteConfirmAction": "Delete permanently",
+    "tabs": {
+      "customers": "Customers",
+      "assignments": "Users & assignments",
+      "groups": "Groups",
+      "superadmins": "Superadmins",
+      "settings": "Settings"
+    },
     "assignments": {
       "title": "Assignments",
       "colName": "Name",
@@ -1034,7 +1043,56 @@
       "edit": "Edit assignments",
       "editTitle": "Assignments for \"{{name}}\"",
       "saved": "Assignments saved",
+      "noActiveTenants": "No active customers available.",
+      "bulk": {
+        "selectAll": "Select all",
+        "select": "Select",
+        "selectedCount": "{{n}} selected",
+        "clearSelection": "Clear selection",
+        "open": "Assign customers…",
+        "dialogTitle": "Customers for {{count}} accounts",
+        "actionLabel": "Action",
+        "actionAdd": "Add",
+        "actionRemove": "Remove",
+        "actionSet": "Replace",
+        "customersLabel": "Customers",
+        "submit": "Apply",
+        "updatedToast": "{{count}} account(s) updated",
+        "skippedTitle": "Skipped ({{count}})",
+        "skippedHint": "These accounts were not changed:",
+        "done": "Done"
+      }
+    },
+    "groups": {
+      "title": "Groups",
+      "helper": "Membership is managed in Entra — assign which customers this team sees here.",
+      "colName": "Name",
+      "colEntraGroupId": "Entra group ID",
+      "colCustomers": "Assigned customers",
+      "empty": "No groups yet.",
+      "none": "No assignments",
+      "create": "Create group",
+      "createTitle": "Create group",
+      "created": "Group created",
+      "name": "Name",
+      "entraGroupId": "Entra group ID",
+      "entraGroupIdHint": "Free text — the ID of the Entra security group.",
+      "edit": "Rename",
+      "editTitle": "Rename \"{{name}}\"",
+      "updated": "Group updated",
+      "assignCustomers": "Assign customers",
+      "assignCustomersTitle": "Customers for \"{{name}}\"",
+      "saved": "Assignment saved",
+      "deleteConfirmTitle": "Delete group?",
+      "deleteConfirmDescription": "\"{{name}}\" will be permanently deleted. This action cannot be undone.",
+      "deleteConfirmAction": "Delete permanently",
+      "deleted": "Group deleted",
       "noActiveTenants": "No active customers available."
+    },
+    "settingsTab": {
+      "title": "Settings",
+      "description": "The mode switch and default customer name are managed centrally in the instance settings.",
+      "link": "Go to instance settings"
     },
     "superadmins": {
       "title": "Superadmins",
