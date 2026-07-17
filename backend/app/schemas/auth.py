@@ -39,6 +39,10 @@ class UserOut(BaseModel):
     # braucht den Wert, um bei echter Untätigkeit selbst abzumelden — ein offener Tab
     # pollt sonst weiter und hielte die Sitzung am Leben.
     idle_timeout_min: int = 0
+    # E-Mail-Adresse (Console+Groups+Invite Task 5) -- bei lokalen Konten selbst pflegbar
+    # (`POST /auth/profile`), bei SSO-Konten schreibgeschützt (kommt aus Entra). Der
+    # Reset-Trigger (§7c) verschickt genau an diese Adresse.
+    email: str | None = None
     # Aktiver Mandant (aus dem `active_tenant`-Claim/der Session aufgelöst) -- None, wenn
     # dem Konto (noch) keiner zugeordnet ist. Und die Mandanten, zu denen umgeschaltet
     # werden darf (Phase 4a Task 5) -- <=1 Eintrag heisst fürs Frontend: Umschalter
@@ -98,8 +102,16 @@ class AdminUserOut(BaseModel):
 
 
 class AdminUserCreate(BaseModel):
-    username: str = Field(min_length=3, max_length=150)
-    password: str = Field(min_length=10, max_length=1024)
+    """`password` PRÄSENT -> bestehender Direktanlage-Pfad (Benutzername Pflicht, wie
+    bisher). `password` ABWESEND -> Einladungsmodus (Task 5, §7b): `email` wird Pflicht,
+    `username` wird IGNORIERT (die Route vergibt einen Platzhalter-Benutzernamen, den erst
+    die Einladungsannahme durch den echten, eindeutigkeitsgeprüften Namen ersetzt) --
+    deshalb hier beide optional, die Route selbst erzwingt die je nach Modus passende
+    Pflichtangabe."""
+
+    username: str | None = Field(default=None, min_length=3, max_length=150)
+    password: str | None = Field(default=None, min_length=10, max_length=1024)
+    email: str | None = Field(default=None, max_length=320)
     display_name: str | None = Field(default=None, max_length=320)
     role: str = Field(default="admin", pattern="^(admin|auditor)$")
 
@@ -144,3 +156,41 @@ class PasswordChangeRequest(BaseModel):
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=320)
+    # Nur lokale Konten dürfen ihre eigene E-Mail pflegen (Task 5, §7d) -- ein SSO-Konto
+    # ignoriert dieses Feld (Route-Guard), die Adresse kommt dort aus Entra.
+    email: str | None = Field(default=None, max_length=320)
+
+
+# ---- Öffentliche Einmal-Token-Endpunkte (Console+Groups+Invite Task 5) --------------------- #
+# Unauthentifiziert (`api/routes/public_tokens.py`) -- Sicherheit kommt ausschliesslich aus
+# dem opaken, gehashten Token (`services/user_token.py`), nicht aus einer Session.
+
+
+class TokenInfo(BaseModel):
+    """Antwort auf `GET /public/token/info` -- bei JEDEM ungültigen Zustand (nie
+    existiert, falscher `purpose`, abgelaufen, bereits verbraucht) IMMER
+    `valid=False, email=None, purpose=None`. Niemals verraten, ob ein Token/Konto je
+    existiert hat (keine Enumeration)."""
+
+    valid: bool = False
+    email: str | None = None
+    purpose: str | None = None
+
+
+class TokenAccept(BaseModel):
+    """Body für `POST /public/token/accept` -- Einladungsannahme. Kein `email`-Feld: die
+    Zieladresse ist bereits über das Token an das Konto gebunden (`app_user.email`)."""
+
+    token: str = Field(min_length=1, max_length=512)
+    first_name: str = Field(min_length=1, max_length=150)
+    last_name: str = Field(min_length=1, max_length=150)
+    username: str = Field(min_length=3, max_length=150)
+    password: str = Field(min_length=10, max_length=1024)
+
+
+class TokenReset(BaseModel):
+    """Body für `POST /public/token/reset` -- bewusst KEIN `username` (§7c: das Konto ist
+    über das Token bereits fixiert, ein Reset ändert nur das Passwort)."""
+
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=10, max_length=1024)

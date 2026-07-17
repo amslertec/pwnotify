@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import hmac
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -36,6 +37,27 @@ def verify_password(password: str, hashed: str) -> bool:
         return _ph.verify(hashed, password)
     except VerifyMismatchError, InvalidHashError:
         return False
+
+
+_POLICY_UPPER = re.compile(r"[A-Z]")
+_POLICY_LOWER = re.compile(r"[a-z]")
+_POLICY_DIGIT = re.compile(r"[0-9]")
+_POLICY_SPECIAL = re.compile(r"[^A-Za-z0-9]")
+
+
+def password_meets_policy(password: str) -> bool:
+    """Serverseitige Passwort-Policy für Einladung/Reset (Task 5, §7b/§7c) -- die einzige
+    Autorität. Die Frontend-Checkliste (`frontend/src/lib/password.ts`) spiegelt exakt
+    dieselben Regeln, ist aber NUR UX-Vorschau; ein Client, der sie umgeht, scheitert
+    trotzdem hier: mind. 10 Zeichen, je ein Gross-/Kleinbuchstabe, eine Ziffer, ein
+    Sonderzeichen (alles ausser [A-Za-z0-9])."""
+    return (
+        len(password) >= 10
+        and bool(_POLICY_UPPER.search(password))
+        and bool(_POLICY_LOWER.search(password))
+        and bool(_POLICY_DIGIT.search(password))
+        and bool(_POLICY_SPECIAL.search(password))
+    )
 
 
 def needs_rehash(hashed: str) -> bool:

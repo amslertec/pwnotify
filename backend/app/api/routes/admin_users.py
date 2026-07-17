@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import secrets
+import uuid
+
 from fastapi import APIRouter, Request
 
 from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...core.security import hash_password
 from ...db.tenant_context import tenant_scoped_session
-from ...repositories import tenant_repo, user_repo
+from ...models._base import utcnow
+from ...repositories import tenant_repo, user_repo, user_token_repo
 from ...schemas.auth import (
     AdminUserCreate,
     AdminUserOut,
@@ -16,7 +20,7 @@ from ...schemas.auth import (
     SuperadminToggle,
 )
 from ...schemas.common import Message
-from ...services import audit
+from ...services import audit, user_token
 from ...services.settings_service import SettingsService
 from ..deps import (
     ActiveTenantClaim,
@@ -135,10 +139,39 @@ async def create_local(
       Zuweisungs-API (Task 4/Cross-Grant-Lock Task 2) auf beliebige Kunden cross-grantbar.
       (Superadmin-Anlage eines *Superadmin*-Kontos bleibt unverändert in `create_superadmin`
       -- instanzweit, keine Heimat nötig.)
+
+    **Einladungsmodus (Task 5, §7b):** `body.password` ABWESEND schaltet auf Einladung um --
+    `body.username` wird dabei bewusst NICHT vom Aufrufer übernommen, sondern die Route
+    vergibt einen garantiert eindeutigen, klar nicht einlogg-baren Platzhalter
+    (`pending:<uuid4>`) + einen unbrauchbaren Passwort-Hash (`hash_password(secrets.
+    token_hex(32))`, kein bekanntes Klartext-Passwort existiert dafür) + `is_active=False`.
+    Das vermeidet Schema-Churn (kein Nullable-`username`); der Accept-Endpunkt
+    (`api/routes/public_tokens.py`) überschreibt den Platzhalter beim Einlösen mit dem
+    echten, dort erst eindeutigkeitsgeprüften Namen. Heim-Tenant + Zuweisung laufen exakt
+    wie oben (unverändert nach Aufrufer-Rolle) -- der Einladungsmodus ändert NUR, WOHER die
+    Konto-Identität kommt, nie die Scoping-Regeln.
     """
-    existing = await user_repo.get_by_username(session, body.username)
-    if existing is not None:
-        raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+    raw_password = body.password
+    is_invite = raw_password is None
+
+    username: str
+    password_hash: str
+    if raw_password is None:
+        if not body.email:
+            raise ForbiddenError(
+                "Für eine Einladung ist eine E-Mail-Adresse erforderlich.",
+                code="email_required",
+            )
+        username = f"pending:{uuid.uuid4().hex}"
+        password_hash = hash_password(secrets.token_hex(32))  # nie einlösbar
+    else:
+        if not body.username:
+            raise ForbiddenError("Benutzername erforderlich.", code="username_required")
+        existing = await user_repo.get_by_username(session, body.username)
+        if existing is not None:
+            raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+        username = body.username
+        password_hash = hash_password(raw_password)
 
     is_superadmin_caller = not admin.is_sso and admin.role == "superadmin"
     grant_tenant_id: int | None = None
@@ -157,14 +190,24 @@ async def create_local(
 
     user = await user_repo.create(
         session,
-        username=body.username,
-        password_hash=hash_password(body.password),
+        username=username,
+        password_hash=password_hash,
         display_name=body.display_name,
         role=body.role,
         is_sso=False,
         tenant_id=home_tenant_id,
     )
     assert user.id is not None  # gerade committet, hat also eine id
+
+    if is_invite:
+        # Einladung: pending -- Konto existiert, ist aber bis zur Annahme (`public_tokens.
+        # accept_token`) nicht nutzbar. E-Mail wird hier gesetzt (Reset-Trigger-Anker §7c),
+        # nicht am `create()`-Aufruf oben (der bleibt unverändert für den Direktpfad).
+        user.email = body.email
+        user.is_active = False
+        user.updated_at = utcnow()
+        await session.commit()
+        await session.refresh(user)
 
     if grant_tenant_id is not None:
         kind = "admin" if body.role == "admin" else "auditor"
@@ -173,17 +216,81 @@ async def create_local(
     detail: dict[str, object] = {"role": body.role, "sso": False, "home_tenant_id": home_tenant_id}
     if grant_tenant_id is not None:
         detail["granted_tenant_id"] = grant_tenant_id
+    if is_invite:
+        detail["email"] = body.email
 
     await audit.record(
         session,
-        action=audit.USER_CREATED,
+        action=audit.USER_INVITED if is_invite else audit.USER_CREATED,
         actor=admin,
-        target=body.username,
+        target=username,
         request=request,
         detail=detail,
     )
     await session.commit()
+
+    if is_invite:
+        assert admin.id is not None
+        await user_token.issue_invite(session, user=user, created_by=admin.id)
+
     return AdminUserOut.model_validate(user, from_attributes=True)
+
+
+@router.post("/{user_id}/reset", response_model=Message)
+async def send_reset(
+    request: Request, admin: AdminUser, user_id: int, session: SessionDep
+) -> Message:
+    """Löst einen Passwort-Reset-Link für ein BESTEHENDES lokales Konto aus (Task 5, §7c).
+
+    **Autorisierung:** dieselbe Teilmengen-Regel wie `set_role`/`delete_user` (s. dort für
+    die ausführliche Begründung) -- ein Superadmin-Aufrufer überspringt sie (voller
+    Zugriff); jeder andere Aufrufer braucht die GESAMTE Tenant-Zugehörigkeit des Ziels
+    innerhalb seiner eigenen verwalteten Tenants (Teilmengen-, nicht Schnittmengen-Regel).
+    Ein Ziel ganz ohne Tenant-Zugehörigkeit ist NUR einem Superadmin zugänglich.
+
+    **Business-Guards danach** (Reihenfolge bewusst: erst autorisieren, dann validieren):
+    ein SSO-Ziel lehnt ab (`sso_no_reset` -- dessen Passwort lebt in Entra, ein lokaler
+    Reset-Link wäre wirkungslos/irreführend); ein Ziel ohne hinterlegte E-Mail lehnt
+    ebenfalls ab (`email_required` -- der Admin muss sie zuerst im Bearbeiten-Dialog
+    setzen, es gibt keine Adresse, an die der Link gehen könnte).
+
+    Mint + Versand laufen über `services.user_token.issue_reset` (entwertet dabei
+    idempotent ältere, noch gültige Reset-Tokens desselben Kontos, s. dort)."""
+    target = await user_repo.get(session, user_id)
+    if target is None:
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
+
+    if admin.is_sso or admin.role != "superadmin":
+        target_scope = await tenant_repo.allowed_tenant_ids(session, target)
+        caller_admin_tenants = await tenant_repo.admin_tenants(session, admin)
+        if not target_scope or not target_scope <= caller_admin_tenants:
+            raise ForbiddenError(
+                "Konto ausserhalb des eigenen Kundenbereichs.", code="user_not_in_scope"
+            )
+
+    if target.is_sso:
+        raise ForbiddenError(
+            "SSO-Konten setzen ihr Passwort über Microsoft Entra zurück.",
+            code="sso_no_reset",
+        )
+    if target.email is None:
+        raise ForbiddenError(
+            "Für dieses Konto ist keine E-Mail-Adresse hinterlegt.", code="email_required"
+        )
+
+    assert admin.id is not None
+    await user_token.issue_reset(session, user=target, created_by=admin.id)
+
+    await audit.record(
+        session,
+        action=audit.PASSWORD_RESET_SENT,
+        actor=admin,
+        target=target.username,
+        request=request,
+        detail={"target_user_id": user_id},
+    )
+    await session.commit()
+    return Message(message="Link zum Zurücksetzen des Passworts wurde versendet.")
 
 
 @router.post("/{user_id}/role", response_model=AdminUserOut)
@@ -428,6 +535,14 @@ async def delete_user(
         detail={"role": target.role, "sso": target.is_sso},
     )
     await session.commit()
+    # Carry-forward-Fix aus Task 1: `user_token.created_by` hat KEIN `ON DELETE` (ein
+    # gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN Nutzers nicht
+    # mitreissen) -- ohne diesen Schritt VOR dem eigentlichen Löschen scheitert es mit
+    # einem `IntegrityError`, sobald `target` noch offene, selbst ausgestellte Tokens hat
+    # (z. B. eine von ihm verschickte Einladung/ein Reset-Link). Mirror der Sessions-
+    # Löschung, die `user_repo.delete` bereits intern für die Tokens des GELÖSCHTEN Kontos
+    # selbst übernimmt (kaskadiert über `app_user_id`, dafür nicht nötig).
+    await user_token_repo.delete_created_by(session, user_id)
     await user_repo.delete(session, user_id)
     return Message(message="Benutzer gelöscht.")
 

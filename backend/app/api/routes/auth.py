@@ -178,6 +178,7 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
         has_avatar=exists,
         avatar_version=int(path.stat().st_mtime) if exists and path else 0,
         idle_timeout_min=_settings.idle_timeout_min,
+        email=user.email,
         active_tenant=active_tenant,
         switchable_tenants=switchable,
         multi_tenant_mode=await instance_settings.read_mode(session),
@@ -581,7 +582,14 @@ async def switch_tenant(
 async def update_profile(
     body: ProfileUpdate, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
 ) -> UserOut:
+    """Task 5, §7d: `email` ist NUR für lokale Konten editierbar -- ein SSO-Konto bezieht
+    seine Adresse aus Entra, ein hier eingetragener Wert würde sie nur verdecken, ohne am
+    tatsächlichen Entra-Konto etwas zu ändern. Das Feld wird für ein SSO-Konto deshalb
+    stillschweigend IGNORIERT (kein Fehler -- das Frontend blendet es dort ohnehin aus).
+    Diese Adresse ist zugleich der Anker, an den der Admin-Reset-Trigger (§7c) sendet."""
     user.display_name = (body.display_name or "").strip() or None
+    if not user.is_sso:
+        user.email = (body.email or "").strip() or None
     user.updated_at = utcnow()
     await session.commit()
     await session.refresh(user)

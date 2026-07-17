@@ -49,6 +49,10 @@ GROUP_CREATED = "group.created"  # Assignment-Group angelegt (Console+Groups+Inv
 GROUP_UPDATED = "group.updated"  # Assignment-Group umbenannt
 GROUP_DELETED = "group.deleted"
 GROUP_TENANTS_SET = "group.tenants_set"  # Kunden-Mitgliedschaft einer Gruppe reconciled
+USER_INVITED = "user.invited"  # Einladung verschickt (Console+Groups+Invite Task 5)
+INVITATION_ACCEPTED = "user.invitation_accepted"  # öffentlicher Accept-Endpunkt
+PASSWORD_RESET_SENT = "auth.password_reset_sent"  # Admin hat einen Reset-Link ausgelöst
+PASSWORD_RESET_DONE = "auth.password_reset_done"  # öffentlicher Reset-Endpunkt
 
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.

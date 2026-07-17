@@ -12,10 +12,22 @@ from typing import Any
 from .default_templates import (
     DEFAULT_HTML_DE,
     DEFAULT_HTML_EN,
+    DEFAULT_HTML_INVITE_DE,
+    DEFAULT_HTML_INVITE_EN,
+    DEFAULT_HTML_RESET_DE,
+    DEFAULT_HTML_RESET_EN,
     DEFAULT_SUBJECT_DE,
     DEFAULT_SUBJECT_EN,
+    DEFAULT_SUBJECT_INVITE_DE,
+    DEFAULT_SUBJECT_INVITE_EN,
+    DEFAULT_SUBJECT_RESET_DE,
+    DEFAULT_SUBJECT_RESET_EN,
     DEFAULT_TEXT_DE,
     DEFAULT_TEXT_EN,
+    DEFAULT_TEXT_INVITE_DE,
+    DEFAULT_TEXT_INVITE_EN,
+    DEFAULT_TEXT_RESET_DE,
+    DEFAULT_TEXT_RESET_EN,
 )
 
 
@@ -133,6 +145,19 @@ SETTINGS: dict[str, SettingSpec] = {
     "template.html_en": SettingSpec(DEFAULT_HTML_EN),
     "template.text_de": SettingSpec(DEFAULT_TEXT_DE),
     "template.text_en": SettingSpec(DEFAULT_TEXT_EN),
+    # ---- Template: Einladung + Passwort-Reset (Task 5) ----
+    "template.invite_subject_de": SettingSpec(DEFAULT_SUBJECT_INVITE_DE),
+    "template.invite_subject_en": SettingSpec(DEFAULT_SUBJECT_INVITE_EN),
+    "template.invite_html_de": SettingSpec(DEFAULT_HTML_INVITE_DE),
+    "template.invite_html_en": SettingSpec(DEFAULT_HTML_INVITE_EN),
+    "template.invite_text_de": SettingSpec(DEFAULT_TEXT_INVITE_DE),
+    "template.invite_text_en": SettingSpec(DEFAULT_TEXT_INVITE_EN),
+    "template.reset_subject_de": SettingSpec(DEFAULT_SUBJECT_RESET_DE),
+    "template.reset_subject_en": SettingSpec(DEFAULT_SUBJECT_RESET_EN),
+    "template.reset_html_de": SettingSpec(DEFAULT_HTML_RESET_DE),
+    "template.reset_html_en": SettingSpec(DEFAULT_HTML_RESET_EN),
+    "template.reset_text_de": SettingSpec(DEFAULT_TEXT_RESET_DE),
+    "template.reset_text_en": SettingSpec(DEFAULT_TEXT_RESET_EN),
 }
 
 SECRET_KEYS = {k for k, spec in SETTINGS.items() if spec.secret}
