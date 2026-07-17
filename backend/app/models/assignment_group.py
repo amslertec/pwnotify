@@ -27,6 +27,9 @@ class AssignmentGroup(SQLModel, table=True):
     created_at: dt.datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
+    last_synced_at: dt.datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
 
 class AssignmentGroupTenant(SQLModel, table=True):

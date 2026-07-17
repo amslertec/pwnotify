@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .assignment_group import AssignmentGroup, AssignmentGroupTenant
+from .assignment_group_member import AssignmentGroupMember
 from .audit import AuditLog
 from .entra import EntraUser, Exclusion
 from .notification import NotificationLog
@@ -15,6 +16,7 @@ from .user import AppUser, UserSession
 __all__ = [
     "AppUser",
     "AssignmentGroup",
+    "AssignmentGroupMember",
     "AssignmentGroupTenant",
     "AuditLog",
     "AuditorTenant",
