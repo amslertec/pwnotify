@@ -183,13 +183,15 @@ async def get_audit_session(
     Owner-Session, könnte ein SSO-Admin, gebunden an Tenant B, das GESAMTE Protokoll aller
     Mandanten lesen (Cross-Tenant-Offenlegung).
 
-    Design §2: der LOKALE Admin (`not is_sso`, `role == "admin"`) darf ALLE Mandanten sehen
-    -- dafür bleibt es bei der Owner-Session (kein RLS-Rollenwechsel). Jedes andere,
-    mandantengebundene Konto (jedes SSO-Konto, gleich welche Rolle, ODER ein lokaler
-    Auditor) sieht NUR sein autorisiertes aktives Mandanten-Protokoll -- dieselbe
-    Auflösung/Autorisierung wie bei Kundendaten (`_resolve_authorized_tenant`), RLS-scoped.
+    Access-Modell/Superadmin-Design §2 (verschärft ggü. dem alten Drei-Wege-Modell): NUR der
+    lokale SUPERADMIN (`not is_sso`, `role == "superadmin"`) ist instanzweit -- dafür bleibt
+    es bei der Owner-Session (kein RLS-Rollenwechsel). Jedes andere Konto, EINSCHLIESSLICH
+    des lokalen Admins (der jetzt auf seine `admin_tenant`-Zuweisungen beschränkt ist), jedes
+    SSO-Konto und jeder lokale Auditor sieht NUR sein autorisiertes aktives Mandanten-
+    Protokoll -- dieselbe Auflösung/Autorisierung wie bei Kundendaten
+    (`_resolve_authorized_tenant`), RLS-scoped.
     """
-    if not user.is_sso and user.role == "admin":
+    if not user.is_sso and user.role == "superadmin":
         yield session
         return
 
@@ -238,8 +240,11 @@ EnrollingUser = Annotated[AppUser, Depends(get_enrolling_user)]
 
 
 async def require_admin(user: CurrentUser) -> AppUser:
-    """Schreibzugriff nur für Admins. Auditoren (read-only) -> 403."""
-    if user.role != "admin":
+    """Schreibzugriff nur für Admins. Auditoren (read-only) -> 403.
+
+    Der Superadmin MUSS jedes Admin-Gate passieren -- er ist die Rolle mit den WEITESTEN
+    Rechten, nicht mit weniger (`role != "admin"` hätte ihn hier fälschlich ausgesperrt)."""
+    if user.role not in ("admin", "superadmin"):
         raise ForbiddenError("Nur mit Administratorrechten möglich.", code="admin_required")
     return user
 
@@ -248,13 +253,14 @@ AdminUser = Annotated[AppUser, Depends(require_admin)]
 
 
 async def require_local_admin(user: CurrentUser) -> AppUser:
-    """Instanzweite Verwaltung (Kunden-CRUD) nur für den LOKALEN Admin.
+    """Lokale (nicht-SSO) Administration -- Admin ODER Superadmin, aber kein SSO-Konto.
 
-    Mandantengebundene Konten (jedes SSO-Konto, auch role==admin, oder ein lokaler
-    Auditor) sind auf ihre Kunden beschränkt und dürfen keine Kunden anlegen/ändern/
-    löschen -- dieselbe Grenze wie in `get_audit_session`.
+    Mandantengebundene SSO-Konten (auch role==admin) und lokale Auditoren dürfen hierüber
+    nicht rein -- dieselbe Grenze wie in `get_audit_session`. Tenant-CRUD selbst ist NICHT
+    mehr über dieses Gate geschützt (siehe `require_superadmin`/`admin_tenants.py`), dieses
+    Gate bleibt für andere lokale-Admin-Routen bestehen.
     """
-    if user.is_sso or user.role != "admin":
+    if user.is_sso or user.role not in ("admin", "superadmin"):
         raise ForbiddenError(
             "Nur mit lokalen Administratorrechten möglich.", code="local_admin_required"
         )
@@ -262,6 +268,23 @@ async def require_local_admin(user: CurrentUser) -> AppUser:
 
 
 LocalAdminUser = Annotated[AppUser, Depends(require_local_admin)]
+
+
+async def require_superadmin(user: CurrentUser) -> AppUser:
+    """Instanzweite Verwaltung (Kunden-CRUD, alle Zuweisungen, Superadmin-Verwaltung,
+    Multi-Tenant-Mode-Schalter) NUR für den lokalen Superadmin (Design §4/§6).
+
+    Jedes andere Konto -- inklusive eines lokalen Admins, der jetzt auf seine
+    `admin_tenant`-Zuweisungen beschränkt ist -- darf keine Kunden anlegen/ändern/löschen
+    oder Zuweisungen setzen."""
+    if user.is_sso or user.role != "superadmin":
+        raise ForbiddenError(
+            "Nur mit Superadministratorrechten möglich.", code="superadmin_required"
+        )
+    return user
+
+
+SuperadminUser = Annotated[AppUser, Depends(require_superadmin)]
 
 
 def _cookie_kwargs() -> dict[str, object]:

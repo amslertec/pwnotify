@@ -8,11 +8,16 @@ Commit-über-eine-zweite-Connection-Setup (wie in test_isolation_attack.py) ist 
 nötig; die Savepoint-Rücksetzung aus conftest.py räumt jeden Testlauf rückstandsfrei auf.
 Der Default-Tenant (`slug='default'`) existiert bereits aus der Migration und wird nur
 gelesen, nie angelegt.
-"""
+
+Access-Modell/Superadmin-Phase, Task 2: der lokale Admin ist NICHT mehr instanzweit --
+der Admin-Abschnitt unten (`_seed`, "Lokaler Admin") wurde entsprechend auf das
+`admin_tenant`-Grant-Modell umgestellt. Der Superadmin (instanzweit, wie der alte lokale
+Admin es war) sowie das table-driven Vier-Wege-Modell (inkl. write-vs-read und SSO mit
+Zusatz-Grant) leben in `test_tenant_repo_access_model.py`."""
 
 from __future__ import annotations
 
-from app.models.tenant import AuditorTenant, Tenant
+from app.models.tenant import AdminTenant, AuditorTenant, Tenant
 from app.models.user import AppUser
 from app.repositories import tenant_repo
 from sqlalchemy import select
@@ -48,17 +53,20 @@ async def _mk_user(
 
 async def _seed(session: AsyncSession) -> dict[str, object]:
     """Default-Tenant (aus Migration) + zwei aktive Tenants A/B + ein inaktiver Tenant C +
-    vier Konten: lokaler Admin, lokaler Auditor (nur A zugewiesen), SSO-Konto (an B gebunden),
-    lokaler Auditor ohne jede Zuweisung."""
+    vier Konten: lokaler Admin (NUR Tenant A per `admin_tenant` zugewiesen -- Access-Modell-
+    Task-2-Verhalten, nicht mehr instanzweit), lokaler Auditor (nur A zugewiesen), SSO-Konto
+    (an B gebunden), lokaler Auditor ohne jede Zuweisung."""
     default = (await session.execute(select(Tenant).where(Tenant.slug == "default"))).scalar_one()
     a = await _mk_tenant(session, slug="tenant-a")
     b = await _mk_tenant(session, slug="tenant-b")
     c = await _mk_tenant(session, slug="tenant-c", is_active=False)
 
     admin = await _mk_user(session, username="admin@local")
+    assert admin.id is not None
+    assert a.id is not None
+    session.add(AdminTenant(user_id=admin.id, tenant_id=a.id))
     auditor_a = await _mk_user(session, username="auditor-a@local", role="auditor")
     assert auditor_a.id is not None
-    assert a.id is not None
     session.add(AuditorTenant(user_id=auditor_a.id, tenant_id=a.id))
     await session.flush()
     sso_b = await _mk_user(session, username="sso@b", role="admin", is_sso=True, tenant_id=b.id)
@@ -121,27 +129,36 @@ async def test_get_by_entra_tid_only_matches_active(session: AsyncSession) -> No
     assert await tenant_repo.get_by_entra_tid(session, "unknown-tid") is None
 
 
-# ---- Lokaler Admin: sieht ALLE aktiven Tenants ----------------------------------------------- #
+# ---- Lokaler Admin: NUR seine `admin_tenant`-Zuweisung (Access-Modell-Task-2) ----------------- #
+#
+# Verhaltensänderung ggü. dem alten Drei-Wege-Modell: der lokale Admin ist NICHT mehr
+# instanzweit ("alle aktiven Tenants"/`None`) -- er ist jetzt exakt wie der lokale Auditor
+# auf seine Zuweisungen (hier: nur Tenant A) beschränkt. Das Superadmin-Pendant zum alten
+# "sieht alles" lebt in `test_tenant_repo_access_model.py`.
 
 
-async def test_local_admin_allowed_tenant_ids_is_none(session: AsyncSession) -> None:
+async def test_local_admin_allowed_tenant_ids_is_its_grant_set(session: AsyncSession) -> None:
     seed = await _seed(session)
-    assert await tenant_repo.allowed_tenant_ids(session, seed["admin"]) is None  # type: ignore[arg-type]
+    ids = await tenant_repo.allowed_tenant_ids(session, seed["admin"])  # type: ignore[arg-type]
+    assert ids == {seed["a"].id}, "Lokaler Admin ist NICHT mehr instanzweit (None)"  # type: ignore
 
 
-async def test_local_admin_is_allowed_active_not_inactive(session: AsyncSession) -> None:
+async def test_local_admin_is_allowed_only_granted_tenant(session: AsyncSession) -> None:
     seed = await _seed(session)
     admin = seed["admin"]
     assert await tenant_repo.is_allowed(session, admin, seed["a"].id) is True  # type: ignore
-    assert await tenant_repo.is_allowed(session, admin, seed["b"].id) is True  # type: ignore
-    assert await tenant_repo.is_allowed(session, admin, seed["default"].id) is True  # type: ignore
+    assert await tenant_repo.is_allowed(session, admin, seed["b"].id) is False  # type: ignore
+    assert await tenant_repo.is_allowed(session, admin, seed["default"].id) is False  # type: ignore
     assert await tenant_repo.is_allowed(session, admin, seed["c"].id) is False  # type: ignore
+    # Schreibzugriff folgt derselben Zuweisung (write=True erfordert admin_tenants(user)).
+    assert await tenant_repo.is_allowed(session, admin, seed["a"].id, write=True) is True  # type: ignore
+    assert await tenant_repo.is_allowed(session, admin, seed["b"].id, write=True) is False  # type: ignore
 
 
-async def test_local_admin_resolve_initial_tenant_is_default(session: AsyncSession) -> None:
+async def test_local_admin_resolve_initial_tenant_is_first_granted(session: AsyncSession) -> None:
     seed = await _seed(session)
     tid = await tenant_repo.resolve_initial_tenant(session, seed["admin"])  # type: ignore[arg-type]
-    assert tid == seed["default"].id  # type: ignore[attr-defined]
+    assert tid == seed["a"].id, "Kein stiller Fallback auf den Default-Tenant mehr"  # type: ignore
 
 
 # ---- Lokaler Auditor: nur zugewiesene + aktive Tenants --------------------------------------- #

@@ -26,9 +26,23 @@ async def count(session: AsyncSession) -> int:
 
 
 async def count_admins(session: AsyncSession) -> int:
-    """Aktive Administratoren (lokal + SSO). Basis für den Schutz vor Aussperrung."""
+    """Aktive Administratoren (lokal + SSO). Basis für den Schutz vor Aussperrung.
+
+    Zählt bewusst NICHT die Rolle `superadmin` mit -- der Superadmin wird über
+    `count_superadmins` separat vor Aussperrung geschützt (Task 4: letzter Superadmin darf
+    weder gelöscht noch herabgestuft werden)."""
     stmt = select(func.count(AppUser.id)).where(
         AppUser.role == "admin", AppUser.is_active.is_(True)
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def count_superadmins(session: AsyncSession) -> int:
+    """Aktive Superadmins (immer lokal, `is_sso=False`). Grundlage für den
+    Last-Superadmin-Schutz (Task 4) -- analog zu `count_admins`, aber für die
+    instanzweite Rolle."""
+    stmt = select(func.count(AppUser.id)).where(
+        AppUser.role == "superadmin", AppUser.is_active.is_(True)
     )
     return int((await session.execute(stmt)).scalar_one())
 

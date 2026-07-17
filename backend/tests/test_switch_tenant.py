@@ -21,7 +21,7 @@ from app.core.config import get_settings
 from app.core.errors import AuthError, ForbiddenError
 from app.core.security import decode_token, hash_token, issue_token_pair
 from app.models._base import utcnow
-from app.models.tenant import AuditorTenant, Tenant
+from app.models.tenant import AdminTenant, AuditorTenant, Tenant
 from app.models.user import UserSession
 from app.repositories import user_repo
 from app.schemas.auth import SwitchTenantRequest
@@ -57,9 +57,28 @@ async def _make_tenant(session: AsyncSession, *, name: str, slug: str, active: b
     return t.id
 
 
-async def _make_local_admin(session: AsyncSession, *, username: str) -> int:
+async def _make_local_admin(
+    session: AsyncSession, *, username: str, admin_tenant_ids: list[int] | None = None
+) -> int:
+    """Lokaler (Nicht-Super-)Admin. Access-Modell-Design §2: seit der Verschärfung ist er
+    NICHT mehr instanzweit -- ohne `admin_tenant_ids` hat er ZERO zugreifbare Tenants
+    (`is_allowed` denyt jeden Tenant). Tests, die den alten "Admin sieht/darf alles"-Pfad
+    treiben wollen, müssen die betroffenen Tenants hier explizit zuweisen; ein `superadmin`
+    (siehe `_make_superadmin`) ist instanzweit und braucht keine Zuweisung."""
     user = await user_repo.create(
         session, username=username, password_hash="x", role="admin", is_sso=False
+    )
+    assert user.id is not None
+    for tid in admin_tenant_ids or []:
+        session.add(AdminTenant(user_id=user.id, tenant_id=tid))
+    if admin_tenant_ids:
+        await session.commit()
+    return user.id
+
+
+async def _make_superadmin(session: AsyncSession, *, username: str) -> int:
+    user = await user_repo.create(
+        session, username=username, password_hash="x", role="superadmin", is_sso=False
     )
     assert user.id is not None
     return user.id
@@ -110,7 +129,7 @@ async def _seed_session(
 async def test_switch_to_allowed_tenant_reissues_token_and_persists(session: AsyncSession) -> None:
     a = await _make_tenant(session, name="SwtA", slug="swt-a")
     b = await _make_tenant(session, name="SwtB", slug="swt-b")
-    admin_id = await _make_local_admin(session, username="swt-admin@local")
+    admin_id = await _make_local_admin(session, username="swt-admin@local", admin_tenant_ids=[a, b])
     user = await user_repo.get(session, admin_id)
     assert user is not None
     us, refresh_token = await _seed_session(session, user_id=admin_id, active_tenant_id=a)
@@ -217,12 +236,12 @@ async def test_refresh_without_active_tenant_stays_none(session: AsyncSession) -
 # ---- UserOut.switchable_tenants ------------------------------------------------------ #
 
 
-async def test_switchable_tenants_admin_sees_all_active(session: AsyncSession) -> None:
+async def test_switchable_tenants_superadmin_sees_all_active(session: AsyncSession) -> None:
     a = await _make_tenant(session, name="SwtF", slug="swt-f")
     b = await _make_tenant(session, name="SwtG", slug="swt-g")
     inactive = await _make_tenant(session, name="SwtHInactive", slug="swt-h-inactive", active=False)
-    admin_id = await _make_local_admin(session, username="swt-list-admin@local")
-    user = await user_repo.get(session, admin_id)
+    superadmin_id = await _make_superadmin(session, username="swt-list-superadmin@local")
+    user = await user_repo.get(session, superadmin_id)
     assert user is not None
 
     out = await me(user, session, None)  # type: ignore[arg-type]
@@ -231,6 +250,25 @@ async def test_switchable_tenants_admin_sees_all_active(session: AsyncSession) -
     assert a in ids
     assert b in ids
     assert inactive not in ids, "Ein inaktiver Tenant darf nicht umschaltbar sein"
+
+
+async def test_switchable_tenants_local_admin_sees_only_granted(session: AsyncSession) -> None:
+    """Nicht-vakuoser Beweis der Access-Modell-Verhaltensänderung: ein lokaler
+    (Nicht-Super-)Admin sieht NICHT mehr alle aktiven Tenants -- nur seine
+    `admin_tenant`-Grants."""
+    a = await _make_tenant(session, name="SwtF2", slug="swt-f2")
+    b_foreign = await _make_tenant(session, name="SwtG2Foreign", slug="swt-g2-foreign")
+    admin_id = await _make_local_admin(
+        session, username="swt-list-admin@local", admin_tenant_ids=[a]
+    )
+    user = await user_repo.get(session, admin_id)
+    assert user is not None
+
+    out = await me(user, session, None)  # type: ignore[arg-type]
+
+    ids = {t.id for t in out.switchable_tenants}
+    assert ids == {a}
+    assert b_foreign not in ids, "Regression: lokaler Admin sah fremden, ungewährten Tenant"
 
 
 async def test_switchable_tenants_auditor_sees_only_assigned(session: AsyncSession) -> None:
@@ -266,7 +304,9 @@ async def test_switch_tenant_without_refresh_cookie_raises_auth_error(
     session: AsyncSession,
 ) -> None:
     a = await _make_tenant(session, name="SwtM", slug="swt-m")
-    admin_id = await _make_local_admin(session, username="swt-noref-admin@local")
+    admin_id = await _make_local_admin(
+        session, username="swt-noref-admin@local", admin_tenant_ids=[a]
+    )
     user = await user_repo.get(session, admin_id)
     assert user is not None
 
@@ -294,7 +334,9 @@ async def test_switch_tenant_ends_idle_session(session: AsyncSession) -> None:
     `_end_if_idle` in `refresh` bereits abfängt."""
     a = await _make_tenant(session, name="SwtIdleA", slug="swt-idle-a")
     b = await _make_tenant(session, name="SwtIdleB", slug="swt-idle-b")
-    admin_id = await _make_local_admin(session, username="swt-idle-admin@local")
+    admin_id = await _make_local_admin(
+        session, username="swt-idle-admin@local", admin_tenant_ids=[a, b]
+    )
     user = await user_repo.get(session, admin_id)
     assert user is not None
     us, refresh_token = await _seed_session(session, user_id=admin_id, active_tenant_id=a)

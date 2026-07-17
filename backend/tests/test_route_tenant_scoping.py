@@ -4,12 +4,16 @@ Core-`pg_insert`-Writer, die `tenant_id` jetzt explizit stempeln (Phase 3, Task 
 Phase 4a Task 3: `get_tenant_session` autorisiert jetzt den aktuellen Benutzer (statt immer
 blind den Default-Tenant zu liefern) -- ein anonymer Aufruf wie vor diesem Task ist nicht
 mehr möglich. Die Tests hier treiben deshalb den vollen, echten Pfad: ein committeter
-lokaler Admin (`local_admin`-Fixture) + ein echtes Access-Token dafür + `get_current_user`
-davor, exakt wie FastAPI es pro Request tun würde (`_tenant_session_for` unten). Ein lokaler
-Admin ohne `active_tenant`-Claim im Token löst über den Fallback (`resolve_initial_tenant`)
-auf den Default-Tenant auf -- das ist weiterhin der Beweis, den diese Suite führt, jetzt nur
-authentifiziert statt anonym. Die eigentliche Autorisierungs-/Angriffs-Suite (erlaubter vs.
-verweigerter Claim) liegt in `test_active_tenant_resolution.py`.
+Superadmin (`local_admin`-Fixture -- Access-Modell/Superadmin-Task-2: NUR der Superadmin
+löst noch ohne jede Zuweisung auf den Default-Tenant auf, ein lokaler [Nicht-Super-]Admin
+bräuchte dafür seit Task 2 einen expliziten `admin_tenant`-Grant, siehe
+`test_tenant_repo_access_model.py`) + ein echtes Access-Token dafür + `get_current_user`
+davor, exakt wie FastAPI es pro Request tun würde (`_tenant_session_for` unten). Ein
+Superadmin ohne `active_tenant`-Claim im Token löst über den Fallback
+(`resolve_initial_tenant`) auf den Default-Tenant auf -- das ist weiterhin der Beweis, den
+diese Suite führt, jetzt nur authentifiziert statt anonym. Die eigentliche
+Autorisierungs-/Angriffs-Suite (erlaubter vs. verweigerter Claim) liegt in
+`test_active_tenant_resolution.py`.
 
 Es gibt in dieser Suite keine HTTP-Route-Tests (kein `TestClient`-Aufbau) -- der Beweis läuft
 auf Dependency-Ebene. Seed-Pattern wie in `test_isolation_attack.py`: echte Superuser-
@@ -50,8 +54,12 @@ class _FakeRequest:
 
 @pytest_asyncio.fixture
 async def local_admin(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
-    """Ein echter, committeter lokaler Admin -- `get_tenant_session` braucht seit Task 3
-    einen authentifizierten, autorisierten Benutzer (kein anonymer Aufruf mehr)."""
+    """Ein echter, committeter Superadmin -- `get_tenant_session` braucht seit Task 3 einen
+    authentifizierten, autorisierten Benutzer (kein anonymer Aufruf mehr). Seit dem
+    Access-Modell/Superadmin-Task 2 löst NUR der Superadmin ohne jede Zuweisung auf den
+    Default-Tenant auf (ein lokaler [Nicht-Super-]Admin bräuchte dafür einen expliziten
+    `admin_tenant`-Grant) -- der Fixture-Name blieb `local_admin`, um den Diff in dieser
+    reinen RLS-Mechanik-Suite klein zu halten."""
     async with migrated_engine.connect() as conn:
         uid = int(
             (
@@ -60,8 +68,8 @@ async def local_admin(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
                         "INSERT INTO app_user "
                         "(username, password_hash, role, is_active, is_sso, "
                         "failed_login_count, language, created_at, updated_at) VALUES "
-                        "('rts-admin@local', 'x', 'admin', true, false, 0, 'de', now(), now()) "
-                        "RETURNING id"
+                        "('rts-admin@local', 'x', 'superadmin', true, false, 0, 'de', now(), "
+                        "now()) RETURNING id"
                     )
                 )
             ).scalar_one()

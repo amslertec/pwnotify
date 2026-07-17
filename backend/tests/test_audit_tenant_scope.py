@@ -3,15 +3,19 @@ auf der Owner-Session -- `audit_log` ist eine RLS-tenant-gescopte Tabelle, und d
 Owner-Rolle umgeht RLS vollständig. Ein SSO-Admin, gebunden an Tenant B, konnte damit das
 GESAMTE Protokoll aller Mandanten lesen (Cross-Tenant-Offenlegung).
 
-`get_audit_session` (app/api/deps.py) unterscheidet jetzt:
-- LOKALER Admin (`not is_sso`, `role == "admin"`) -> Owner-Session, sieht ALLE Mandanten
-  (Design §2).
-- Jedes andere, mandantengebundene Konto (jedes SSO-Konto, gleich welche Rolle, ODER ein
-  lokaler Auditor) -> tenant-gescopte Session, sieht NUR sein autorisiertes aktives
-  Mandanten-Protokoll.
+`get_audit_session` (app/api/deps.py) unterscheidet nach der Access-Modell/Superadmin-
+Verschärfung (Task 2) jetzt:
+- NUR der lokale SUPERADMIN (`not is_sso`, `role == "superadmin"`) -> Owner-Session, sieht
+  ALLE Mandanten.
+- Jedes andere Konto -- EINSCHLIESSLICH des lokalen (Nicht-Super-)Admins, jedes SSO-Konto
+  (gleich welche Rolle) und jeder lokale Auditor -> tenant-gescopte Session, sieht NUR sein
+  autorisiertes aktives Mandanten-Protokoll.
 
 Der Kernbeweis unten (`test_sso_admin_bound_to_b_cannot_see_tenant_a_audit_rows`) muss
 fehlschlagen, wenn der SSO-Admin B weiterhin A's Zeilen sehen könnte.
+`test_local_admin_no_longer_sees_all_tenants_audit_rows` beweist non-vakuos die
+Kernänderung: der lokale Admin ist jetzt genauso RLS-scoped wie jedes andere
+mandantengebundene Konto.
 
 Seed-Pattern wie in `test_isolation_attack.py`/`test_route_tenant_scoping.py`: echte,
 committete Superuser-Connection (RLS-frei) für Setup -- der tenant-gescopte Zweig von
@@ -42,8 +46,9 @@ class _FakeRequest:
 
 @pytest_asyncio.fixture
 async def audit_seed(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, int]]:
-    """Zwei Tenants (A, B) + je eine Audit-Zeile + ein lokaler Admin (kein Tenant gebunden)
-    + ein SSO-Admin, gebunden an Tenant B -- alles echt committet (Superuser-Connection,
+    """Zwei Tenants (A, B) + je eine Audit-Zeile + ein Superadmin (kein Tenant gebunden,
+    instanzweit) + ein lokaler (Nicht-Super-)Admin MIT `admin_tenant`-Grant nur auf A + ein
+    SSO-Admin, gebunden an Tenant B -- alles echt committet (Superuser-Connection,
     RLS-frei), Cleanup im `finally`."""
     async with migrated_engine.connect() as conn:
         await conn.execute(
@@ -70,6 +75,19 @@ async def audit_seed(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, i
             ),
             {"a": a, "b": b},
         )
+        superadmin_id = int(
+            (
+                await conn.execute(
+                    text(
+                        "INSERT INTO app_user "
+                        "(username, password_hash, role, is_active, is_sso, "
+                        "failed_login_count, language, created_at, updated_at) VALUES "
+                        "('aud-superadmin@local', 'x', 'superadmin', true, false, 0, 'de', "
+                        "now(), now()) RETURNING id"
+                    )
+                )
+            ).scalar_one()
+        )
         local_admin_id = int(
             (
                 await conn.execute(
@@ -82,6 +100,10 @@ async def audit_seed(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, i
                     )
                 )
             ).scalar_one()
+        )
+        await conn.execute(
+            text("INSERT INTO admin_tenant (user_id, tenant_id) VALUES (:uid, :tid)"),
+            {"uid": local_admin_id, "tid": a},
         )
         sso_admin_id = int(
             (
@@ -99,7 +121,13 @@ async def audit_seed(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, i
         )
         await conn.commit()
         try:
-            yield {"a": a, "b": b, "local_admin_id": local_admin_id, "sso_admin_id": sso_admin_id}
+            yield {
+                "a": a,
+                "b": b,
+                "superadmin_id": superadmin_id,
+                "local_admin_id": local_admin_id,
+                "sso_admin_id": sso_admin_id,
+            }
         finally:
             await conn.execute(
                 text(
@@ -107,8 +135,8 @@ async def audit_seed(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, i
                 )
             )
             await conn.execute(
-                text("DELETE FROM app_user WHERE id IN (:x, :y)"),
-                {"x": local_admin_id, "y": sso_admin_id},
+                text("DELETE FROM app_user WHERE id IN (:x, :y, :z)"),
+                {"x": superadmin_id, "y": local_admin_id, "z": sso_admin_id},
             )
             await conn.execute(text("DELETE FROM tenant WHERE id IN (:a, :b)"), {"a": a, "b": b})
             await conn.commit()
@@ -132,14 +160,32 @@ async def _audit_session_for(
             await gen.aclose()
 
 
-async def test_local_admin_sees_all_tenants_audit_rows(audit_seed: dict[str, int]) -> None:
-    """Design §2: der lokale Admin bleibt auf der Owner-Session -- er sieht das gesamte
-    Protokoll, über alle Mandanten hinweg."""
-    async with _audit_session_for(audit_seed["local_admin_id"]) as session:
+async def test_superadmin_sees_all_tenants_audit_rows(audit_seed: dict[str, int]) -> None:
+    """Access-Modell-Design §2: NUR der Superadmin bleibt auf der Owner-Session -- er sieht
+    das gesamte Protokoll, über alle Mandanten hinweg."""
+    async with _audit_session_for(audit_seed["superadmin_id"]) as session:
         rows, _total = await audit_repo.list_paged(session, page=1, page_size=200)
     actions = {r.action for r in rows}
-    assert "test.aud_a_event" in actions, "Lokaler Admin sah Tenant A's Zeile nicht"
-    assert "test.aud_b_event" in actions, "Lokaler Admin sah Tenant B's Zeile nicht"
+    assert "test.aud_a_event" in actions, "Superadmin sah Tenant A's Zeile nicht"
+    assert "test.aud_b_event" in actions, "Superadmin sah Tenant B's Zeile nicht"
+
+
+async def test_local_admin_no_longer_sees_all_tenants_audit_rows(
+    audit_seed: dict[str, int],
+) -> None:
+    """Nicht-vakuoser Beweis der Access-Modell-Verhaltensänderung (Task 2): der lokale
+    (Nicht-Super-)Admin ist NICHT mehr instanzweit -- er ist jetzt genauso RLS-scoped wie
+    jedes andere mandantengebundene Konto. Mit einem `admin_tenant`-Grant NUR auf A sieht
+    er A's Zeile, aber NICHT B's -- vorher (altes Drei-Wege-Modell) hätte er via
+    Owner-Session BEIDE gesehen."""
+    a = audit_seed["a"]
+    async with _audit_session_for(audit_seed["local_admin_id"], active_tenant=a) as session:
+        rows, _total = await audit_repo.list_paged(session, page=1, page_size=200)
+    actions = {r.action for r in rows}
+    assert "test.aud_a_event" in actions, "Lokaler Admin sah seinen eigenen granted Tenant A nicht"
+    assert "test.aud_b_event" not in actions, (
+        "Regression auf das alte Drei-Wege-Modell: lokaler Admin sah fremdes Tenant B's Audit"
+    )
 
 
 async def test_sso_admin_bound_to_b_cannot_see_tenant_a_audit_rows(

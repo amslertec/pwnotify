@@ -1,5 +1,11 @@
 """Mandantenverwaltung (Kunden-CRUD, Phase 4c Task 2).
 
+Kunden-CRUD (Create/Update/Delete) ist seit dem Access-Modell/Superadmin-Design (§6)
+SUPERADMIN-only (`SuperadminUser`) -- ein lokaler Admin verwaltet nur noch Konten
+innerhalb seiner zugewiesenen Kunden, weist aber selbst keine Kunden zu und legt keine
+neuen an. `list_tenants` bleibt für jedes Konto erreichbar, scopet die Ausgabe aber über
+`tenant_repo.allowed_tenant_ids` (Superadmin -> alle, sonst nur die eigenen).
+
 Guard-Rails leben bewusst HIER, nicht in `tenant_repo` (siehe dessen Docstrings zu
 `update`/`delete`): der Default-Tenant (`slug == "default"`, von der Migration angelegt)
 darf weder gelöscht noch deaktiviert werden, und der letzte AKTIVE Tenant darf nicht
@@ -29,7 +35,7 @@ from ...repositories import tenant_repo, user_repo
 from ...schemas.common import Message
 from ...schemas.tenant import TenantCreate, TenantOut, TenantUpdate
 from ...services import audit
-from ..deps import CurrentUser, LocalAdminUser, SessionDep
+from ..deps import CurrentUser, SessionDep, SuperadminUser
 
 router = APIRouter(prefix="/admin/tenants", tags=["admin-tenants"])
 
@@ -49,24 +55,25 @@ async def _to_out(session: SessionDep, tenant: Tenant) -> TenantOut:
 
 @router.get("")
 async def list_tenants(user: CurrentUser, session: SessionDep) -> list[TenantOut]:
-    """Kundenliste -- instanzweit NUR für den lokalen Admin (siehe `require_local_admin`).
+    """Kundenliste -- instanzweit NUR für den Superadmin (`allowed_tenant_ids` -> `None`).
 
-    Jedes mandantengebundene Konto (jedes SSO-Konto, gleich welche Rolle, ODER ein
-    lokaler Auditor) sieht NUR die eigenen autorisierten Mandanten. `tenant` ist keine
-    RLS-Tabelle -- ohne diesen Filter könnte ein Konto, das an Kunde B gebunden ist,
-    Name/Slug/Entra-Tenant-Id ALLER anderen Kunden auslesen (Cross-Tenant-Enumeration,
-    dieselbe Grenze wie in `get_audit_session`).
+    Jedes andere Konto (lokaler Admin/Auditor, jedes SSO-Konto) sieht NUR seine eigenen
+    autorisierten Mandanten (`admin_tenants` vereinigt mit `auditor_tenants`, Access-Modell-
+    Design §2).
+    `tenant` ist keine RLS-Tabelle -- ohne diesen Filter könnte ein Konto, das an Kunde B
+    gebunden ist, Name/Slug/Entra-Tenant-Id ALLER anderen Kunden auslesen
+    (Cross-Tenant-Enumeration, dieselbe Grenze wie in `get_audit_session`).
     """
     rows = await tenant_repo.list_all(session)
-    if user.is_sso or user.role != "admin":
-        allowed = await tenant_repo.allowed_tenant_ids(session, user)
-        rows = [t for t in rows if allowed is not None and t.id in allowed]
+    allowed = await tenant_repo.allowed_tenant_ids(session, user)
+    if allowed is not None:
+        rows = [t for t in rows if t.id in allowed]
     return [await _to_out(session, t) for t in rows]
 
 
 @router.post("", response_model=TenantOut)
 async def create_tenant(
-    request: Request, admin: LocalAdminUser, body: TenantCreate, session: SessionDep
+    request: Request, admin: SuperadminUser, body: TenantCreate, session: SessionDep
 ) -> TenantOut:
     tenant = await tenant_repo.create(
         session, name=body.name, slug=body.slug, entra_tenant_id=body.entra_tenant_id
@@ -85,7 +92,7 @@ async def create_tenant(
 
 @router.patch("/{tenant_id}", response_model=TenantOut)
 async def update_tenant(
-    request: Request, admin: LocalAdminUser, tenant_id: int, body: TenantUpdate, session: SessionDep
+    request: Request, admin: SuperadminUser, tenant_id: int, body: TenantUpdate, session: SessionDep
 ) -> TenantOut:
     tenant = await tenant_repo.get(session, tenant_id)
     if tenant is None:
@@ -123,7 +130,7 @@ async def update_tenant(
 
 @router.delete("/{tenant_id}", response_model=Message)
 async def delete_tenant(
-    request: Request, admin: LocalAdminUser, tenant_id: int, session: SessionDep
+    request: Request, admin: SuperadminUser, tenant_id: int, session: SessionDep
 ) -> Message:
     tenant = await tenant_repo.get(session, tenant_id)
     if tenant is None:

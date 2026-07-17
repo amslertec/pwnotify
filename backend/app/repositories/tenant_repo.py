@@ -1,18 +1,34 @@
 """DB-Zugriff für Mandanten (Tenant) + Sitzungs-Autorisierung: welcher AppUser darf welchen
-Kunden sehen/aktivieren.
+Kunden sehen/verwalten/aktivieren.
 
-Läuft ausschließlich auf der OWNER-Session (kein RLS-Rollenwechsel) -- `tenant`, `app_user`
-und `auditor_tenant` sind instanzweite Tabellen, keine RLS-tenant-gescopten Kundendaten
-(siehe Migration f7a8b9c0d1e2, die `pwnotify_app` hierauf nur eingeschränkte Rechte gibt).
+Läuft ausschließlich auf der OWNER-Session (kein RLS-Rollenwechsel) -- `tenant`, `app_user`,
+`admin_tenant` und `auditor_tenant` sind instanzweite Tabellen, keine RLS-tenant-gescopten
+Kundendaten (siehe Migration f7a8b9c0d1e2, die `pwnotify_app` hierauf nur eingeschränkte
+Rechte gibt).
 
-Sicherheitsgrenze -- drei Kontoarten, default-deny bei jedem unerwarteten Zustand:
-- Lokaler Admin (`role=="admin"`, `not is_sso`): alle AKTIVEN Tenants.
-- Lokaler Auditor (`role=="auditor"`, `not is_sso`): nur seine über `auditor_tenant`
+Sicherheitsgrenze -- VIER Kontoarten (Access-Modell/Superadmin-Design §2), default-deny bei
+jedem unerwarteten Zustand:
+- **Superadmin** (`not is_sso and role=="superadmin"`): ALLE AKTIVEN Tenants, lesend wie
+  schreibend. Instanzweit, keine Zuweisungszeile nötig.
+- **Lokaler Admin** (`not is_sso and role=="admin"`): NUR seine über `admin_tenant`
+  zugewiesenen UND aktiven Tenants (nicht mehr "alle" -- das war das alte Drei-Wege-Modell).
+- **Lokaler Auditor** (`not is_sso and role=="auditor"`): nur seine über `auditor_tenant`
   zugewiesenen UND aktiven Tenants.
-- SSO-Konto (`is_sso=True`, jede Rolle): genau `AppUser.tenant_id` -- `is_allowed` prüft
-  zusätzlich, dass dieser eine Tenant aktiv ist.
+- **SSO-Konto** (`is_sso=True`): sein Heim-`AppUser.tenant_id` (Rolle aus den Gruppen des
+  Heim-Tenants, Phase 4c Task 4) UNION alle `admin_tenant`/`auditor_tenant`-Grants -- ein
+  SSO-Konto des Haupttenants kann vom Superadmin zusätzlich auf weitere Kunden berechtigt
+  werden. Die Kapazität (lesen/schreiben) folgt dabei dem Zuweisungstyp, nicht der Heim-Rolle.
 - Alles andere (unbekannte Rolle, fehlende Zuordnung, `tenant_id is None`): leere Menge /
   False / None. Es gibt KEINEN Fallback auf "alle".
+
+Effektive Mengen (Design §2, Kern-Invariante):
+- `admin_tenants(user)` = `admin_tenant`-Grants VEREINIGT MIT dem Heim-Tenant (falls
+  SSO-Konto mit `role=="admin"`)
+- `auditor_tenants(user)` = `auditor_tenant`-Grants VEREINIGT MIT dem Heim-Tenant (falls
+  SSO-Konto mit `role=="auditor"`)
+- `allowed_tenant_ids(user)` = Vereinigung beider (Superadmin -> `None` = alle aktiven)
+- Schreibzugriff auf einen Tenant erfordert Mitgliedschaft in `admin_tenants(user)` (oder
+  Superadmin); Lesen erfordert Mitgliedschaft in `allowed_tenant_ids(user)`.
 """
 
 from __future__ import annotations
@@ -21,7 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import ConflictError, NotFoundError
-from ..models.tenant import AuditorTenant, Tenant
+from ..models.tenant import AdminTenant, AuditorTenant, Tenant
 from ..models.user import AppUser
 
 
@@ -137,8 +153,9 @@ async def _is_active(session: AsyncSession, tid: int) -> bool:
 
 
 async def _assigned_active_tenant_ids(session: AsyncSession, user_id: int) -> list[int]:
-    """Aktive Tenants, denen ein lokaler Auditor per `auditor_tenant` zugewiesen ist
-    (stabil nach Tenant-Name sortiert -- macht `resolve_initial_tenant` deterministisch)."""
+    """Aktive Tenants, denen ein Konto per `auditor_tenant` zugewiesen ist (lokaler Auditor
+    ODER SSO-Grant) -- stabil nach Tenant-Name sortiert, macht `resolve_initial_tenant`
+    deterministisch."""
     res = await session.execute(
         select(AuditorTenant.tenant_id)
         .join(Tenant, Tenant.id == AuditorTenant.tenant_id)
@@ -148,43 +165,93 @@ async def _assigned_active_tenant_ids(session: AsyncSession, user_id: int) -> li
     return list(res.scalars().all())
 
 
+async def _admin_grant_tenant_ids(session: AsyncSession, user_id: int) -> list[int]:
+    """Aktive Tenants, denen ein Konto per `admin_tenant` zugewiesen ist (lokaler Admin
+    ODER SSO-Grant) -- Pendant zu `_assigned_active_tenant_ids` für Admin-Zuweisungen,
+    gleiche Form (aktiv-gejoint, nach Tenant-Name sortiert)."""
+    res = await session.execute(
+        select(AdminTenant.tenant_id)
+        .join(Tenant, Tenant.id == AdminTenant.tenant_id)
+        .where(AdminTenant.user_id == user_id, Tenant.is_active.is_(True))
+        .order_by(Tenant.name)
+    )
+    return list(res.scalars().all())
+
+
+async def admin_tenants(session: AsyncSession, user: AppUser) -> set[int]:
+    """Menge der Tenants, in denen `user` SCHREIBEND agieren darf (Admin-Kapazität):
+    `admin_tenant`-Grants vereinigt mit dem Heim-Tenant (falls SSO-Konto mit `role=="admin"`).
+
+    Für den Superadmin NICHT die richtige Funktion -- der ist instanzweit und braucht keine
+    Zeile hier; `is_allowed`/`allowed_tenant_ids` behandeln ihn gesondert."""
+    granted: set[int] = set()
+    if user.id is not None:
+        granted = set(await _admin_grant_tenant_ids(session, user.id))
+    if user.is_sso and user.role == "admin" and user.tenant_id is not None:
+        granted.add(user.tenant_id)
+    return granted
+
+
+async def auditor_tenants(session: AsyncSession, user: AppUser) -> set[int]:
+    """Menge der Tenants, in denen `user` LESEND agieren darf (Auditor-Kapazität):
+    `auditor_tenant`-Grants vereinigt mit dem Heim-Tenant (falls SSO-Konto mit
+    `role=="auditor"`)."""
+    granted: set[int] = set()
+    if user.id is not None:
+        granted = set(await _assigned_active_tenant_ids(session, user.id))
+    if user.is_sso and user.role == "auditor" and user.tenant_id is not None:
+        granted.add(user.tenant_id)
+    return granted
+
+
 async def allowed_tenant_ids(session: AsyncSession, user: AppUser) -> set[int] | None:
-    """None = ALLE aktiven Tenants (nur lokaler Admin). Sonst eine konkrete, ggf. leere Menge.
+    """None = ALLE aktiven Tenants (nur Superadmin). Sonst eine konkrete, ggf. leere Menge:
+    `admin_tenants(user)` vereinigt mit `auditor_tenants(user)` (Design §2).
 
     Default-Deny: jeder unerwartete Rollen-/Zustandsfall liefert eine leere Menge -- niemals
-    ein stiller Fallback auf "alle".
+    ein stiller Fallback auf "alle". **Verhaltensänderung ggü. dem alten Drei-Wege-Modell:**
+    ein lokaler Admin ist NICHT mehr `None` -- er ist jetzt seine `admin_tenant`-Zuweisung.
     """
-    if user.is_sso:
-        return {user.tenant_id} if user.tenant_id is not None else set()
-    if user.role == "admin":
+    if not user.is_sso and user.role == "superadmin":
         return None
-    if user.role == "auditor" and user.id is not None:
-        return set(await _assigned_active_tenant_ids(session, user.id))
-    return set()
+    return (await admin_tenants(session, user)) | (await auditor_tenants(session, user))
 
 
-async def is_allowed(session: AsyncSession, user: AppUser, tid: int) -> bool:
+async def is_allowed(
+    session: AsyncSession, user: AppUser, tid: int, *, write: bool = False
+) -> bool:
     """Autoritatives Gate -- hierüber prüfen, nicht `allowed_tenant_ids` allein auswerten:
-    für SSO liefert jene Funktion bewusst ungefiltert die Bindung an `tenant_id`; ob dieser
-    eine Tenant (noch) aktiv ist, wird nur hier geprüft."""
-    if user.is_sso:
-        return (
-            user.tenant_id is not None and user.tenant_id == tid and await _is_active(session, tid)
-        )
-    if user.role == "admin":
+    für SSO-Konten fliesst der Heim-Tenant ungefiltert in `admin_tenants`/`auditor_tenants`
+    ein; ob dieser eine Tenant (noch) aktiv ist, wird nur hier zusätzlich geprüft.
+
+    `write=True`: Schreibzugriff -- erfordert Mitgliedschaft in `admin_tenants(user)` (oder
+    Superadmin). `write=False` (Default): Lesezugriff -- erfordert Mitgliedschaft in
+    `allowed_tenant_ids(user)` (oder Superadmin = alle aktiven).
+    """
+    if not user.is_sso and user.role == "superadmin":
         return await _is_active(session, tid)
-    if user.role == "auditor" and user.id is not None:
-        return tid in await _assigned_active_tenant_ids(session, user.id)
-    return False
+    if write:
+        return tid in await admin_tenants(session, user) and await _is_active(session, tid)
+    allowed = await allowed_tenant_ids(session, user)
+    return allowed is not None and tid in allowed and await _is_active(session, tid)
 
 
 async def resolve_initial_tenant(session: AsyncSession, user: AppUser) -> int | None:
-    """Tenant, der beim Login aktiviert wird -- None, wenn es keinen gibt (z.B. Auditor
-    ohne Zuweisung, SSO-Konto ohne `tenant_id`)."""
+    """Tenant, der beim Login aktiviert wird -- None, wenn es keinen gibt (z.B. Admin/Auditor
+    ohne Zuweisung, SSO-Konto ohne `tenant_id`).
+
+    Lokaler Admin: erster (nach Tenant-Name sortierter) `admin_tenant`-Grant -- KEIN
+    stiller Fallback auf den Default-Tenant mehr, wenn keine Zuweisung besteht (das alte
+    Drei-Wege-Modell gab dem lokalen Admin implizit "alle"/den Default-Tenant; jetzt gilt
+    dieselbe Default-Deny-Regel wie beim Auditor: unzugewiesen -> `None` -> 403 beim
+    Aufrufer, siehe `_resolve_authorized_tenant`)."""
     if user.is_sso:
         return user.tenant_id
-    if user.role == "admin":
+    if user.role == "superadmin":
         return (await default_tenant(session)).id
+    if user.role == "admin" and user.id is not None:
+        ids = await _admin_grant_tenant_ids(session, user.id)
+        return ids[0] if ids else None
     if user.role == "auditor" and user.id is not None:
         ids = await _assigned_active_tenant_ids(session, user.id)
         return ids[0] if ids else None
