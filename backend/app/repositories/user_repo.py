@@ -90,6 +90,7 @@ async def create_session(
     expires_at: dt.datetime,
     user_agent: str | None,
     ip: str | None,
+    active_tenant_id: int | None = None,
 ) -> UserSession:
     us = UserSession(
         user_id=user_id,
@@ -98,6 +99,7 @@ async def create_session(
         expires_at=expires_at,
         user_agent=user_agent,
         ip_address=ip,
+        active_tenant_id=active_tenant_id,
     )
     session.add(us)
     await session.commit()

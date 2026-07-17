@@ -138,8 +138,9 @@ def create_2fa_token(subject: str) -> str:
     return jwt.encode(payload, _signing_key(), algorithm=_ALG)
 
 
-def issue_token_pair(subject: str) -> TokenPair:
-    access, a_exp = create_access_token(subject)
+def issue_token_pair(subject: str, *, active_tenant: int | None = None) -> TokenPair:
+    extra = {"active_tenant": active_tenant} if active_tenant is not None else None
+    access, a_exp = create_access_token(subject, extra=extra)
     refresh, jti, r_exp = create_refresh_token(subject)
     return TokenPair(access, refresh, jti, a_exp, r_exp)
 

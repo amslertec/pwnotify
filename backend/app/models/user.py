@@ -62,6 +62,9 @@ class UserSession(SQLModel, table=True):
     user_id: int = Field(foreign_key="app_user.id", index=True, nullable=False)
     refresh_jti: str = Field(sa_column=Column(String(64), unique=True, index=True, nullable=False))
     token_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    # Aktiver Mandant dieser Sitzung (Phase 4a). NULL = noch nicht gewählt/instanzweit --
+    # spätere Tasks lösen/autorisieren/wechseln diesen Wert; hier nur die Ablage.
+    active_tenant_id: int | None = Field(default=None, foreign_key="tenant.id", index=True)
     user_agent: str | None = Field(default=None, sa_column=Column(String(400)))
     ip_address: str | None = Field(default=None, sa_column=Column(String(64)))
     revoked: bool = Field(default=False)
