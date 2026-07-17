@@ -1,4 +1,15 @@
-import { Bell, Building2, History, LayoutDashboard, PanelLeftClose, ScrollText, Settings, UserCog, Users } from 'lucide-react'
+import {
+  Bell,
+  Building2,
+  History,
+  LayoutDashboard,
+  PanelLeftClose,
+  ScrollText,
+  Settings,
+  UserCog,
+  Users,
+} from 'lucide-react'
+import type { ComponentType } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -10,13 +21,30 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { hasAdminRights, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
-const NAV = [
+interface NavItem {
+  to: string
+  labelKey: string
+  icon: ComponentType<{ className?: string }>
+  end: boolean
+  adminOnly: boolean
+  /** Nur für Superadmins sichtbar (Access-Modell-Phase) — überstimmt `adminOnly`. */
+  superadminOnly?: boolean
+}
+
+const NAV: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true, adminOnly: false },
   { to: '/users', labelKey: 'nav.users', icon: Users, end: false, adminOnly: false },
   { to: '/notifications', labelKey: 'nav.notifications', icon: Bell, end: false, adminOnly: false },
   { to: '/runs', labelKey: 'nav.runs', icon: History, end: false, adminOnly: false },
   { to: '/access', labelKey: 'nav.access', icon: UserCog, end: false, adminOnly: true },
-  { to: '/tenants', labelKey: 'nav.tenants', icon: Building2, end: false, adminOnly: true },
+  {
+    to: '/tenants',
+    labelKey: 'nav.tenants',
+    icon: Building2,
+    end: false,
+    adminOnly: true,
+    superadminOnly: true,
+  },
   { to: '/audit', labelKey: 'nav.audit', icon: ScrollText, end: false, adminOnly: true },
   { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false, adminOnly: true },
 ]
@@ -31,8 +59,12 @@ export function Sidebar({
   onNavigate?: () => void
 }) {
   const { t } = useTranslation()
-  const isAdmin = hasAdminRights(useAuth().user?.role)
-  const nav = NAV.filter((item) => isAdmin || !item.adminOnly)
+  const { user } = useAuth()
+  const isAdmin = hasAdminRights(user?.role)
+  const isSuperadmin = user?.role === 'superadmin'
+  const nav = NAV.filter((item) =>
+    item.superadminOnly ? isSuperadmin : item.adminOnly ? isAdmin : true,
+  )
   return (
     <aside
       className={cn(

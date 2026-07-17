@@ -45,6 +45,14 @@ function AdminOnly({ children }: { children: ReactNode }) {
   return children
 }
 
+/** Nur für Superadmins erreichbar (Kunden-/Zuweisungs-Konsole, Access-Modell-Phase);
+ *  Admins und Auditoren werden aufs Dashboard umgeleitet. */
+function SuperadminOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user && user.role !== 'superadmin') return <Navigate to="/" replace />
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -67,9 +75,9 @@ export default function App() {
           <Route
             path="/tenants"
             element={
-              <AdminOnly>
+              <SuperadminOnly>
                 <TenantsPage />
-              </AdminOnly>
+              </SuperadminOnly>
             }
           />
           <Route path="/profile" element={<ProfilePage />} />

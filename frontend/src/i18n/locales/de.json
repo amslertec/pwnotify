@@ -282,7 +282,13 @@
     "user_not_found": "Benutzer nicht gefunden.",
     "username_taken": "Benutzername bereits vergeben.",
     "wrong_current_password": "Aktuelles Passwort ist falsch.",
-    "cannot_demote_last_admin": "Der letzte Administrator kann nicht herabgestuft werden."
+    "cannot_demote_last_admin": "Der letzte Administrator kann nicht herabgestuft werden.",
+    "cannot_assign_superadmin": "Superadmins sehen bereits alle Kunden — eine Zuweisung ist nicht nötig.",
+    "tenant_not_active": "Nur aktive Kunden können zugewiesen werden.",
+    "superadmin_required": "Nur mit Superadmin-Rechten möglich.",
+    "cannot_demote_last_superadmin": "Der letzte Superadmin kann nicht herabgestuft werden.",
+    "cannot_delete_last_superadmin": "Der letzte Superadmin kann nicht gelöscht werden.",
+    "superadmin_must_be_local": "Ein Superadmin muss ein lokales Konto sein."
   },
   "access": {
     "title": "Benutzerverwaltung",
@@ -317,6 +323,7 @@
     "roleChanged": "Rolle aktualisiert",
     "roleAdmins": "Administratoren",
     "roleAuditors": "Auditoren",
+    "roleSuperadmin": "Superadmin",
     "emptyRole": "Keine Benutzer in dieser Rolle.",
     "lastAdminHint": "letzter Administrator"
   },
@@ -991,6 +998,31 @@
     "isActive": "Aktiv",
     "deleteConfirmTitle": "Kunde löschen?",
     "deleteConfirmDescription": "„{{name}}“ wird endgültig gelöscht, inklusive aller zugehörigen Daten (Konten, Benachrichtigungen, Läufe, Ausnahmen, Einstellungen). {{count}} per SSO zugeordnete Benutzer verlieren die Zuordnung zu diesem Kunden. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "deleteConfirmAction": "Endgültig löschen"
+    "deleteConfirmAction": "Endgültig löschen",
+    "assignments": {
+      "title": "Zuweisungen",
+      "colName": "Name",
+      "colUsername": "Benutzername",
+      "colRole": "Rolle",
+      "colTenants": "Zugewiesene Kunden",
+      "empty": "Keine zuweisbaren Konten vorhanden.",
+      "none": "Keine Zuweisungen",
+      "edit": "Zuweisungen bearbeiten",
+      "editTitle": "Zuweisungen für „{{name}}“",
+      "saved": "Zuweisungen gespeichert",
+      "noActiveTenants": "Keine aktiven Kunden vorhanden."
+    },
+    "superadmins": {
+      "title": "Superadmins",
+      "colName": "Name",
+      "colUsername": "Benutzername",
+      "empty": "Keine Superadmins vorhanden.",
+      "create": "Superadmin anlegen",
+      "createTitle": "Superadmin anlegen",
+      "created": "Superadmin angelegt",
+      "demote": "Herabstufen",
+      "demoted": "Superadmin herabgestuft",
+      "lastHint": "Letzter Superadmin — kann nicht herabgestuft oder gelöscht werden."
+    }
   }
 }

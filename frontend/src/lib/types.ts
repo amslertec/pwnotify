@@ -20,6 +20,9 @@ export interface User {
   active_tenant: TenantRef | null
   /** Kunden, zu denen dieses Konto wechseln darf. */
   switchable_tenants: TenantRef[]
+  /** Instanzweiter Schalterstand (Access-Modell/Superadmin-Phase) — steuert, ob die
+   *  Mandantenfähigkeit (Kunden-Umschalter, Zuweisungen) überhaupt aktiv ist. */
+  multi_tenant_mode: boolean
 }
 
 export interface LoginResponse {
@@ -61,6 +64,16 @@ export interface AdminUser {
 export interface AdminUsers {
   local: AdminUser[]
   sso: AdminUser[]
+  /** Nur vorhanden, wenn der Aufrufer selbst Superadmin ist (Access-Modell/Superadmin-Phase). */
+  superadmins?: AdminUser[]
+}
+
+/** Zuweisungsstand eines Admin-/Auditor-Kontos (`GET`/`PUT /admin/assignments/{id}`) —
+ *  Superadmin-only. `role` spiegelt die Rolle des Zielkontos, `tenant_ids` die aktuell
+ *  gehaltenen Kunden-Zuweisungen (Grant-Typ wird serverseitig aus `role` abgeleitet). */
+export interface Assignment {
+  role: string
+  tenant_ids: number[]
 }
 
 /** Mandant (Kunde) — Phase 4c Kundenverwaltung. Nicht zu verwechseln mit `TenantRef`

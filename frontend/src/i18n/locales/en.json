@@ -282,7 +282,13 @@
     "user_not_found": "User not found.",
     "username_taken": "Username already taken.",
     "wrong_current_password": "Current password is incorrect.",
-    "cannot_demote_last_admin": "The last administrator cannot be demoted."
+    "cannot_demote_last_admin": "The last administrator cannot be demoted.",
+    "cannot_assign_superadmin": "Superadmins already see all customers — no assignment needed.",
+    "tenant_not_active": "Only active customers can be assigned.",
+    "superadmin_required": "Requires superadmin rights.",
+    "cannot_demote_last_superadmin": "The last superadmin cannot be demoted.",
+    "cannot_delete_last_superadmin": "The last superadmin cannot be deleted.",
+    "superadmin_must_be_local": "A superadmin must be a local account."
   },
   "access": {
     "title": "User management",
@@ -317,6 +323,7 @@
     "roleChanged": "Role updated",
     "roleAdmins": "Administrators",
     "roleAuditors": "Auditors",
+    "roleSuperadmin": "Superadmin",
     "emptyRole": "No users in this role.",
     "lastAdminHint": "last administrator"
   },
@@ -991,6 +998,31 @@
     "isActive": "Active",
     "deleteConfirmTitle": "Delete customer?",
     "deleteConfirmDescription": "\"{{name}}\" will be permanently deleted, including all associated data (accounts, notifications, runs, exclusions, settings). {{count}} SSO-linked users will lose their association with this customer. This action cannot be undone.",
-    "deleteConfirmAction": "Delete permanently"
+    "deleteConfirmAction": "Delete permanently",
+    "assignments": {
+      "title": "Assignments",
+      "colName": "Name",
+      "colUsername": "Username",
+      "colRole": "Role",
+      "colTenants": "Assigned customers",
+      "empty": "No assignable accounts yet.",
+      "none": "No assignments",
+      "edit": "Edit assignments",
+      "editTitle": "Assignments for \"{{name}}\"",
+      "saved": "Assignments saved",
+      "noActiveTenants": "No active customers available."
+    },
+    "superadmins": {
+      "title": "Superadmins",
+      "colName": "Name",
+      "colUsername": "Username",
+      "empty": "No superadmins yet.",
+      "create": "Create superadmin",
+      "createTitle": "Create superadmin",
+      "created": "Superadmin created",
+      "demote": "Demote",
+      "demoted": "Superadmin demoted",
+      "lastHint": "Last superadmin — cannot be demoted or deleted."
+    }
   }
 }
