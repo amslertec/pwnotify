@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..core.logging import get_logger
+from ..db.tenant_context import use_owner_context
 from ..models.run import Run
 from ..repositories import (
     audit_repo,
@@ -153,11 +154,17 @@ async def execute_run(
                 detail.append({"step": "sync", "error": str(exc)})
                 log.error("run_sync_failed", error=str(exc))
 
-            # 1b) SSO-Benutzer mit der Admin-Gruppe abgleichen (best effort)
+            # 1b) SSO-Benutzer mit der Admin-Gruppe abgleichen (best effort).
+            # WICHTIG: `app_user` ist instanzweit (kein tenant_id-RLS) -- läuft daher
+            # bewusst auf einer eigenen Owner-Session, NICHT auf der tenant-gescopten
+            # `session` dieses Laufs (die Einstellungen bleiben trotzdem die des
+            # aktiven Tenants, aus `settings` oben gelesen).
             try:
                 from . import oidc
 
-                sso_stats = await oidc.sync_sso_users(session, settings)
+                with use_owner_context():
+                    async with session_factory() as owner_session:
+                        sso_stats = await oidc.sync_sso_users(owner_session, settings)
                 if sso_stats.get("removal_blocked"):
                     # Sichtbar machen: ein blockierter Abgleich heisst, dass die
                     # Gruppenkonfiguration nicht stimmt. Der Lauf darf dann nicht

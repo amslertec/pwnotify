@@ -7,9 +7,11 @@ import datetime as dt
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.logging import get_logger
+from ..db.tenant_context import use_tenant
 from ..models.run import Run
 from .runner import execute_run
 from .settings_service import SettingsService
@@ -71,16 +73,43 @@ class SchedulerService:
     async def trigger_now(self, dry_run_override: bool | None = None) -> Run:
         return await self._run(trigger="manual", dry_run_override=dry_run_override)
 
+    async def _active_tenant_ids(self) -> list[int]:
+        """Aktive Kunden auf einer Owner-Session lesen (kein Tenant-Kontext aktiv).
+
+        ÜBERGANG (Phase 3 -> Phase 4): heute existiert nur der eine Default-Tenant, die
+        Schleife unten läuft also faktisch einmal -- identisch zum bisherigen Verhalten.
+        Echte Mehrmandanten-Läufe (gestaffelte Startzeiten, Concurrency-Limit) sind
+        Design §8 und ein eigener Folge-Task.
+        """
+        async with self.session_factory() as session:
+            res = await session.execute(text("SELECT id FROM tenant WHERE is_active"))
+            rows = res.scalars().all()
+        return [int(tid) for tid in rows]
+
     async def _run(self, *, trigger: str, dry_run_override: bool | None = None) -> Run:
         async with self._lock:  # verhindert Überlappung manuell/geplant
             self._running = True
             try:
-                return await execute_run(
-                    self.session_factory,
-                    trigger=trigger,
-                    dry_run_override=dry_run_override,
-                    base_url=self.base_url,
-                )
+                tenant_ids = await self._active_tenant_ids()
+                if not tenant_ids:
+                    raise RuntimeError(
+                        "Kein aktiver Kunde vorhanden -- der Lauf hat keinen Tenant zum "
+                        "Ausführen gefunden."
+                    )
+                last_run: Run | None = None
+                for tenant_id in tenant_ids:
+                    # Jeder Kunde läuft isoliert unter seinem eigenen Tenant-Kontext --
+                    # die im Runner geöffnete Session wird dadurch automatisch
+                    # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
+                    async with use_tenant(tenant_id):
+                        last_run = await execute_run(
+                            self.session_factory,
+                            trigger=trigger,
+                            dry_run_override=dry_run_override,
+                            base_url=self.base_url,
+                        )
+                assert last_run is not None  # tenant_ids ist nicht leer (s. o.)
+                return last_run
             finally:
                 self._running = False
 

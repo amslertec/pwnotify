@@ -48,6 +48,21 @@ async def use_tenant(tenant_id: int) -> AsyncGenerator[None]:
         yield
 
 
+@contextlib.contextmanager
+def use_owner_context() -> Iterator[None]:
+    """Vorübergehend in den Owner-Kontext (kein aktiver Tenant) wechseln.
+
+    Anders als ``use_tenant`` NICHT verschachtelungssicher gegenüber sich selbst, aber
+    genau dafür gedacht: innerhalb eines bereits aktiven ``use_tenant``-Blocks (z. B. im
+    Hintergrund-Lauf pro Kunde) gibt es Schreibzugriffe, die instanzweit bleiben müssen
+    (z. B. `app_user` beim SSO-Abgleich). Eine Session, die WÄHREND dieses Blocks geöffnet
+    wird, läuft wieder als Owner (kein Rollenwechsel, kein GUC) -- danach greift der
+    umschliessende Tenant-Kontext unverändert weiter.
+    """
+    with _bind_tenant(None):
+        yield
+
+
 def apply_tenant_on_begin(dbapi_connection: Any, connection_record: object) -> None:
     """SQLAlchemy 'begin'-Listener: bei aktivem Tenant in die App-Rolle wechseln + GUC setzen.
 
