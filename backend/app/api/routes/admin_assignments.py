@@ -16,13 +16,28 @@ schliesst sie für die NACHTRÄGLICHE Zuweisung).
 Ein Superadmin-Zielkonto ist NIE zuweisbar (er sieht ohnehin alle aktiven Tenants,
 `tenant_repo.allowed_tenant_ids`) -- `PUT` lehnt das hart ab, `GET` liefert defensiv eine
 leere Liste statt eines Fehlers (reiner Lesezugriff, nichts, worüber man reconcilen müsste).
+
+**Cross-Grant-Lock (Task 2, Kronjuwel dieser Route):** `set_assignments` prüft zusätzlich
+`tenant_repo.is_provider_account(session, target)` -- ein Kunden-homed Konto (Heim-Tenant
+ist NICHT der Default-Tenant, oder `tenant_id is None`) darf NUR noch auf seinen EIGENEN
+Heim-Tenant berechtigt werden, niemals auf einen fremden. Bewusst geprüft wird der HEIM-
+Tenant (`AppUser.tenant_id`), NICHT die Rolle: die Rolle (`admin`/`auditor`) sagt nur, welche
+KAPAZITÄT eine Zuweisung verleiht (Schreiben vs. Lesen, s. `_grant_kind` oben) -- sie sagt
+nichts darüber aus, ob das Konto überhaupt ein Provider- oder ein Kunden-Konto ist. Ein
+Kunden-homed `admin` und ein Kunden-homed `auditor` sind gleichermassen cross-grant-gesperrt;
+nur die Heimat entscheidet, nicht die Rolle. Der Default-Tenant ist die bewusste Ausnahme:
+NUR seine (Provider-)Konten darf der Superadmin auf beliebige weitere aktive Tenants
+berechtigen -- das ist der eigentliche Zweck dieser Route (der IT-Dienstleister betreut
+mehrere Kunden). Jedes andere Konto ist strukturell un-cross-grantable, selbst durch den
+Superadmin -- RLS und `tenant_repo.is_allowed` bleiben die Backstop-Ebene, dieser Lock ist
+die API-seitige Durchsetzung, BEVOR überhaupt eine Zuweisungszeile geschrieben wird.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from ...core.errors import ConflictError, NotFoundError
+from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...repositories import tenant_repo, user_repo
 from ...schemas.assignment import AssignmentOut, AssignmentUpdate
 from ...services import audit
@@ -70,8 +85,19 @@ async def set_assignments(
             code="cannot_assign_superadmin",
         )
     kind = _grant_kind(target.role)
-
     requested = set(body.tenant_ids)
+
+    if not await tenant_repo.is_provider_account(session, target):
+        # Kunden-homed Konto (s. Moduldoku "Cross-Grant-Lock"): die einzig erlaubte
+        # Zuweisung ist der eigene Heim-Tenant -- jede Fremd-Id in `requested` lehnt die
+        # GESAMTE Anfrage ab, bevor irgendeine Zuweisungszeile geschrieben wird.
+        allowed = {target.tenant_id} if target.tenant_id is not None else set()
+        if not (requested <= allowed):
+            raise ForbiddenError(
+                "Kunden-Konten können nicht auf fremde Mandanten berechtigt werden.",
+                code="customer_account_not_grantable",
+            )
+
     for tid in requested:
         tenant = await tenant_repo.get(session, tid)
         if tenant is None or not tenant.is_active:

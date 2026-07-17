@@ -78,7 +78,8 @@ async def _auditor_row(session: AsyncSession, user_id: int) -> AuditorTenant | N
 
 async def test_put_assigns_admin_tenants_and_grants_write_access(session: AsyncSession) -> None:
     superadmin = await _mk_user(session, role="superadmin")
-    local_admin = await _mk_user(session, role="admin")
+    default = await tenant_repo.default_tenant(session)
+    local_admin = await _mk_user(session, role="admin", tenant_id=default.id)
     tenant_a = await _mk_tenant(session)
     tenant_b = await _mk_tenant(session)
     assert local_admin.id is not None and tenant_a.id is not None and tenant_b.id is not None
@@ -116,7 +117,8 @@ async def test_put_assigns_admin_tenants_and_grants_write_access(session: AsyncS
 
 async def test_get_assignments_reflects_current_grants(session: AsyncSession) -> None:
     superadmin = await _mk_user(session, role="superadmin")
-    local_admin = await _mk_user(session, role="admin")
+    default = await tenant_repo.default_tenant(session)
+    local_admin = await _mk_user(session, role="admin", tenant_id=default.id)
     tenant_a = await _mk_tenant(session)
     assert local_admin.id is not None and tenant_a.id is not None
 
@@ -139,7 +141,8 @@ async def test_grant_type_follows_target_role_auditor_writes_auditor_tenant(
     session: AsyncSession,
 ) -> None:
     superadmin = await _mk_user(session, role="superadmin")
-    local_auditor = await _mk_user(session, role="auditor")
+    default = await tenant_repo.default_tenant(session)
+    local_auditor = await _mk_user(session, role="auditor", tenant_id=default.id)
     tenant_a = await _mk_tenant(session)
     assert local_auditor.id is not None and tenant_a.id is not None
 
@@ -159,7 +162,8 @@ async def test_grant_type_follows_target_role_auditor_writes_auditor_tenant(
 
 async def test_admin_role_target_never_gets_auditor_tenant_row(session: AsyncSession) -> None:
     superadmin = await _mk_user(session, role="superadmin")
-    local_admin = await _mk_user(session, role="admin")
+    default = await tenant_repo.default_tenant(session)
+    local_admin = await _mk_user(session, role="admin", tenant_id=default.id)
     tenant_a = await _mk_tenant(session)
     assert local_admin.id is not None and tenant_a.id is not None
 
@@ -179,9 +183,13 @@ async def test_sso_admin_of_main_tenant_can_be_granted_another_tenant(
     session: AsyncSession,
 ) -> None:
     """Design §2/§11.2: ein SSO-Konto des Haupttenants kann zusätzlich auf einen weiteren
-    Kunden berechtigt werden -- die Kapazität folgt weiterhin der (Ziel-)Rolle."""
+    Kunden berechtigt werden -- die Kapazität folgt weiterhin der (Ziel-)Rolle.
+
+    "Haupttenant" heisst hier wörtlich der DEFAULT-Tenant (Task 2's `is_provider_account`) --
+    nur dessen Konten sind cross-grant-fähig, ein beliebiger anderer Heim-Tenant wäre seit
+    dem Cross-Grant-Lock kundengebunden und dürfte NICHT auf `other` berechtigt werden."""
     superadmin = await _mk_user(session, role="superadmin")
-    home = await _mk_tenant(session)
+    home = await tenant_repo.default_tenant(session)
     other = await _mk_tenant(session)
     assert home.id is not None and other.id is not None
     sso_admin = await _mk_user(session, role="admin", is_sso=True, tenant_id=home.id)
@@ -220,7 +228,8 @@ async def test_put_targeting_superadmin_is_rejected(session: AsyncSession) -> No
 
 async def test_put_assigning_inactive_tenant_is_rejected(session: AsyncSession) -> None:
     superadmin = await _mk_user(session, role="superadmin")
-    local_admin = await _mk_user(session, role="admin")
+    default = await tenant_repo.default_tenant(session)
+    local_admin = await _mk_user(session, role="admin", tenant_id=default.id)
     inactive = await _mk_tenant(session, active=False)
     assert local_admin.id is not None and inactive.id is not None
 

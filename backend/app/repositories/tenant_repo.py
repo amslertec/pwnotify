@@ -240,6 +240,24 @@ async def is_allowed(
     return allowed is not None and tid in allowed and await _is_active(session, tid)
 
 
+async def is_provider_account(session: AsyncSession, user: AppUser) -> bool:
+    """Provider- vs. Kunden-Konto (Design §2) -- die Kern-Unterscheidung, auf der der
+    Cross-Grant-Lock in `admin_assignments.set_assignments` aufbaut (Task 2).
+
+    Ein Konto ist NUR dann ein Provider-Konto, wenn sein Heim-Tenant (`AppUser.tenant_id`)
+    exakt der Default-Tenant ist -- das ist der IT-Dienstleister selbst, dessen Konten der
+    Superadmin bewusst auf beliebige aktive Kundentenants zusätzlich berechtigen darf.
+
+    Default-Deny: `tenant_id is None` ist KEIN Provider-Konto -- ein fehlender Heim-Tenant
+    (z. B. ein SSO-Konto, dessen Heimat nie aufgelöst wurde) rechnet sich NICHT stillschweigend
+    als "provider" und damit als cross-grant-fähig. Der Superadmin selbst läuft NIE durch diese
+    Funktion -- er ist instanzweit und wird von der aufrufenden Route vorab hart abgelehnt
+    (nie zuweisbar), bevor `is_provider_account` überhaupt gerufen wird."""
+    if user.tenant_id is None:
+        return False
+    return user.tenant_id == (await default_tenant(session)).id
+
+
 async def add_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind: str) -> None:
     """Idempotente Zuweisung -- INSERT ... ON CONFLICT DO NOTHING auf dem zusammengesetzten
     Primärschlüssel (`user_id`, `tenant_id`). `kind` wählt die Zieltabelle: `"admin"` ->
