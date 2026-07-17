@@ -247,6 +247,23 @@ async def require_admin(user: CurrentUser) -> AppUser:
 AdminUser = Annotated[AppUser, Depends(require_admin)]
 
 
+async def require_local_admin(user: CurrentUser) -> AppUser:
+    """Instanzweite Verwaltung (Kunden-CRUD) nur für den LOKALEN Admin.
+
+    Mandantengebundene Konten (jedes SSO-Konto, auch role==admin, oder ein lokaler
+    Auditor) sind auf ihre Kunden beschränkt und dürfen keine Kunden anlegen/ändern/
+    löschen -- dieselbe Grenze wie in `get_audit_session`.
+    """
+    if user.is_sso or user.role != "admin":
+        raise ForbiddenError(
+            "Nur mit lokalen Administratorrechten möglich.", code="local_admin_required"
+        )
+    return user
+
+
+LocalAdminUser = Annotated[AppUser, Depends(require_local_admin)]
+
+
 def _cookie_kwargs() -> dict[str, object]:
     settings = get_settings()
     return {
