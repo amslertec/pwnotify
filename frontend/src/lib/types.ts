@@ -1,3 +1,8 @@
+export interface TenantRef {
+  id: number
+  name: string
+}
+
 export interface User {
   id: number
   username: string
@@ -11,6 +16,10 @@ export interface User {
   avatar_version: number
   /** Minuten ohne Aktivität bis zur automatischen Abmeldung (0 = aus). */
   idle_timeout_min: number
+  /** Aktuell aktiver Kunde (Mandant) — null, falls (noch) keinem zugeordnet. */
+  active_tenant: TenantRef | null
+  /** Kunden, zu denen dieses Konto wechseln darf. */
+  switchable_tenants: TenantRef[]
 }
 
 export interface LoginResponse {

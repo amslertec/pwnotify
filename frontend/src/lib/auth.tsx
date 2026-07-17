@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { api, ApiError, onAuthExpired } from './api'
 import type { LoginResponse, User } from './types'
@@ -16,6 +18,7 @@ interface AuthContextValue {
   verify2fa: (code: string) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
+  switchTenant: (tenantId: number) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -24,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const qc = useQueryClient()
+  const { t } = useTranslation()
 
   const refresh = async () => {
     try {
@@ -65,6 +69,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (res.user) setUser(res.user)
   }
 
+  // Kundenwechsel (Multi-Tenant): der Server setzt neue Auth-Cookies für den
+  // Ziel-Kunden und liefert den aktualisierten User zurück. qc.clear() erzwingt,
+  // dass alle gecachten kundendaten-Queries (Dashboard, Benutzer, …) neu laden.
+  const switchTenant = async (tenantId: number) => {
+    try {
+      const res = await api.post<User>('/auth/switch-tenant', { tenant_id: tenantId })
+      setUser(res)
+      qc.clear()
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        toast.error(t('tenant.switch_error'))
+        return
+      }
+      throw e
+    }
+  }
+
   const logout = async () => {
     try {
       await api.post('/auth/logout')
@@ -94,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, verify2fa, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, verify2fa, logout, refresh, switchTenant }}>
       {children}
     </AuthContext.Provider>
   )
