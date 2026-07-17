@@ -6,12 +6,20 @@ stempelt `tenant_id` aus `current_tenant_or_none()` (siehe settings_service.py);
 Owner-Session liefert das `None`, und `Setting.tenant_id` ist NOT NULL + Teil des
 Composite-PK -> jeder Logo-/Favicon-Upload oder -Löschvorgang endete mit `IntegrityError` ->
 HTTP 500. Der Fix stellt branding.py wie settings.py auf `TenantSettingsDep`/`TenantSessionDep`
-um (`get_tenant_session()` löst den Default-Tenant auf, auch ohne Auth).
+um.
+
+Phase 4a Task 3: die öffentlichen (unauthentifizierten) Lese-Routen (`public_branding`,
+`get_logo`, `get_favicon` -- Login-Seiten-Theming VOR jeder Anmeldung) laufen seither über
+die eigene `PublicTenantSettingsDep`/`get_public_tenant_session` (immer der Default-Tenant,
+kein Autorisierungs-Check nötig -- reines Theming, keine Kundendaten). `TenantSessionDep`
+selbst autorisiert jetzt den Benutzer (siehe `test_active_tenant_resolution.py`); dieser
+Test hier bleibt bewusst auf dem unauthentifizierten Pfad, weil er den ursprünglichen
+Tenant-Stempel-Bug auf genau diesem Pfad reproduziert, nicht die neue Autorisierung.
 
 Kein `TestClient`-Aufbau in dieser Suite (siehe test_route_tenant_scoping.py) -- der Beweis
 läuft auf Handler-Ebene: die Routenfunktionen werden direkt mit einer über
-`get_tenant_session()` aufgelösten Session getrieben, exakt der Pfad, den FastAPI beim echten
-Request nimmt.
+`get_public_tenant_session()` aufgelösten Session getrieben, exakt der Pfad, den FastAPI beim
+echten (unauthentifizierten) Request nimmt.
 """
 
 from __future__ import annotations
@@ -22,7 +30,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from app.api.deps import get_tenant_session
+from app.api.deps import get_public_tenant_session
 from app.api.routes import branding
 from app.core.config import get_settings
 from app.db import session as db_session
@@ -94,7 +102,7 @@ async def test_upload_and_delete_logo_via_tenant_session_no_500(
     Session (wie FastAPI sie via `TenantSettingsDep` injiziert) dürfen KEINEN
     `IntegrityError` werfen -- genau das war der Bug (Owner-Session -> tenant_id=None ->
     NOT-NULL-Verletzung -> HTTP 500)."""
-    gen = get_tenant_session()
+    gen = get_public_tenant_session()
     session = await anext(gen)
     try:
         svc = SettingsService(session)

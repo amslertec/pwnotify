@@ -110,7 +110,11 @@ async def test_trigger_now_creates_run_stamped_with_active_tenant_id(
         assert captured["oidc_role"] == "pwnotify", (
             f"sync_sso_users lief nicht als Owner-Rolle: {captured['oidc_role']}"
         )
-        assert captured["oidc_guc"] is None, (
+        # NULL (nie gesetzt) ODER '' (Reset-Wert eines Custom-GUC auf einer wiederverwendeten
+        # Pool-Verbindung, siehe die gleiche Konvention in test_runtime_isolation.py) zählen
+        # beide als "kein Tenant" -- exakt die Fail-safe-Konvention der App selbst
+        # (`NULLIF(current_setting(...), '')` in der RLS-Policy, Migration `c4d5e6f7a8b9`).
+        assert not captured["oidc_guc"], (
             "Owner-Session darf kein Tenant-GUC gesetzt haben (SET LOCAL ist "
             f"transaktionsgebunden): {captured['oidc_guc']!r}"
         )

@@ -14,7 +14,7 @@ from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...schemas.common import Message
-from ..deps import AdminUser, TenantSettingsDep
+from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -69,7 +69,7 @@ def _branding_dir() -> Path:
 
 
 @router.get("")
-async def public_branding(svc: TenantSettingsDep, response: Response) -> dict[str, Any]:
+async def public_branding(svc: PublicTenantSettingsDep, response: Response) -> dict[str, Any]:
     """Öffentlich (kein Auth) — für Login-/Setup-Seiten-Theming."""
     response.headers["Cache-Control"] = "no-store"
     s = await svc.get_all()
@@ -192,7 +192,7 @@ async def delete_favicon(_: AdminUser, svc: TenantSettingsDep) -> Message:
 
 
 @router.get("/logo")
-async def get_logo(svc: TenantSettingsDep) -> Response:
+async def get_logo(svc: PublicTenantSettingsDep) -> Response:
     path = await svc.get("branding.logo_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Logo gesetzt.", code="no_logo")
@@ -200,7 +200,7 @@ async def get_logo(svc: TenantSettingsDep) -> Response:
 
 
 @router.get("/favicon")
-async def get_favicon(svc: TenantSettingsDep) -> Response:
+async def get_favicon(svc: PublicTenantSettingsDep) -> Response:
     path = await svc.get("branding.favicon_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Favicon gesetzt.", code="no_favicon")

@@ -40,7 +40,7 @@ from ...core.twofa import (
 )
 from ...models._base import utcnow
 from ...models.user import AppUser
-from ...repositories import user_repo
+from ...repositories import tenant_repo, user_repo
 from ...schemas.auth import (
     LanguageUpdate,
     LoginRequest,
@@ -163,7 +163,18 @@ async def _complete_login(
     )
     user.last_login_at = utcnow()
     await user_repo.prune_sessions(session, user.id)  # type: ignore[arg-type]
-    pair = issue_token_pair(str(user.id))
+
+    # Aktiven Tenant fürs Login bestimmen -- IMMER gegen `is_allowed` gegenprüfen, nicht
+    # `resolve_initial_tenant` blind übernehmen: die Auflösung dort gated NICHT auf
+    # is_active (siehe deren Docstring), sonst käme z. B. ein inzwischen deaktivierter,
+    # eigener SSO-Tenant als aktiver Claim ins Token/`active_tenant_id` -- eine
+    # Verfügbarkeitslücke, kein Cross-Tenant-Leck, aber trotzdem falsch. Uniform für alle
+    # Kontoarten, kein Sonderfall.
+    tid = await tenant_repo.resolve_initial_tenant(session, user)
+    if tid is not None and not await tenant_repo.is_allowed(session, user, tid):
+        tid = None
+
+    pair = issue_token_pair(str(user.id), active_tenant=tid)
     await user_repo.create_session(
         session,
         user_id=user.id,  # type: ignore[arg-type]
@@ -172,6 +183,7 @@ async def _complete_login(
         expires_at=pair.refresh_expires,
         user_agent=request.headers.get("user-agent"),
         ip=request.client.host if request.client else None,
+        active_tenant_id=tid,
     )
     await session.commit()
     set_auth_cookies(response, pair)

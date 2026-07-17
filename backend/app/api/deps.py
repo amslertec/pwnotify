@@ -18,7 +18,7 @@ from ..core.security import TokenPair, decode_token
 from ..db.session import get_session, get_session_factory
 from ..db.tenant_context import tenant_scoped_session
 from ..models.user import AppUser
-from ..repositories import user_repo
+from ..repositories import tenant_repo, user_repo
 from ..services.settings_service import SettingsService
 
 ACCESS_COOKIE = "pwnotify_access"
@@ -36,20 +36,16 @@ async def get_settings_service(session: SessionDep) -> SettingsService:
 
 SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
 
-# Übergangs-Cache für die Default-Tenant-Id (Phase 3): die Zeile wird von der Phase-1-
-# Migration einmalig angelegt (`slug='default'`) und nie mehr geändert -- ein Modul-Cache
-# erspart bei jedem kundendaten-Request eine eigene Owner-Session nur für dieses Lookup.
-# Phase 4 (loginabhängiger Tenant) ersetzt diesen Helfer durch die echte Tenant-Auflösung
-# aus der Benutzersitzung; dann entfällt der Cache wieder.
+# Cache für die Default-Tenant-Id: die Zeile wird von der Phase-1-Migration einmalig
+# angelegt (`slug='default'`) und nie mehr geändert -- ein Modul-Cache erspart bei jedem
+# Lookup eine eigene Owner-Session. Wird noch für zwei Dinge gebraucht: die öffentlichen
+# (unauthentifizierten) Branding-Routen (`get_public_tenant_session`, unten) und als
+# Fallback-Tenant für den lokalen Admin in `tenant_repo.resolve_initial_tenant`.
 _default_tenant_id_cache: int | None = None
 
 
 async def default_tenant_id(session: AsyncSession) -> int:
-    """Id des Default-Tenants (`tenant.slug = 'default'`), gecached.
-
-    Übergangs-Helfer: solange Login nicht tenant-bewusst ist (Phase 4), ist der aktive
-    Tenant für jede kundendaten-Route immer der Default-Tenant.
-    """
+    """Id des Default-Tenants (`tenant.slug = 'default'`), gecached."""
     global _default_tenant_id_cache
     if _default_tenant_id_cache is None:
         tid = (
@@ -59,13 +55,13 @@ async def default_tenant_id(session: AsyncSession) -> int:
     return _default_tenant_id_cache
 
 
-async def get_tenant_session() -> AsyncGenerator[AsyncSession]:
-    """FastAPI-Dependency: tenant-scoped Session für kundendaten-Routen.
+async def get_public_tenant_session() -> AsyncGenerator[AsyncSession]:
+    """FastAPI-Dependency: tenant-scoped Session für ÖFFENTLICHE (unauthentifizierte)
+    Branding-Routen (Logo/Favicon/Theming auf der Login-Seite, vor jeder Anmeldung).
 
-    Übergang (Phase 3): der aktive Tenant ist immer der Default-Tenant -- die Instanz ist
-    single-tenant, Login wählt noch keinen Mandanten (das kommt in Phase 4). Die Session
-    läuft als eingeschränkte `pwnotify_app`-Rolle mit gesetztem Tenant-GUC -- RLS greift
-    tatsächlich, auch wenn aktuell alle Daten demselben (Default-)Tenant gehören.
+    Es gibt hier keinen Benutzer, den man autorisieren könnte -- bewusst immer der
+    Default-Tenant. Nur für reines Theming gedacht, NICHT für Kundendaten (siehe
+    `get_tenant_session` weiter unten für den authentifizierten, autorisierten Pfad).
     """
     async with get_session_factory()() as owner:
         tid = await default_tenant_id(owner)
@@ -73,14 +69,14 @@ async def get_tenant_session() -> AsyncGenerator[AsyncSession]:
         yield session
 
 
-TenantSessionDep = Annotated[AsyncSession, Depends(get_tenant_session)]
+PublicTenantSessionDep = Annotated[AsyncSession, Depends(get_public_tenant_session)]
 
 
-async def get_tenant_settings_service(session: TenantSessionDep) -> SettingsService:
+async def get_public_tenant_settings_service(session: PublicTenantSessionDep) -> SettingsService:
     return SettingsService(session)
 
 
-TenantSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_service)]
+PublicTenantSettingsDep = Annotated[SettingsService, Depends(get_public_tenant_settings_service)]
 
 
 async def get_current_user(request: Request, session: SessionDep) -> AppUser:
@@ -100,6 +96,76 @@ async def get_current_user(request: Request, session: SessionDep) -> AppUser:
 
 
 CurrentUser = Annotated[AppUser, Depends(get_current_user)]
+
+
+async def _claimed_active_tenant(request: Request) -> int | None:
+    """Liest den `active_tenant`-Claim aus dem Access-Token, falls vorhanden.
+
+    `get_current_user` (als Abhängigkeit dieser Funktion, siehe `get_tenant_session`) hat
+    das Token bereits erfolgreich dekodiert -- ein erneuter Fehlschlag hier wäre eine echte
+    Anomalie (z. B. Ablauf exakt zwischen beiden Dependency-Aufrufen). Fail-safe: in diesem
+    Randfall gilt der Claim als nicht vorhanden, `get_tenant_session` fällt dann auf die
+    `resolve_initial_tenant`-Neuauflösung zurück (weiterhin autorisiert, kein Leck) statt
+    mit einem unerklärten 500 zu scheitern.
+    """
+    token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token, expected_type="access")
+    except jwt.PyJWTError:
+        return None
+    raw = payload.get("active_tenant")
+    return int(raw) if raw is not None else None
+
+
+async def get_tenant_session(
+    request: Request, user: CurrentUser, session: SessionDep
+) -> AsyncGenerator[AsyncSession]:
+    """FastAPI-Dependency: tenant-scoped Session für authentifizierte Kundendaten-Routen.
+
+    Löst den aktiven Tenant aus dem `active_tenant`-Claim des Access-Tokens auf und
+    autorisiert ihn IMMER über `tenant_repo.is_allowed` -- auch wenn RLS einen fremden
+    Tenant ohnehin leer liefern würde, wird hier schon verweigert (403). Damit scheitert
+    ein gefälschter/veralteter Claim (z. B. ein zwischenzeitlich deaktivierter eigener
+    Tenant, oder ein fremder Tenant in einem manipulierten Token) NIE stillschweigend mit
+    0 Zeilen, sondern immer explizit.
+
+    Kein Claim (älteres Token, oder noch nie gesetzt): der Tenant wird wie beim Login neu
+    aufgelöst (`resolve_initial_tenant`) und ebenso über `is_allowed` gegengeprüft. Liefert
+    das keinen gültigen Tenant, ist das ein hartes 403 -- KEIN stiller Fallback auf den
+    Default-Tenant, sonst sähe z. B. ein Auditor ohne Zuweisung fremde Kundendaten.
+
+    `user`/`session` laufen auf der Owner-Rolle (kein RLS-Rollenwechsel) -- `tenant`,
+    `app_user` und `auditor_tenant` sind instanzweite Tabellen, genau das braucht
+    `tenant_repo` für seine Prüfungen. Erst danach wird die tenant-gescopte Session
+    (App-Rolle + GUC) geöffnet.
+    """
+    claim_tid = await _claimed_active_tenant(request)
+    if claim_tid is not None:
+        if not await tenant_repo.is_allowed(session, user, claim_tid):
+            raise ForbiddenError("Kein Zugriff auf diesen Mandanten.", code="tenant_forbidden")
+        tid = claim_tid
+    else:
+        resolved = await tenant_repo.resolve_initial_tenant(session, user)
+        if resolved is None or not await tenant_repo.is_allowed(session, user, resolved):
+            raise ForbiddenError(
+                "Diesem Konto ist kein Mandant zugeordnet.", code="tenant_forbidden"
+            )
+        tid = resolved
+
+    async with tenant_scoped_session(tid) as scoped:
+        yield scoped
+
+
+TenantSessionDep = Annotated[AsyncSession, Depends(get_tenant_session)]
+
+
+async def get_tenant_settings_service(session: TenantSessionDep) -> SettingsService:
+    return SettingsService(session)
+
+
+TenantSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_service)]
 
 
 async def get_enrolling_user(request: Request, session: SessionDep) -> AppUser:

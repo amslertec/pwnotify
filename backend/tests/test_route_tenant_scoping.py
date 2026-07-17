@@ -1,25 +1,36 @@
 """Tests für die Tenant-Session-Dependency (`get_tenant_session`/`TenantSessionDep`) und die
 Core-`pg_insert`-Writer, die `tenant_id` jetzt explizit stempeln (Phase 3, Task 3).
 
+Phase 4a Task 3: `get_tenant_session` autorisiert jetzt den aktuellen Benutzer (statt immer
+blind den Default-Tenant zu liefern) -- ein anonymer Aufruf wie vor diesem Task ist nicht
+mehr möglich. Die Tests hier treiben deshalb den vollen, echten Pfad: ein committeter
+lokaler Admin (`local_admin`-Fixture) + ein echtes Access-Token dafür + `get_current_user`
+davor, exakt wie FastAPI es pro Request tun würde (`_tenant_session_for` unten). Ein lokaler
+Admin ohne `active_tenant`-Claim im Token löst über den Fallback (`resolve_initial_tenant`)
+auf den Default-Tenant auf -- das ist weiterhin der Beweis, den diese Suite führt, jetzt nur
+authentifiziert statt anonym. Die eigentliche Autorisierungs-/Angriffs-Suite (erlaubter vs.
+verweigerter Claim) liegt in `test_active_tenant_resolution.py`.
+
 Es gibt in dieser Suite keine HTTP-Route-Tests (kein `TestClient`-Aufbau) -- der Beweis läuft
-auf Dependency-Ebene: `get_tenant_session()` wird direkt getrieben (async-Generator), genau
-wie FastAPI es beim Request-Teardown tun würde. Seed-Pattern wie in `test_isolation_attack.py`:
-echte Superuser-Connection auf `migrated_engine`, echt committet, Cleanup im `finally` (die
-savepoint-isolierte `session`-Fixture eignet sich hier nicht, siehe Kommentar dort).
+auf Dependency-Ebene. Seed-Pattern wie in `test_isolation_attack.py`: echte Superuser-
+Connection auf `migrated_engine`, echt committet, Cleanup im `finally` (die savepoint-
+isolierte `session`-Fixture eignet sich hier nicht, siehe Kommentar dort).
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
-from app.api.deps import default_tenant_id, get_tenant_session
+from app.api.deps import ACCESS_COOKIE, default_tenant_id, get_current_user, get_tenant_session
+from app.core.security import issue_token_pair
 from app.db.session import get_session_factory
 from app.db.tenant_context import tenant_scoped_session
 from app.repositories import entra_repo, notification_repo
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
 async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
@@ -28,6 +39,55 @@ async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
         return int(
             (await conn.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))).scalar_one()
         )
+
+
+class _FakeRequest:
+    """Duck-typed Request -- `get_current_user`/`get_tenant_session` lesen nur `.cookies`."""
+
+    def __init__(self, cookies: dict[str, str]) -> None:
+        self.cookies = cookies
+
+
+@pytest_asyncio.fixture
+async def local_admin(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
+    """Ein echter, committeter lokaler Admin -- `get_tenant_session` braucht seit Task 3
+    einen authentifizierten, autorisierten Benutzer (kein anonymer Aufruf mehr)."""
+    async with migrated_engine.connect() as conn:
+        uid = int(
+            (
+                await conn.execute(
+                    text(
+                        "INSERT INTO app_user "
+                        "(username, password_hash, role, is_active, is_sso, "
+                        "failed_login_count, language, created_at, updated_at) VALUES "
+                        "('rts-admin@local', 'x', 'admin', true, false, 0, 'de', now(), now()) "
+                        "RETURNING id"
+                    )
+                )
+            ).scalar_one()
+        )
+        await conn.commit()
+        try:
+            yield uid
+        finally:
+            await conn.execute(text("DELETE FROM app_user WHERE id = :uid"), {"uid": uid})
+            await conn.commit()
+
+
+@contextlib.asynccontextmanager
+async def _tenant_session_for(uid: int) -> AsyncGenerator[AsyncSession]:
+    """Treibt `get_tenant_session` exakt wie FastAPI es pro Request täte: echtes Access-Token
+    für `uid` (kein `active_tenant`-Claim -> Fallback über `resolve_initial_tenant`), eine
+    Owner-Session für `get_current_user`+Autorisierung, dann die tenant-gescopte Session."""
+    pair = issue_token_pair(str(uid))
+    request = _FakeRequest({ACCESS_COOKIE: pair.access_token})
+    async with get_session_factory()() as owner:
+        user = await get_current_user(request, owner)
+        gen = get_tenant_session(request, user, owner)
+        try:
+            yield await anext(gen)
+        finally:
+            await gen.aclose()
 
 
 @pytest_asyncio.fixture
@@ -53,14 +113,13 @@ async def foreign_tenant(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
 
 
 async def test_get_tenant_session_runs_as_app_role_with_default_tenant_guc(
-    migrated_engine: AsyncEngine,
+    migrated_engine: AsyncEngine, local_admin: int
 ) -> None:
     """Der eigentliche Beweis: die Dependency wechselt in die eingeschränkte App-Rolle und
-    setzt das Tenant-GUC auf den echten Default-Tenant -- nicht auf den Owner."""
+    setzt das Tenant-GUC auf den echten Default-Tenant -- nicht auf den Owner. Der lokale
+    Admin trägt keinen `active_tenant`-Claim, löst also über den Fallback auf."""
     dtid = await _real_default_tenant_id(migrated_engine)
-    gen = get_tenant_session()
-    try:
-        session = await anext(gen)
+    async with _tenant_session_for(local_admin) as session:
         role, guc = (
             await session.execute(
                 text("SELECT current_user, current_setting('app.current_tenant', true)")
@@ -68,8 +127,6 @@ async def test_get_tenant_session_runs_as_app_role_with_default_tenant_guc(
         ).one()
         assert role == "pwnotify_app", f"Läuft nicht als App-Rolle: {role}"
         assert guc == str(dtid), f"GUC zeigt nicht auf den Default-Tenant: {guc} != {dtid}"
-    finally:
-        await gen.aclose()
 
 
 async def test_default_tenant_id_helper_matches_real_default_tenant(
@@ -82,7 +139,7 @@ async def test_default_tenant_id_helper_matches_real_default_tenant(
 
 
 async def test_get_tenant_session_sees_only_default_tenant_rows(
-    migrated_engine: AsyncEngine, foreign_tenant: int
+    migrated_engine: AsyncEngine, foreign_tenant: int, local_admin: int
 ) -> None:
     """Cross-Tenant-Seed: eine Zeile für den echten Default-Tenant, eine für einen fremden
     Tenant. Über `get_tenant_session()` darf NUR die Default-Tenant-Zeile sichtbar sein."""
@@ -108,9 +165,7 @@ async def test_get_tenant_session_sees_only_default_tenant_rows(
         await conn.commit()
         own_id, foreign_id = ids
         try:
-            gen = get_tenant_session()
-            try:
-                session = await anext(gen)
+            async with _tenant_session_for(local_admin) as session:
                 rows = (
                     (
                         await session.execute(
@@ -121,8 +176,6 @@ async def test_get_tenant_session_sees_only_default_tenant_rows(
                     .scalars()
                     .all()
                 )
-            finally:
-                await gen.aclose()
             assert set(rows) == {own_id}, f"Erwartet nur die eigene Zeile, sah {rows}"
         finally:
             await conn.execute(
