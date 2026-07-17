@@ -9,7 +9,8 @@ from sqlalchemy import Column, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
-from ._base import TENANT_ID_BRIDGE, utcnow
+from ..db.tenant_context import current_tenant_or_none
+from ._base import utcnow
 
 
 class EntraUser(SQLModel, table=True):
@@ -17,7 +18,10 @@ class EntraUser(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     tenant_id: int = Field(
-        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=TENANT_ID_BRIDGE
+        foreign_key="tenant.id",
+        index=True,
+        nullable=False,
+        default_factory=current_tenant_or_none,
     )
     entra_id: str = Field(sa_column=Column(String(64), unique=True, index=True, nullable=False))
     upn: str = Field(sa_column=Column(String(320), index=True, nullable=False))
@@ -57,7 +61,10 @@ class Exclusion(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     tenant_id: int = Field(
-        foreign_key="tenant.id", index=True, nullable=False, sa_column_kwargs=TENANT_ID_BRIDGE
+        foreign_key="tenant.id",
+        index=True,
+        nullable=False,
+        default_factory=current_tenant_or_none,
     )
     kind: str = Field(sa_column=Column(String(16), nullable=False))  # "user" | "group"
     value: str = Field(sa_column=Column(String(320), nullable=False))  # entra_id / group-id / upn

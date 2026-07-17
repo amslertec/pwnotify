@@ -20,6 +20,18 @@ from .session import get_session_factory
 current_tenant_id: ContextVar[int | None] = ContextVar("current_tenant_id", default=None)
 
 
+def current_tenant_or_none() -> int | None:
+    """Aktiver Tenant für kontext-abhängige Column-Defaults (INSERT-Stempel).
+
+    Wird als ``default_factory``/Spalten-Default auf ``tenant_id`` der Tenant-Tabellen
+    verwendet: läuft ein Schreibzugriff innerhalb von ``tenant_scoped_session``/``use_tenant``,
+    stempelt er automatisch den aktiven Tenant; ohne Kontext (Owner) liefert er ``None`` --
+    das NOT-NULL-Constraint der fünf Datentabellen macht daraus dann bewusst einen Fehler
+    (kein stiller Fallback mehr, siehe Phase-1-Brücke in `_base.py`, jetzt entfernt).
+    """
+    return current_tenant_id.get()
+
+
 @contextlib.contextmanager
 def _bind_tenant(tenant_id: int | None) -> Iterator[None]:
     token = current_tenant_id.set(tenant_id)

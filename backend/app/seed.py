@@ -5,11 +5,13 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .core.config import get_settings
 from .core.logging import get_logger
 from .core.security import hash_password
+from .db.tenant_context import use_tenant
 from .repositories import user_repo
 from .services.settings_service import SettingsService
 
@@ -56,11 +58,19 @@ async def run_seed(session_factory: async_sessionmaker[AsyncSession]) -> None:
     settings = get_settings()
     async with session_factory() as session:
         svc = SettingsService(session)
-        # 1) Settings nur beim allerersten Start seeden.
+        # 1) Settings nur beim allerersten Start seeden -- gebunden an den Default-Tenant
+        # (die einzige Kundenidentität, die eine Single-Tenant-Installation kennt). Seit dem
+        # Wegfall des Phase-1-server_default (Task 1) muss tenant_id für die NOT-NULL-Spalte
+        # `setting.tenant_id` explizit gesetzt sein -- ohne aktiven Tenant-Kontext schlägt
+        # der Schreibzugriff sonst fehl.
         if not await svc.has_any():
+            default_tenant_id = (
+                await session.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))
+            ).scalar_one_or_none()
             values = _env_to_settings(settings)
-            if values:
-                await svc.set_many(values)
+            if values and default_tenant_id is not None:
+                async with use_tenant(default_tenant_id):
+                    await svc.set_many(values)
                 log.info("settings_seeded", keys=len(values))
 
         # 2) Admin aus ENV anlegen, falls konfiguriert und noch keiner existiert.

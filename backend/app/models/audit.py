@@ -18,6 +18,7 @@ from sqlalchemy import Column, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
+from ..db.tenant_context import current_tenant_or_none
 from ._base import utcnow
 
 
@@ -25,7 +26,9 @@ class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_log"
 
     id: int | None = Field(default=None, primary_key=True)
-    tenant_id: int | None = Field(default=None, foreign_key="tenant.id", index=True)
+    tenant_id: int | None = Field(
+        default_factory=current_tenant_or_none, foreign_key="tenant.id", index=True
+    )
     at: dt.datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False, index=True),

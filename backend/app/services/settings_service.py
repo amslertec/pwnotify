@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.config import get_settings
 from ..core.crypto import decrypt, encrypt
 from ..core.logging import get_logger
+from ..db.tenant_context import current_tenant_or_none
 from ..models._base import utcnow
 from ..models.setting import Setting
 from .settings_schema import MASK, SECRET_KEYS, SETTINGS, default_settings
@@ -87,9 +88,20 @@ class SettingsService:
 
     async def _upsert(self, key: str, value: Any, is_secret: bool) -> None:
         now = utcnow()
+        # tenant_id explizit aus dem aktiven Tenant-Kontext: dies ist ein Core-`pg_insert`,
+        # das (anders als `session.add(Setting(...))`) den ORM-`default_factory` NICHT
+        # durchläuft -- ohne diesen Wert würde die NOT-NULL-Spalte seit dem Wegfall des
+        # Phase-1-server_default fehlschlagen. Volles Tenant-Scoping der Aufrufer (Routen,
+        # Scheduler) folgt in Task 3/4; dieser Fix hält den Writer selbst funktionsfähig.
         stmt = (
             pg_insert(Setting)
-            .values(key=key, value=value, is_secret=is_secret, updated_at=now)
+            .values(
+                tenant_id=current_tenant_or_none(),
+                key=key,
+                value=value,
+                is_secret=is_secret,
+                updated_at=now,
+            )
             .on_conflict_do_update(
                 index_elements=[Setting.tenant_id, Setting.key],
                 set_={"value": value, "is_secret": is_secret, "updated_at": now},
