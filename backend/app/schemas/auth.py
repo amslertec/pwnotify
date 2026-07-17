@@ -12,6 +12,17 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class TenantRef(BaseModel):
+    """Minimale Tenant-Darstellung fürs Frontend (Umschalter, aktiver Mandant)."""
+
+    id: int
+    name: str
+
+
+class SwitchTenantRequest(BaseModel):
+    tenant_id: int
+
+
 class UserOut(BaseModel):
     id: int
     username: str
@@ -28,6 +39,12 @@ class UserOut(BaseModel):
     # braucht den Wert, um bei echter Untätigkeit selbst abzumelden — ein offener Tab
     # pollt sonst weiter und hielte die Sitzung am Leben.
     idle_timeout_min: int = 0
+    # Aktiver Mandant (aus dem `active_tenant`-Claim/der Session aufgelöst) -- None, wenn
+    # dem Konto (noch) keiner zugeordnet ist. Und die Mandanten, zu denen umgeschaltet
+    # werden darf (Phase 4a Task 5) -- <=1 Eintrag heisst fürs Frontend: Umschalter
+    # ausblenden, es gibt nichts zum Wechseln.
+    active_tenant: TenantRef | None = None
+    switchable_tenants: list[TenantRef] = []
 
 
 class LanguageUpdate(BaseModel):

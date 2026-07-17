@@ -6,11 +6,13 @@ from fastapi import APIRouter, Request
 
 from ...core.errors import ConflictError, NotFoundError
 from ...core.security import hash_password
-from ...repositories import user_repo
+from ...db.tenant_context import tenant_scoped_session
+from ...repositories import tenant_repo, user_repo
 from ...schemas.auth import AdminUserCreate, AdminUserOut, RoleUpdate
 from ...schemas.common import Message
 from ...services import audit
-from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
+from ...services.settings_service import SettingsService
+from ..deps import AdminUser, CurrentUser, SessionDep
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
@@ -113,20 +115,47 @@ async def delete_user(
 
 
 @router.post("/sso/sync", response_model=Message)
-async def sync_sso(_: AdminUser, session: SessionDep, svc: SettingsDep) -> Message:
-    # TODO(Phase 4, §8): läuft auf der Owner-Session -- liest oidc.*-Settings und
-    # synchronisiert app_user instanzweit über ALLE Tenants hinweg. Korrekt solange
-    # single-tenant; sobald ein zweiter Tenant existiert, ist unklar, wessen
-    # oidc.admin_group_id/oidc.enabled gilt (gleiche Owner-Session-Falle wie in
-    # branding.py vor Task 6). Muss per-Tenant werden.
+async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
+    """Gleicht SSO-Benutzer PRO aktivem Mandanten ab -- jeder Kunde hat seine eigene
+    ``oidc.admin_group_id``/``oidc.auditor_group_id``/``graph.*``-Konfiguration
+    (Phase-3-TODO, hier geschlossen): vormals lief der Abgleich EINMAL auf der
+    Owner-Session -- weil RLS für die Owner-Rolle nicht greift, läse ``get_all()`` dort ein
+    undefiniertes Gemisch der ``oidc.*``-Zeilen ALLER Tenants, sobald ein zweiter existiert.
+
+    ``app_user`` ist instanzweit (kein RLS) -- der eigentliche Schreibzugriff
+    (``oidc.sync_sso_users``) läuft deshalb bewusst auf der übergebenen Owner-`session`
+    (kein aktiver Tenant-Kontext an dieser Stelle: `tenant_scoped_session` bindet den
+    Kontext nur für die Dauer seines eigenen `async with`-Blocks, s.u., danach ist der
+    Owner-Kontext automatisch wieder aktiv) -- anders als der Hintergrund-Lauf
+    (`runner.execute_run`), dessen Tenant-Schleife bereits INNERHALB eines aktiven
+    `use_tenant`-Blocks steht und deshalb explizit `use_owner_context()` braucht.
+    """
     from ...services import oidc
 
-    settings = await svc.get_all()
-    if not settings.get("oidc.enabled") or not settings.get("oidc.admin_group_id"):
+    tenants = await tenant_repo.list_active(session)
+    configured = False
+    synced = removed = 0
+    blocked_tenants: list[str] = []
+    for tenant in tenants:
+        assert tenant.id is not None  # persistierte Zeile aus der DB
+        async with tenant_scoped_session(tenant.id) as tsession:
+            settings = await SettingsService(tsession).get_all()
+        if not settings.get("oidc.enabled") or not settings.get("oidc.admin_group_id"):
+            continue
+        configured = True
+        stats = await oidc.sync_sso_users(session, settings)
+        synced += stats["synced"]
+        removed += stats["removed"]
+        if stats.get("removal_blocked"):
+            blocked_tenants.append(tenant.name)
+
+    if not configured:
         raise ConflictError(
             "SSO ist nicht aktiviert oder keine Admin-Gruppe hinterlegt.", code="sso_not_configured"
         )
-    stats = await oidc.sync_sso_users(session, settings)
-    return Message(
-        message=(f"{stats['synced']} SSO-Benutzer synchronisiert, {stats['removed']} entfernt.")
-    )
+    message = f"{synced} SSO-Benutzer synchronisiert, {removed} entfernt."
+    if blocked_tenants:
+        message += (
+            f" Entfernen blockiert für: {', '.join(blocked_tenants)} (Schutz vor Aussperrung)."
+        )
+    return Message(message=message)

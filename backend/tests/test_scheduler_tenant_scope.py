@@ -46,6 +46,45 @@ async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
 
 
 @pytest_asyncio.fixture
+async def second_tenant_with_schedule(
+    migrated_engine: AsyncEngine,
+) -> AsyncGenerator[tuple[int, str, str]]:
+    """Ein zweiter AKTIVER Tenant mit einem EIGENEN, exotischen `schedule.cron`/
+    `schedule.timezone` -- Beweis für Task 5's Fix: `_read_schedule` darf nicht mehr blind
+    über alle Tenants hinweg lesen (Phase-3-TODO: eine unscoped Owner-Session sah, weil RLS
+    für die Owner-Rolle nicht greift, ein undefiniertes Gemisch aus ALLEN `schedule.*`-
+    Zeilen, sobald ein zweiter Tenant existiert)."""
+    cron, tz = "*/13 * * * *", "Pacific/Kiritimati"
+    async with migrated_engine.connect() as conn:
+        tid = int(
+            (
+                await conn.execute(
+                    text(
+                        "INSERT INTO tenant (name, slug, is_active, created_at) VALUES "
+                        "('Sts5Second','sts5-second',true,now()) RETURNING id"
+                    )
+                )
+            ).scalar_one()
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO setting (tenant_id, key, value, is_secret, updated_at) VALUES "
+                "(:tid, 'schedule.cron', to_jsonb(CAST(:cron AS text)), false, now()), "
+                "(:tid, 'schedule.timezone', to_jsonb(CAST(:tz AS text)), false, now())"
+            ),
+            {"tid": tid, "cron": cron, "tz": tz},
+        )
+        await conn.commit()
+        try:
+            yield tid, cron, tz
+        finally:
+            await conn.execute(text("DELETE FROM run WHERE tenant_id = :tid"), {"tid": tid})
+            await conn.execute(text("DELETE FROM setting WHERE tenant_id = :tid"), {"tid": tid})
+            await conn.execute(text("DELETE FROM tenant WHERE id = :tid"), {"tid": tid})
+            await conn.commit()
+
+
+@pytest_asyncio.fixture
 async def inactive_tenant(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
     """Ein zweiter, INAKTIVER Tenant -- die Lauf-Schleife darf ihn nicht anfassen."""
     async with migrated_engine.connect() as conn:
@@ -146,6 +185,54 @@ async def test_trigger_now_does_not_touch_inactive_tenant(
                 )
             ).scalar_one()
         assert foreign_runs == 0, "Ein inaktiver Tenant hat trotzdem einen Lauf bekommen"
+    finally:
+        async with migrated_engine.connect() as conn:
+            await conn.execute(text("DELETE FROM run WHERE id = :rid"), {"rid": run.id})
+            await conn.commit()
+
+
+async def test_run_reads_each_tenants_own_schedule(
+    migrated_engine: AsyncEngine,
+    second_tenant_with_schedule: tuple[int, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task 5: schliesst das Phase-3-TODO. `_read_schedule` wird jetzt innerhalb der
+    Tenant-Schleife aufgerufen (tenant-gescopte Session) -- jeder Kunde bekommt sein
+    EIGENES `schedule.cron`/`schedule.timezone` zurück, nicht ein Gemisch aus allen."""
+    dtid = await _real_default_tenant_id(migrated_engine)
+    second_tid, second_cron, second_tz = second_tenant_with_schedule
+    captured: dict[str, Any] = {}
+    _patch_heavy_dependencies(monkeypatch, captured)
+
+    reads: list[tuple[int | None, str, str]] = []
+    orig_read_schedule = SchedulerService._read_schedule
+
+    async def _spy_read_schedule(self: SchedulerService, session: Any) -> tuple[str, str]:
+        from app.db.tenant_context import current_tenant_or_none
+
+        cron, tz = await orig_read_schedule(self, session)
+        reads.append((current_tenant_or_none(), cron, tz))
+        return cron, tz
+
+    monkeypatch.setattr(SchedulerService, "_read_schedule", _spy_read_schedule)
+
+    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    run = await service.trigger_now(dry_run_override=True)
+
+    try:
+        by_tenant = {tid: (cron, tz) for tid, cron, tz in reads}
+        assert by_tenant.get(second_tid) == (second_cron, second_tz), (
+            f"Zweiter Tenant bekam nicht sein eigenes Schedule: {by_tenant.get(second_tid)}"
+        )
+        assert dtid in by_tenant, "Default-Tenant wurde in der Schleife nicht gelesen"
+        assert by_tenant[dtid] != by_tenant[second_tid], (
+            f"Beide Tenants lieferten dasselbe Schedule -- Blend-Bug nicht behoben: {by_tenant}"
+        )
+
+        # `_read_default_schedule` (treibt den EINEN globalen APScheduler-Job) ist
+        # deterministisch auf den Default-Tenant gescoped, nicht auf den zweiten Tenant.
+        default_cron, default_tz = await service._read_default_schedule()
+        assert (default_cron, default_tz) != (second_cron, second_tz)
     finally:
         async with migrated_engine.connect() as conn:
             await conn.execute(text("DELETE FROM run WHERE id = :rid"), {"rid": run.id})

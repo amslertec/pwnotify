@@ -11,8 +11,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.logging import get_logger
-from ..db.tenant_context import use_tenant
+from ..db.tenant_context import tenant_scoped_session, use_tenant
 from ..models.run import Run
+from ..repositories import tenant_repo
 from .runner import execute_run
 from .settings_service import SettingsService
 
@@ -31,7 +32,7 @@ class SchedulerService:
 
     # -- Lifecycle ----------------------------------------------------------- #
     async def start(self) -> None:
-        cron, tz = await self._read_schedule()
+        cron, tz = await self._read_default_schedule()
         self._scheduler.start()
         self._add_job(cron, tz)
         log.info("scheduler_started", cron=cron, timezone=tz)
@@ -43,16 +44,29 @@ class SchedulerService:
         log.info("scheduler_stopped")
 
     # -- Konfiguration ------------------------------------------------------- #
-    async def _read_schedule(self) -> tuple[str, str]:
-        # TODO(Phase 4, §8): liest auf der Owner-Session -- instanzweit EIN Schedule für
-        # ALLE Tenants. Korrekt solange single-tenant; sobald ein zweiter Tenant existiert,
-        # ist "welcher Tenant meint dieses schedule.cron?" nicht mehr eindeutig (siehe
-        # branding.py-Fix, Task 6 -- gleiche Owner-Session-Falle, hier bewusst noch
-        # unangetastet). Muss auf Tenant-scoped Lesen umgestellt werden.
-        async with self.session_factory() as session:
-            svc = SettingsService(session)
-            data = await svc.get_all()
+    async def _read_schedule(self, session: AsyncSession) -> tuple[str, str]:
+        """Liest ``schedule.cron``/``schedule.timezone`` auf der ÜBERGEBENEN, bereits
+        passend gescopten Session. Vormals (Phase-3-TODO) lief das auf einer unscoped
+        Owner-Session -- weil RLS für die Owner-Rolle nicht greift, ergab `select(Setting)`
+        dort ein undefiniertes Gemisch aus den `schedule.*`-Zeilen ALLER Tenants, sobald ein
+        zweiter existierte (letzte gelesene Zeile gewinnt, keine Filterung). Aufrufer sind
+        jetzt immer eindeutig gescoped: `_read_default_schedule` (der EINE globale
+        APScheduler-Job -- echtes gestaffeltes Multi-Tenant-Scheduling mit eigenen
+        Job-Zeiten pro Kunde bleibt Design §8, ein eigener Folge-Task, siehe
+        `_active_tenant_ids`) und `_run` (jeder Kunde liest sein EIGENES Schedule innerhalb
+        seines eigenen `use_tenant`-Blocks)."""
+        svc = SettingsService(session)
+        data = await svc.get_all()
         return (data.get("schedule.cron") or "0 8 * * *", data.get("schedule.timezone") or "UTC")
+
+    async def _read_default_schedule(self) -> tuple[str, str]:
+        """Treibt den EINEN globalen APScheduler-Job (`start`/`reschedule`) -- deterministisch
+        über den Default-Tenant gescoped statt blind über alle Tenants hinweg."""
+        async with self.session_factory() as owner:
+            tenant = await tenant_repo.default_tenant(owner)
+        assert tenant.id is not None  # persistierte Zeile aus der DB
+        async with tenant_scoped_session(tenant.id) as session:
+            return await self._read_schedule(session)
 
     def _add_job(self, cron: str, tz: str) -> None:
         trigger = CronTrigger.from_crontab(cron, timezone=tz)
@@ -67,7 +81,7 @@ class SchedulerService:
         )
 
     async def reschedule(self) -> None:
-        cron, tz = await self._read_schedule()
+        cron, tz = await self._read_default_schedule()
         self._add_job(cron, tz)
         log.info("scheduler_rescheduled", cron=cron, timezone=tz)
 
@@ -107,6 +121,12 @@ class SchedulerService:
                     # die im Runner geöffnete Session wird dadurch automatisch
                     # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
                     async with use_tenant(tenant_id):
+                        # Eigenes Schedule dieses Kunden lesen (tenant-gescopt, s.
+                        # `_read_schedule`-Docstring) -- treibt aktuell nur Sichtbarkeit
+                        # (Log), noch keine gestaffelte Ausführungszeit pro Kunde (§8).
+                        async with self.session_factory() as tsession:
+                            cron, tz = await self._read_schedule(tsession)
+                        log.info("run_tenant_schedule", tenant_id=tenant_id, cron=cron, timezone=tz)
                         last_run = await execute_run(
                             self.session_factory,
                             trigger=trigger,

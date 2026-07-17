@@ -119,6 +119,12 @@ async def _claimed_active_tenant(request: Request) -> int | None:
     return int(raw) if raw is not None else None
 
 
+ActiveTenantClaim = Annotated[int | None, Depends(_claimed_active_tenant)]
+"""Der rohe `active_tenant`-Claim aus dem Access-Token, unautorisiert -- nur zur ANZEIGE
+(z. B. `UserOut.active_tenant`), NICHT zum Scopen von Kundendaten-Zugriffen (dafür immer
+`get_tenant_session`/`TenantSessionDep`, die zusätzlich über `tenant_repo.is_allowed` gated)."""
+
+
 async def get_tenant_session(
     request: Request, user: CurrentUser, session: SessionDep
 ) -> AsyncGenerator[AsyncSession]:

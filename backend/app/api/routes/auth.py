@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from ...core import imagetype
 from ...core.config import get_settings
 from ...core.crypto import decrypt, encrypt
-from ...core.errors import AuthError, NotFoundError, PwNotifyError
+from ...core.errors import AuthError, ForbiddenError, NotFoundError, PwNotifyError
 from ...core.logging import get_logger
 from ...core.security import (
     create_2fa_token,
@@ -49,6 +49,8 @@ from ...schemas.auth import (
     ProfileUpdate,
     RecoveryCodesOut,
     SessionOut,
+    SwitchTenantRequest,
+    TenantRef,
     TwoFactorCode,
     TwoFactorSetupOut,
     UserOut,
@@ -61,6 +63,7 @@ from ..deps import (
     ACCESS_COOKIE,
     REFRESH_COOKIE,
     TWOFA_COOKIE,
+    ActiveTenantClaim,
     CurrentUser,
     EnrollingUser,
     SessionDep,
@@ -131,10 +134,27 @@ async def _cache_sso_avatar(user_id: int, upn: str, settings: dict[str, object])
         _avatar_path(user_id).write_bytes(processed)
 
 
-def _user_out(user: AppUser) -> UserOut:
-    """UserOut inkl. Avatar-Status (Existenz + mtime als Cache-Buster)."""
+async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | None) -> UserOut:
+    """UserOut inkl. Avatar-Status (Existenz + mtime als Cache-Buster) und Mandanten-Info
+    (Phase 4a Task 5): der aktive Mandant (aus Claim/Session, ungeprüft -- reine Anzeige,
+    siehe `ActiveTenantClaim`-Docstring) sowie die Liste der Mandanten, zu denen dieses
+    Konto umschalten darf (`tenant_repo.allowed_tenant_ids`: None -> alle aktiven, sonst
+    genau diese, jeweils weiter auf tatsächlich AKTIVE Tenants beschränkt)."""
     path = _avatar_path(user.id) if user.id is not None else None
     exists = bool(path and path.exists())
+
+    active_tenant: TenantRef | None = None
+    if active_tenant_id is not None:
+        t = await tenant_repo.get(session, active_tenant_id)
+        if t is not None:
+            active_tenant = TenantRef(id=t.id, name=t.name)  # type: ignore[arg-type]
+
+    allowed_ids = await tenant_repo.allowed_tenant_ids(session, user)
+    active_tenants = await tenant_repo.list_active(session)
+    if allowed_ids is not None:
+        active_tenants = [t for t in active_tenants if t.id in allowed_ids]
+    switchable = [TenantRef(id=t.id, name=t.name) for t in active_tenants]  # type: ignore[arg-type]
+
     return UserOut(
         id=user.id,  # type: ignore[arg-type]
         username=user.username,
@@ -147,6 +167,8 @@ def _user_out(user: AppUser) -> UserOut:
         has_avatar=exists,
         avatar_version=int(path.stat().st_mtime) if exists and path else 0,
         idle_timeout_min=_settings.idle_timeout_min,
+        active_tenant=active_tenant,
+        switchable_tenants=switchable,
     )
 
 
@@ -187,7 +209,7 @@ async def _complete_login(
     )
     await session.commit()
     set_auth_cookies(response, pair)
-    return LoginResponse(two_factor_required=False, user=_user_out(user))
+    return LoginResponse(two_factor_required=False, user=await _user_out(session, user, tid))
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -438,8 +460,13 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
         clear_auth_cookies(response)
         raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
 
-    # Rotation in-place: dieselbe Sitzung behält eine Zeile, Token wird ausgetauscht.
-    pair = issue_token_pair(str(user.id))
+    # Rotation in-place: dieselbe Sitzung behält eine Zeile, Token wird ausgetauscht. Der
+    # aktive Tenant MUSS erhalten bleiben (`us.active_tenant_id` selbst bleibt unverändert --
+    # dieselbe Zeile, kein Reset) -- ohne `active_tenant=` hier verlöre das neue Access-Token
+    # den Claim bei JEDEM Refresh (alle `access_token_ttl_min`), und `get_tenant_session`
+    # würde den Tenant über `resolve_initial_tenant` neu auflösen statt den zuvor über
+    # `/auth/switch-tenant` gewählten aktiven Tenant beizubehalten.
+    pair = issue_token_pair(str(user.id), active_tenant=us.active_tenant_id)
     us.refresh_jti = pair.refresh_jti
     us.token_hash = hash_token(pair.refresh_token)
     us.expires_at = pair.refresh_expires
@@ -448,7 +475,7 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
     us.ip_address = (request.client.host if request.client else None) or us.ip_address
     await session.commit()
     set_auth_cookies(response, pair)
-    return _user_out(user)
+    return await _user_out(session, user, us.active_tenant_id)
 
 
 @router.post("/logout", response_model=Message)
@@ -470,26 +497,84 @@ async def logout(request: Request, response: Response, session: SessionDep) -> M
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: CurrentUser) -> UserOut:
-    return _user_out(user)
+async def me(user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim) -> UserOut:
+    return await _user_out(session, user, active_tenant)
+
+
+@router.post("/switch-tenant", response_model=UserOut)
+async def switch_tenant(
+    request: Request,
+    response: Response,
+    body: SwitchTenantRequest,
+    user: CurrentUser,
+    session: SessionDep,
+) -> UserOut:
+    """Mandanten-Umschalter (Phase 4a Task 5): setzt den aktiven Mandanten der LAUFENDEN
+    Sitzung (nicht bloss den Anzeige-Claim) -- über `is_allowed` gegengeprüft, sonst 403,
+    bevor irgendetwas geändert wird. Erst danach: `user_session.active_tenant_id`
+    aktualisieren + Token-Paar mit dem neuen Claim neu ausstellen (gleiche Zeile, neue
+    `jti`, exakt das Rotationsmuster aus `refresh`/`_complete_login`) + Cookies setzen.
+    """
+    if not await tenant_repo.is_allowed(session, user, body.tenant_id):
+        raise ForbiddenError("Kein Zugriff auf diesen Mandanten.", code="tenant_forbidden")
+
+    token = request.cookies.get(REFRESH_COOKIE)
+    if not token:
+        raise AuthError("Kein Refresh-Token.", code="no_refresh_token")
+    try:
+        payload = decode_token(token, expected_type="refresh")
+    except jwt.PyJWTError as exc:
+        raise AuthError("Ungültiges Refresh-Token.", code="invalid_token") from exc
+
+    us = await user_repo.get_session_by_jti(session, payload["jti"])
+    now = utcnow()
+    if (
+        us is None
+        or us.revoked
+        or us.user_id != user.id
+        or us.token_hash != hash_token(token)
+        or us.expires_at < now
+    ):
+        raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
+
+    pair = issue_token_pair(str(user.id), active_tenant=body.tenant_id)
+    us.refresh_jti = pair.refresh_jti
+    us.token_hash = hash_token(pair.refresh_token)
+    us.expires_at = pair.refresh_expires
+    us.active_tenant_id = body.tenant_id
+    us.last_used_at = now
+    await audit.record(
+        session,
+        action=audit.TENANT_SWITCHED,
+        actor=user,
+        request=request,
+        detail={"tenant_id": body.tenant_id},
+    )
+    await session.commit()
+    set_auth_cookies(response, pair)
+    return await _user_out(session, user, body.tenant_id)
 
 
 @router.post("/profile", response_model=UserOut)
-async def update_profile(body: ProfileUpdate, user: CurrentUser, session: SessionDep) -> UserOut:
+async def update_profile(
+    body: ProfileUpdate, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+) -> UserOut:
     user.display_name = (body.display_name or "").strip() or None
     user.updated_at = utcnow()
     await session.commit()
     await session.refresh(user)
-    return _user_out(user)
+    return await _user_out(session, user, active_tenant)
 
 
 @router.post("/language", response_model=UserOut)
-async def set_language(body: LanguageUpdate, user: CurrentUser, session: SessionDep) -> UserOut:
+async def set_language(
+    body: LanguageUpdate, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+) -> UserOut:
     user.language = body.language
     user.updated_at = utcnow()
     await session.commit()
     await session.refresh(user)
-    return _user_out(user)
+    return await _user_out(session, user, active_tenant)
 
 
 @router.get("/me/avatar")
@@ -501,7 +586,12 @@ async def get_my_avatar(user: CurrentUser) -> FileResponse:
 
 
 @router.post("/me/avatar", response_model=UserOut)
-async def upload_my_avatar(user: CurrentUser, file: UploadFile = File(...)) -> UserOut:
+async def upload_my_avatar(
+    user: CurrentUser,
+    session: SessionDep,
+    active_tenant: ActiveTenantClaim,
+    file: UploadFile = File(...),
+) -> UserOut:
     if user.is_sso:
         raise PwNotifyError(
             "Das Profilbild wird aus Microsoft Entra übernommen.", code="avatar_sso_managed"
@@ -524,18 +614,20 @@ async def upload_my_avatar(user: CurrentUser, file: UploadFile = File(...)) -> U
     if processed is None:
         raise PwNotifyError("Ungültige Bilddatei.", code="invalid_image")
     _avatar_path(user.id).write_bytes(processed)  # type: ignore[arg-type]
-    return _user_out(user)
+    return await _user_out(session, user, active_tenant)
 
 
 @router.delete("/me/avatar", response_model=UserOut)
-async def delete_my_avatar(user: CurrentUser) -> UserOut:
+async def delete_my_avatar(
+    user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+) -> UserOut:
     if user.is_sso:
         raise PwNotifyError(
             "Das Profilbild wird aus Microsoft Entra übernommen.", code="avatar_sso_managed"
         )
     if user.id is not None:
         _avatar_path(user.id).unlink(missing_ok=True)
-    return _user_out(user)
+    return await _user_out(session, user, active_tenant)
 
 
 @router.get("/sessions", response_model=list[SessionOut])
@@ -664,10 +756,14 @@ async def two_factor_enable(
 @router.post("/2fa/disable", response_model=UserOut)
 @limiter.limit(_settings.login_rate_limit)
 async def two_factor_disable(
-    request: Request, body: TwoFactorCode, user: CurrentUser, session: SessionDep
+    request: Request,
+    body: TwoFactorCode,
+    user: CurrentUser,
+    session: SessionDep,
+    active_tenant: ActiveTenantClaim,
 ) -> UserOut:
     if not user.totp_enabled:
-        return _user_out(user)
+        return await _user_out(session, user, active_tenant)
     valid = (user.totp_secret and verify_totp(decrypt(user.totp_secret), body.code)) or (
         match_recovery_code(body.code, json.loads(user.recovery_codes or "[]")) is not None
     )
@@ -681,7 +777,7 @@ async def two_factor_disable(
     await audit.record(session, action=audit.TWOFA_DISABLED, actor=user, request=request)
     await session.commit()
     await session.refresh(user)
-    return _user_out(user)
+    return await _user_out(session, user, active_tenant)
 
 
 # --------------------------------------------------------------------------- #
