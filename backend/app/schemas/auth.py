@@ -98,6 +98,26 @@ class RoleUpdate(BaseModel):
     role: str = Field(pattern="^(admin|auditor)$")
 
 
+class SuperadminCreate(BaseModel):
+    """Nur für den superadmin-only Erstellungs-Endpunkt (`POST /admin/users/superadmin`,
+    Task 4) -- bewusst KEIN `role`-Feld (immer fest `superadmin`) und ein explizites
+    `is_sso`-Feld, das die Route hart ablehnt, statt es zu ignorieren (Design §11.3:
+    Superadmin ist IMMER ein lokales Konto)."""
+
+    username: str = Field(min_length=3, max_length=150)
+    password: str = Field(min_length=10, max_length=1024)
+    display_name: str | None = Field(default=None, max_length=320)
+    is_sso: bool = False
+
+
+class SuperadminToggle(BaseModel):
+    """Body für `POST /admin/users/{user_id}/superadmin` (Task 4) -- der einzige Pfad, über
+    den ein Konto zum/vom Superadmin befördert/herabgestuft werden kann (`set_role` selbst
+    lehnt jeden Rollenwechsel eines Superadmin-Ziels ab, siehe dortigen Guard)."""
+
+    promote: bool
+
+
 class SessionOut(BaseModel):
     id: int
     user_agent: str | None

@@ -8,11 +8,17 @@ from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...core.security import hash_password
 from ...db.tenant_context import tenant_scoped_session
 from ...repositories import tenant_repo, user_repo
-from ...schemas.auth import AdminUserCreate, AdminUserOut, RoleUpdate
+from ...schemas.auth import (
+    AdminUserCreate,
+    AdminUserOut,
+    RoleUpdate,
+    SuperadminCreate,
+    SuperadminToggle,
+)
 from ...schemas.common import Message
 from ...services import audit
 from ...services.settings_service import SettingsService
-from ..deps import ActiveTenantClaim, AdminUser, CurrentUser, SessionDep
+from ..deps import ActiveTenantClaim, AdminUser, CurrentUser, SessionDep, SuperadminUser
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
@@ -132,6 +138,17 @@ async def set_role(
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
+    # Ein Superadmin-Ziel läuft NIE über diesen Pfad (Task 4, Access-Modell/Superadmin-
+    # Phase): dieses Gate ist `AdminUser`, nicht `SuperadminUser` -- ein PLAIN Admin
+    # könnte sonst über `RoleUpdate.role='admin'` (vom Schema erlaubt) den letzten
+    # Superadmin unbemerkt zu einem gewöhnlichen Admin herabstufen, ohne dass der
+    # Last-Superadmin-Schutz (der nur in `set_superadmin` sitzt) je greift. Der Wechsel
+    # zum/vom Superadmin läuft ausschliesslich über `set_superadmin` (superadmin-only).
+    if target.role == "superadmin":
+        raise ForbiddenError(
+            "Superadmin-Rollenwechsel nur über die Superadmin-Verwaltung möglich.",
+            code="superadmin_required",
+        )
     # Den letzten Administrator nicht herabstufen — sonst kann niemand mehr verwalten.
     # Deckt auch den Selbstentzug ab, wenn man der einzige Admin ist.
     if (
@@ -158,6 +175,114 @@ async def set_role(
     return AdminUserOut.model_validate(target, from_attributes=True)
 
 
+@router.post("/superadmin", response_model=AdminUserOut)
+async def create_superadmin(
+    request: Request, admin: SuperadminUser, body: SuperadminCreate, session: SessionDep
+) -> AdminUserOut:
+    """Legt einen LOKALEN Superadmin an -- superadmin-only (Design §11.3: Superadmin ist
+    IMMER ein lokales Konto, nie SSO). KEINE automatische Zuweisung: der Superadmin ist
+    instanzweit und braucht keine `admin_tenant`/`auditor_tenant`-Zeile (anders als
+    `create_local` für gewöhnliche Admin/Auditor-Konten, Task 3)."""
+    if body.is_sso:
+        raise ConflictError(
+            "Ein Superadmin muss ein lokales Konto sein.", code="superadmin_must_be_local"
+        )
+    existing = await user_repo.get_by_username(session, body.username)
+    if existing is not None:
+        raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
+
+    user = await user_repo.create(
+        session,
+        username=body.username,
+        password_hash=hash_password(body.password),
+        display_name=body.display_name,
+        role="superadmin",
+        is_sso=False,
+    )
+    await audit.record(
+        session,
+        action=audit.SUPERADMIN_CREATED,
+        actor=admin,
+        target=body.username,
+        request=request,
+    )
+    await session.commit()
+    return AdminUserOut.model_validate(user, from_attributes=True)
+
+
+@router.post("/{user_id}/superadmin", response_model=AdminUserOut)
+async def set_superadmin(
+    request: Request,
+    admin: SuperadminUser,
+    user_id: int,
+    body: SuperadminToggle,
+    session: SessionDep,
+) -> AdminUserOut:
+    """Befördert/degradiert zum/vom Superadmin -- der EINZIGE Pfad dafür (`set_role` lehnt
+    jeden Rollenwechsel eines Superadmin-Ziels hart ab, s.o.). Superadmin-only.
+
+    Befördern: nur ein LOKALES Ziel (`not is_sso`) darf Superadmin werden (Design §11.3,
+    `code="superadmin_must_be_local"`) -- seine bisherigen `admin_tenant`/
+    `auditor_tenant`-Zuweisungen werden dabei geräumt (bewusste Entscheidung: der
+    Superadmin sieht ohnehin alle aktiven Tenants, verwaiste Zuweisungszeilen wären reiner
+    Datenmüll und würden bei einer künftigen Rückstufung sonst überraschend wieder
+    aufleben).
+
+    Degradieren: der letzte AKTIVE Superadmin darf nicht herabgestuft werden (Design §11.4,
+    `code="cannot_demote_last_superadmin"`) -- sonst könnte sich niemand mehr instanzweit
+    verwalten. Das Ziel fällt dabei auf `role="admin"` zurück (keine feinere Rolle unterhalb
+    von Superadmin ist hier definiert)."""
+    target = await user_repo.get(session, user_id)
+    if target is None:
+        raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
+
+    if body.promote:
+        if target.role == "superadmin":
+            return AdminUserOut.model_validate(target, from_attributes=True)
+        if target.is_sso:
+            raise ConflictError(
+                "Nur lokale Konten können zu Superadmin befördert werden.",
+                code="superadmin_must_be_local",
+            )
+        vorher = target.role
+        target.role = "superadmin"
+        assert target.id is not None  # bereits persistiert (kam aus user_repo.get)
+        for existing_kind in ("admin", "auditor"):
+            for tid in await tenant_repo.list_grant_tenant_ids(session, target.id, existing_kind):
+                await tenant_repo.remove_grant(
+                    session, user_id=target.id, tenant_id=tid, kind=existing_kind
+                )
+        await audit.record(
+            session,
+            action=audit.USER_ROLE_CHANGED,
+            actor=admin,
+            target=target.username,
+            request=request,
+            detail={"from": vorher, "to": "superadmin", "sso": target.is_sso},
+        )
+    else:
+        if target.role != "superadmin":
+            return AdminUserOut.model_validate(target, from_attributes=True)
+        if await user_repo.count_superadmins(session) <= 1:
+            raise ConflictError(
+                "Der letzte Superadmin kann nicht herabgestuft werden.",
+                code="cannot_demote_last_superadmin",
+            )
+        target.role = "admin"
+        await audit.record(
+            session,
+            action=audit.USER_ROLE_CHANGED,
+            actor=admin,
+            target=target.username,
+            request=request,
+            detail={"from": "superadmin", "to": "admin", "sso": target.is_sso},
+        )
+
+    await session.commit()
+    await session.refresh(target)
+    return AdminUserOut.model_validate(target, from_attributes=True)
+
+
 @router.delete("/{user_id}", response_model=Message)
 async def delete_user(
     request: Request, user: AdminUser, user_id: int, session: SessionDep
@@ -171,6 +296,14 @@ async def delete_user(
     if target.id == user.id:
         raise ConflictError(
             "Sie können Ihr eigenes Konto nicht löschen.", code="cannot_delete_self"
+        )
+    # Last-Superadmin-Schutz (Design §11.4) -- analog zum Last-Admin-Schutz oben, aber für
+    # die instanzweite Rolle: ohne diese Prüfung könnte ein PLAIN Admin (dieses Gate ist
+    # `AdminUser`, nicht `SuperadminUser`) den letzten Superadmin per Löschung aussperren.
+    if target.role == "superadmin" and await user_repo.count_superadmins(session) <= 1:
+        raise ConflictError(
+            "Der letzte Superadmin kann nicht gelöscht werden.",
+            code="cannot_delete_last_superadmin",
         )
     await audit.record(
         session,

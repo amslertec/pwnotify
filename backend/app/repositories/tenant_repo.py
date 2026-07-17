@@ -33,6 +33,7 @@ Effektive Mengen (Design §2, Kern-Invariante):
 
 from __future__ import annotations
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -252,6 +253,35 @@ async def add_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind
     stmt = pg_insert(table).values(user_id=user_id, tenant_id=tenant_id).on_conflict_do_nothing()
     await session.execute(stmt)
     await session.commit()
+
+
+async def remove_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind: str) -> None:
+    """Kehrt `add_grant` um -- löscht die Zuweisungszeile. Idempotent: kein Fehler, wenn sie
+    gar nicht existiert (die aufrufende Route in Task 4 ermittelt die zu entfernende Menge
+    ohnehin per Diff gegen `list_grant_tenant_ids`, ein doppeltes DELETE käme hier also
+    praktisch nie vor -- idempotent trotzdem, aus demselben Grund wie bei `add_grant`)."""
+    if kind not in ("admin", "auditor"):
+        raise ValueError(f"Unbekannte Zuweisungsart: {kind!r}")
+    model = AdminTenant if kind == "admin" else AuditorTenant
+    await session.execute(
+        sa_delete(model).where(model.user_id == user_id, model.tenant_id == tenant_id)
+    )
+    await session.commit()
+
+
+async def list_grant_tenant_ids(session: AsyncSession, user_id: int, kind: str) -> list[int]:
+    """Die ROHEN Zuweisungszeilen eines Kontos für EINE Zuweisungsart -- OHNE Aktiv-Join,
+    anders als `_admin_grant_tenant_ids`/`_assigned_active_tenant_ids`.
+
+    Task 4 (`admin_assignments.py`) muss die exakte gespeicherte Menge kennen, um sie mit
+    der angeforderten Menge zu diffen (Add/Remove-Delta) -- ein Aktiv-Filter würde eine
+    Zuweisung auf einen zwischenzeitlich deaktivierten Tenant verstecken, sodass der
+    nächste Abgleich sie fälschlich als "fehlend" erneut anlegen würde."""
+    if kind not in ("admin", "auditor"):
+        raise ValueError(f"Unbekannte Zuweisungsart: {kind!r}")
+    model = AdminTenant if kind == "admin" else AuditorTenant
+    res = await session.execute(select(model.tenant_id).where(model.user_id == user_id))
+    return list(res.scalars().all())
 
 
 async def resolve_initial_tenant(session: AsyncSession, user: AppUser) -> int | None:

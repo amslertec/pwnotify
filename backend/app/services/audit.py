@@ -41,6 +41,9 @@ SECRET_CHANGED = "settings.secret_changed"
 TENANT_CREATED = "tenant.created"
 TENANT_UPDATED = "tenant.updated"
 TENANT_DELETED = "tenant.deleted"
+TENANT_ASSIGNED = "tenant.assigned"  # Zuweisung eines Kontos zu einem weiteren Mandanten
+TENANT_UNASSIGNED = "tenant.unassigned"  # Zuweisung entzogen (Task 4)
+SUPERADMIN_CREATED = "user.superadmin_created"
 
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.
