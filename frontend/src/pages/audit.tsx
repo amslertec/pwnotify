@@ -236,10 +236,37 @@ function AuditRow({
   )
 }
 
-/** Kompakt und lesbar: `schluessel=wert`, Listen zusammengezogen. Sonderfall `tenant_id`:
- *  wird zu einem lesbaren Kundennamen aufgelöst (Map kann leer sein — Fallback auf `#id`,
- *  etwa wenn der Kunde inzwischen gelöscht wurde oder `/admin/tenants` noch lädt). */
-function formatiereDetail(
+/** Kunden-ID → lesbarer Name. Map kann leer sein (etwa wenn der Kunde inzwischen gelöscht
+ *  wurde oder `/admin/tenants` noch lädt) — dann Fallback auf `#id`. */
+function tenantName(id: unknown, tenantNamen: Map<number, string>): string {
+  const numId = Number(id)
+  return tenantNamen.get(numId) ?? `#${numId}`
+}
+
+/** `kind`/`role` tragen dieselben Werte (`admin`/`auditor`/`superadmin`) — ein Feld für die
+ *  lesbare Rollen-Bezeichnung, unabhängig davon, unter welchem Detail-Schlüssel sie steckt. */
+function roleLabel(value: unknown, t: TFunction): string {
+  if (value === 'admin') return t('audit.detail.roleAdmin')
+  if (value === 'auditor') return t('audit.detail.roleAuditor')
+  if (value === 'superadmin') return t('audit.detail.roleSuperadmin')
+  return String(value)
+}
+
+/** Detail-Schlüssel, die nur ein Label brauchen und den Rohwert unverändert anzeigen. */
+const LABEL_NUR: Record<string, string> = {
+  entra_group_id: 'audit.detail.entraGroupId',
+  name: 'audit.detail.name',
+  email: 'audit.detail.email',
+  member_count: 'audit.detail.memberCount',
+  materialized: 'audit.detail.materialized',
+  added: 'audit.detail.added',
+  removed: 'audit.detail.removed',
+}
+
+/** Kompakt und lesbar: `schluessel=wert`, Listen zusammengezogen. Bekannte Schlüssel werden
+ *  humanisiert (Kundennamen, Rollen-Labels, Sync-Zähler, …); alles Unbekannte fällt auf
+ *  `schluessel=wert` zurück, damit die Seite bei neuen/unerwarteten Detail-Feldern nie abstürzt. */
+export function formatiereDetail(
   detail: Record<string, unknown>,
   tenantNamen: Map<number, string>,
   t: TFunction,
@@ -247,9 +274,28 @@ function formatiereDetail(
   return Object.entries(detail)
     .map(([k, v]) => {
       if (k === 'tenant_id') {
-        const id = Number(v)
-        const name = tenantNamen.get(id)
-        return `${t('audit.detail.tenant')}: ${name ?? `#${id}`}`
+        return `${t('audit.detail.tenant')}: ${tenantName(v, tenantNamen)}`
+      }
+      if (k === 'granted_tenant_id') {
+        return `${t('audit.detail.grantedTenant')}: ${tenantName(v, tenantNamen)}`
+      }
+      if (k === 'home_tenant_id') {
+        return `${t('audit.detail.homeTenant')}: ${tenantName(v, tenantNamen)}`
+      }
+      if (k === 'tenant_ids' && Array.isArray(v)) {
+        return `${t('audit.detail.tenants')}: ${v.map((id) => tenantName(id, tenantNamen)).join(', ')}`
+      }
+      if (k === 'kind') {
+        return `${t('audit.detail.kind')}: ${roleLabel(v, t)}`
+      }
+      if (k === 'role') {
+        return `${t('audit.detail.role')}: ${roleLabel(v, t)}`
+      }
+      if (k === 'sso') {
+        return `${t('audit.detail.sso')}: ${v ? t('common.yes') : t('common.no')}`
+      }
+      if (k in LABEL_NUR) {
+        return `${t(LABEL_NUR[k])}: ${Array.isArray(v) ? v.join(', ') : String(v)}`
       }
       return `${k}=${Array.isArray(v) ? v.join(', ') : String(v)}`
     })

@@ -149,10 +149,39 @@
       "settings.secret_changed": "Secret changed",
       "tenant.created": "Customer created",
       "tenant.updated": "Customer updated",
-      "tenant.deleted": "Customer deleted"
+      "tenant.deleted": "Customer deleted",
+      "tenant.assigned": "Customer assigned",
+      "tenant.unassigned": "Customer unassigned",
+      "user.superadmin_created": "Superadmin created",
+      "instance.mode_changed": "Multi-tenant mode changed",
+      "group.created": "Group created",
+      "group.updated": "Group updated",
+      "group.deleted": "Group deleted",
+      "group.tenants_set": "Group customers set",
+      "group.synced": "Group synced",
+      "user.invited": "User invited",
+      "user.invitation_accepted": "Invitation accepted",
+      "auth.password_reset_sent": "Password reset link sent",
+      "auth.password_reset_done": "Password reset"
     },
     "detail": {
-      "tenant": "Customer"
+      "tenant": "Customer",
+      "grantedTenant": "Granted customer",
+      "homeTenant": "Home customer",
+      "tenants": "Customers",
+      "kind": "Access type",
+      "role": "Role",
+      "roleAdmin": "Administrator",
+      "roleAuditor": "Auditor",
+      "roleSuperadmin": "Superadmin",
+      "sso": "SSO",
+      "email": "Email",
+      "name": "Name",
+      "entraGroupId": "Entra group ID",
+      "memberCount": "Member count",
+      "materialized": "Materialized",
+      "added": "Added",
+      "removed": "Removed"
     }
   },
   "validation": {

@@ -149,10 +149,39 @@
       "settings.secret_changed": "Secret geändert",
       "tenant.created": "Kunde erstellt",
       "tenant.updated": "Kunde geändert",
-      "tenant.deleted": "Kunde gelöscht"
+      "tenant.deleted": "Kunde gelöscht",
+      "tenant.assigned": "Kunde zugewiesen",
+      "tenant.unassigned": "Kunde entzogen",
+      "user.superadmin_created": "Superadmin erstellt",
+      "instance.mode_changed": "Mehrmandanten-Modus geändert",
+      "group.created": "Gruppe erstellt",
+      "group.updated": "Gruppe geändert",
+      "group.deleted": "Gruppe gelöscht",
+      "group.tenants_set": "Gruppen-Kunden festgelegt",
+      "group.synced": "Gruppe synchronisiert",
+      "user.invited": "Benutzer eingeladen",
+      "user.invitation_accepted": "Einladung angenommen",
+      "auth.password_reset_sent": "Passwort-Reset-Link gesendet",
+      "auth.password_reset_done": "Passwort zurückgesetzt"
     },
     "detail": {
-      "tenant": "Kunde"
+      "tenant": "Kunde",
+      "grantedTenant": "Zugewiesener Kunde",
+      "homeTenant": "Stamm-Kunde",
+      "tenants": "Kunden",
+      "kind": "Zugriffsart",
+      "role": "Rolle",
+      "roleAdmin": "Administrator",
+      "roleAuditor": "Auditor",
+      "roleSuperadmin": "Superadmin",
+      "sso": "SSO",
+      "email": "E-Mail",
+      "name": "Name",
+      "entraGroupId": "Entra-Gruppen-ID",
+      "memberCount": "Mitgliederzahl",
+      "materialized": "Wirksam übernommen",
+      "added": "Hinzugefügt",
+      "removed": "Entfernt"
     }
   },
   "validation": {
