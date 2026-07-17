@@ -41,7 +41,7 @@ from ...core.twofa import (
 from ...db.tenant_context import tenant_scoped_session
 from ...models._base import utcnow
 from ...models.user import AppUser
-from ...repositories import tenant_repo, user_repo
+from ...repositories import assignment_group_repo, tenant_repo, user_repo
 from ...schemas.auth import (
     LanguageUpdate,
     LoginRequest,
@@ -954,6 +954,15 @@ async def oidc_callback(
     # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) liest ausschliesslich
     # `AppUser.tenant_id` für SSO-Konten.
     user.tenant_id = tenant.id
+
+    # Gruppen-Reconcile (SICHERHEITSKRITISCH, Console+Groups+Invite Task 4): materialisiert
+    # `source='group'`-Grants aus den Team-Mitgliedschaften (`result.groups`) dieses Logins.
+    # Läuft bei JEDEM SSO-Login; die `is_provider_account`-Gate in `reconcile_group_grants`
+    # (erste Zeile, fail-closed) macht es für ein KUNDEN-homed Konto zum No-op -- dessen
+    # Heim-Tenant ist sein Kunde, nicht der Default-Tenant. Kein Gruppen-Grant für Kunden-
+    # Konten, keine Berührung manueller Grants. Bewusst NICHT im Passwort-Login-Pfad
+    # (lokale Konten sind nie in Entra-Gruppen).
+    await assignment_group_repo.reconcile_group_grants(session, user, result.groups)
 
     # Muss hier stehen, weil dieser Pfad bewusst nicht über `_complete_login` läuft
     # (Redirect statt JSON-Antwort). Ohne diesen Eintrag fehlten ausgerechnet die

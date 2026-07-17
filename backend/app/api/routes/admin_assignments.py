@@ -71,6 +71,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...models.user import AppUser
 from ...repositories import tenant_repo, user_repo
+from ...repositories.tenant_repo import _grant_kind
 from ...schemas.assignment import (
     AssignmentOut,
     AssignmentUpdate,
@@ -82,12 +83,6 @@ from ...services import audit
 from ..deps import SessionDep, SuperadminDefaultContextUser
 
 router = APIRouter(prefix="/admin/assignments", tags=["admin-assignments"])
-
-
-def _grant_kind(role: str) -> str:
-    """Grant-Typ aus der Rolle des Zielkontos -- die einzige Stelle, die diese Abbildung
-    trifft (siehe Moduldoku: Kern der Task-4-Abweichung)."""
-    return "admin" if role == "admin" else "auditor"
 
 
 async def _cross_grant_lock_allows(

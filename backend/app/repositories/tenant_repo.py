@@ -43,6 +43,18 @@ from ..models.tenant import AdminTenant, AuditorTenant, Tenant
 from ..models.user import AppUser
 
 
+def _grant_kind(role: str) -> str:
+    """Grant-Typ (Zieltabelle) aus der Rolle eines Zielkontos -- DIE eine Stelle, die diese
+    Abbildung trifft: `role=='admin'` -> `admin_tenant` (Schreib-Kapazität), sonst
+    (`auditor`) -> `auditor_tenant` (nur lesend).
+
+    Bewusst hier in `tenant_repo` (nicht in einer Route), damit `admin_assignments`
+    (Superadmin-Zuweisung) UND `assignment_group_repo.reconcile_group_grants` (Gruppen-
+    Reconcile beim SSO-Login) EXAKT dieselbe Rolle->Kind-Abbildung teilen -- zwei parallele
+    Kopien könnten sonst auseinanderlaufen, sobald eine Rolle hinzukäme."""
+    return "admin" if role == "admin" else "auditor"
+
+
 async def list_active(session: AsyncSession) -> list[Tenant]:
     res = await session.execute(
         select(Tenant).where(Tenant.is_active.is_(True)).order_by(Tenant.name)
@@ -314,6 +326,26 @@ async def list_grant_tenant_ids(session: AsyncSession, user_id: int, kind: str) 
     model = AdminTenant if kind == "admin" else AuditorTenant
     res = await session.execute(select(model.tenant_id).where(model.user_id == user_id))
     return list(res.scalars().all())
+
+
+async def list_grant_rows(session: AsyncSession, user_id: int, kind: str) -> list[tuple[int, str]]:
+    """Wie `list_grant_tenant_ids`, aber MIT `source` je Zeile -- `(tenant_id, source)`,
+    ohne Aktiv-Join (dieselbe Begründung: der Reconcile muss die exakt gespeicherte Menge
+    kennen). Für den Gruppen-Reconcile (`assignment_group_repo.reconcile_group_grants`), der
+    `source='group'`-Zeilen materialisiert und dabei bestehende `source='manual'`-Zeilen
+    respektieren muss -- die Quelle jeder Zeile ist genau diese Information.
+
+    Höchstens eine Zeile pro `(user_id, tenant_id, kind)` (Composite-PK, Task-1-Invariante),
+    also ist `remove_grant` über `(user_id, tenant_id, kind)` eindeutig -- ein separater
+    `source`-Filter beim Löschen ist nicht nötig, sofern der Aufrufer die zu entfernende
+    Menge auf `source='group'`-Zeilen beschränkt (das tut der Reconcile per Diff)."""
+    if kind not in ("admin", "auditor"):
+        raise ValueError(f"Unbekannte Zuweisungsart: {kind!r}")
+    model = AdminTenant if kind == "admin" else AuditorTenant
+    res = await session.execute(
+        select(model.tenant_id, model.source).where(model.user_id == user_id)
+    )
+    return [(int(tid), str(src)) for tid, src in res.all()]
 
 
 async def resolve_initial_tenant(session: AsyncSession, user: AppUser) -> int | None:

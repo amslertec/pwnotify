@@ -23,6 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.errors import ConflictError, NotFoundError
 from ..models.assignment_group import AssignmentGroup, AssignmentGroupTenant
 from ..models.tenant import Tenant
+from ..models.user import AppUser
+from . import tenant_repo
+from .tenant_repo import _grant_kind
 
 
 async def get_by_entra_group_id(
@@ -133,3 +136,57 @@ async def tenant_ids_for_entra_groups(session: AsyncSession, entra_group_ids: se
         .distinct()
     )
     return set(res.scalars().all())
+
+
+async def reconcile_group_grants(
+    session: AsyncSession, user: AppUser, entra_group_ids: list[str] | None
+) -> None:
+    """SICHERHEITSKRITISCH (Kronjuwel des Inkrements): materialisiert `source='group'`-Grants
+    für ein PROVIDER-Konto anhand seiner Entra-Gruppen-Mitgliedschaften beim SSO-Login. Wird
+    aus `auth.oidc_callback` bei JEDEM SSO-Login gerufen.
+
+    Zwei harte Isolations-Invarianten, die dieser Reconcile NIE verletzen darf:
+    1. **Ein Kunden-homed Konto (oder `tenant_id is None`) erhält NIEMALS einen Gruppen-Grant.**
+       Die `is_provider_account`-Prüfung ist die ERSTE Zeile (fail-closed), VOR jedem DB-Lese-
+       oder Schreibzugriff -- ein SSO-Konto eines Kunden hat als Heim-Tenant seinen Kunden,
+       nicht den Default-Tenant, und wird hier sofort no-op abgewiesen, selbst wenn sein
+       `groups`-Claim auf fremde Teams zeigt.
+    2. **Ein `source='manual'`-Grant wird NIE angefasst** (nicht konvertiert, nicht gelöscht).
+       Ein manueller Grant vom Superadmin gewinnt und bleibt `source='manual'`; deckt eine
+       Gruppe denselben Tenant ab, wird KEINE zweite Zeile angelegt (Composite-PK, außerdem
+       explizit aus der Add-Menge ausgeschlossen), und der Remove-Zweig entfernt nur
+       `source='group'`-Zeilen.
+
+    `entra_group_ids` falsy (kein Team) -> leere Wunschmenge -> alle bestehenden
+    `source='group'`-Zeilen des Kontos werden entfernt (ein Provider, der jedes Team verlassen
+    hat, behält nur seine manuellen Grants). Inaktive Ziel-Tenants werden beim Anlegen still
+    übersprungen (Verfügbarkeit, kein Sicherheitsproblem) -- eine bestehende Gruppen-Zeile auf
+    einen zwischenzeitlich deaktivierten Tenant bleibt hingegen, solange die Gruppe ihn noch
+    abbildet (kein Aktiv-Filter auf der Ist-Menge).
+
+    Kein eigenes `commit`: die einzeln genutzten `add_grant`/`remove_grant` committen bereits
+    (wie in `admin_assignments`); der Aufrufer (`oidc_callback`) committt die Login-Transaktion
+    ohnehin danach. Es wird auf DERSELBEN `session` gearbeitet."""
+    # (1) GATE FIRST -- fail-closed, MUSS vor jedem DB-Zugriff stehen.
+    if not await tenant_repo.is_provider_account(session, user):
+        return
+    assert user.id is not None  # Provider-Konto hat tenant_id gesetzt => persistierte Zeile
+
+    desired = await tenant_ids_for_entra_groups(session, set(entra_group_ids or []))
+    kind = _grant_kind(user.role)
+    rows = await tenant_repo.list_grant_rows(session, user.id, kind)
+    group_now = {tid for tid, src in rows if src == "group"}
+    manual_now = {tid for tid, src in rows if src == "manual"}
+
+    # (2) Add mit Manual-Vorrang: Tenants, die bereits eine MANUELLE Zeile haben, werden
+    # übersprungen -- die manuelle Zeile bleibt `source='manual'`, es entsteht keine Dublette.
+    for tid in desired - group_now - manual_now:
+        if await tenant_repo._is_active(session, tid):
+            await tenant_repo.add_grant(
+                session, user_id=user.id, tenant_id=tid, kind=kind, source="group"
+            )
+
+    # Remove: nur `source='group'`-Zeilen, die kein Team mehr abbildet. `manual_now` ist nie
+    # in `group_now` (eine Zeile pro Paar), also werden manuelle Grants hier nie berührt.
+    for tid in group_now - desired:
+        await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=kind)
