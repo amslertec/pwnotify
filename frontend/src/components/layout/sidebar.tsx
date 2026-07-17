@@ -1,4 +1,4 @@
-import { Bell, History, LayoutDashboard, PanelLeftClose, ScrollText, Settings, UserCog, Users } from 'lucide-react'
+import { Bell, Building2, History, LayoutDashboard, PanelLeftClose, ScrollText, Settings, UserCog, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -16,6 +16,7 @@ const NAV = [
   { to: '/notifications', labelKey: 'nav.notifications', icon: Bell, end: false, adminOnly: false },
   { to: '/runs', labelKey: 'nav.runs', icon: History, end: false, adminOnly: false },
   { to: '/access', labelKey: 'nav.access', icon: UserCog, end: false, adminOnly: true },
+  { to: '/tenants', labelKey: 'nav.tenants', icon: Building2, end: false, adminOnly: true },
   { to: '/audit', labelKey: 'nav.audit', icon: ScrollText, end: false, adminOnly: true },
   { to: '/settings', labelKey: 'nav.settings', icon: Settings, end: false, adminOnly: true },
 ]

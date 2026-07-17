@@ -18,6 +18,7 @@ import ProfilePage from './pages/profile'
 import RunsPage from './pages/runs'
 import SettingsPage from './pages/settings'
 import SetupPage from './pages/setup'
+import TenantsPage from './pages/tenants'
 import UsersPage from './pages/users'
 
 function useSetupStatus() {
@@ -60,6 +61,14 @@ export default function App() {
             element={
               <AdminOnly>
                 <AccessPage />
+              </AdminOnly>
+            }
+          />
+          <Route
+            path="/tenants"
+            element={
+              <AdminOnly>
+                <TenantsPage />
               </AdminOnly>
             }
           />

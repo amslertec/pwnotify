@@ -63,6 +63,19 @@ export interface AdminUsers {
   sso: AdminUser[]
 }
 
+/** Mandant (Kunde) — Phase 4c Kundenverwaltung. Nicht zu verwechseln mit `TenantRef`
+ *  (schlanke Referenz auf dem `User`), das ist der volle Verwaltungsdatensatz. */
+export interface Tenant {
+  id: number
+  name: string
+  slug: string
+  entra_tenant_id: string | null
+  is_active: boolean
+  created_at: string
+  /** Anzahl per SSO an diesen Kunden gebundener Konten. */
+  sso_user_count: number
+}
+
 export interface Session {
   id: number
   user_agent: string | null
