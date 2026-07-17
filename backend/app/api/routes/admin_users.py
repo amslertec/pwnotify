@@ -297,9 +297,20 @@ async def delete_user(
         raise ConflictError(
             "Sie können Ihr eigenes Konto nicht löschen.", code="cannot_delete_self"
         )
+    # Superadmin-Ziel: NIE über einen Nicht-Superadmin-Aufrufer löschbar (Task 4,
+    # Access-Modell/Superadmin-Phase -- Sicherheitsreview-Fix). Dieses Gate ist `AdminUser`,
+    # nicht `SuperadminUser` -- ohne diese Prüfung könnte ein PLAIN Admin oder ein SSO-Admin
+    # jeden NICHT-letzten Superadmin per Löschung entfernen, wiederholt bis zum letzten
+    # (der Last-Superadmin-Schutz unten greift erst BEIM letzten). Analog zu `set_role`s
+    # Schutz für den Rollenwechsel eines Superadmin-Ziels -- gleicher Fehlercode.
+    if target.role == "superadmin" and (user.is_sso or user.role != "superadmin"):
+        raise ForbiddenError(
+            "Superadmin-Löschung nur durch einen Superadmin möglich.",
+            code="superadmin_required",
+        )
     # Last-Superadmin-Schutz (Design §11.4) -- analog zum Last-Admin-Schutz oben, aber für
-    # die instanzweite Rolle: ohne diese Prüfung könnte ein PLAIN Admin (dieses Gate ist
-    # `AdminUser`, nicht `SuperadminUser`) den letzten Superadmin per Löschung aussperren.
+    # die instanzweite Rolle: ohne diese Prüfung könnte man den letzten Superadmin per
+    # Löschung aussperren.
     if target.role == "superadmin" and await user_repo.count_superadmins(session) <= 1:
         raise ConflictError(
             "Der letzte Superadmin kann nicht gelöscht werden.",

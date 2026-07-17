@@ -315,13 +315,80 @@ async def test_demote_last_active_superadmin_is_rejected(session: AsyncSession) 
 
 
 async def test_delete_last_active_superadmin_is_rejected(session: AsyncSession) -> None:
-    only_superadmin = await _mk_user(session, role="superadmin")
-    other_admin = await _mk_user(session, role="admin")
-    assert only_superadmin.id is not None
+    """Der einzige AKTIVE Superadmin ist der Aufrufer selbst -- ein zweites Superadmin-
+    Konto existiert, ist aber deaktiviert (`is_active=False`) und zählt daher nicht in
+    `count_superadmins`. Der Aufrufer (aktiver Superadmin, also nicht durch den neuen
+    `superadmin_required`-Schutz blockiert, s.u.) darf dieses letzte-aktive-Superadmin-
+    Gleichgewicht trotzdem nicht antasten -- `cannot_delete_last_superadmin` greift weiter."""
+    caller = await _mk_user(session, role="superadmin")
+    inactive_superadmin = await _mk_user(session, role="superadmin")
+    assert inactive_superadmin.id is not None
+    inactive_superadmin.is_active = False
+    await session.flush()
 
     with pytest.raises(ConflictError) as exc_info:
-        await delete_user(None, other_admin, only_superadmin.id, session)  # type: ignore[arg-type]
+        await delete_user(None, caller, inactive_superadmin.id, session)  # type: ignore[arg-type]
     assert exc_info.value.code == "cannot_delete_last_superadmin"
+    assert await session.get(AppUser, inactive_superadmin.id) is not None
+
+
+async def test_plain_admin_cannot_delete_superadmin_target(session: AsyncSession) -> None:
+    """Sicherheitsreview-Fix (Task 4): vormals war `delete_user` NUR über den
+    Last-Superadmin-Zähler geschützt -- bei 2+ Superadmins konnte ein PLAIN Admin
+    (dieses Gate ist `AdminUser`, nicht `SuperadminUser`) einen NICHT-letzten Superadmin
+    löschen, wiederholt bis zum letzten. Jetzt: jeder Löschversuch eines Superadmin-Ziels
+    durch einen Nicht-Superadmin scheitert hart, unabhängig von der Anzahl."""
+    plain_admin = await _mk_user(session, role="admin")
+    superadmin_1 = await _mk_user(session, role="superadmin")
+    superadmin_2 = await _mk_user(session, role="superadmin")
+    assert superadmin_1.id is not None and superadmin_2.id is not None
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await delete_user(None, plain_admin, superadmin_2.id, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "superadmin_required"
+    assert await session.get(AppUser, superadmin_2.id) is not None
+    # 2 Superadmins vorhanden -- keine Last-Superadmin-Ausrede möglich, es ist echt der
+    # neue superadmin_required-Schutz, der hier greift.
+    assert superadmin_1.role == "superadmin"
+
+
+async def test_sso_admin_cannot_delete_superadmin_target(session: AsyncSession) -> None:
+    sso_admin = await _mk_user(session, role="admin", is_sso=True)
+    await _mk_user(session, role="superadmin")
+    superadmin_target = await _mk_user(session, role="superadmin")
+    assert superadmin_target.id is not None
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await delete_user(None, sso_admin, superadmin_target.id, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "superadmin_required"
+    assert await session.get(AppUser, superadmin_target.id) is not None
+
+
+async def test_superadmin_can_delete_non_last_superadmin(session: AsyncSession) -> None:
+    caller = await _mk_user(session, role="superadmin")
+    other_superadmin = await _mk_user(session, role="superadmin")
+    assert other_superadmin.id is not None
+
+    out = await delete_user(None, caller, other_superadmin.id, session)  # type: ignore[arg-type]
+    assert out.message
+    assert await session.get(AppUser, other_superadmin.id) is None
+
+
+async def test_local_admin_can_still_delete_plain_admin_and_auditor(session: AsyncSession) -> None:
+    """Regressionsschutz: der neue Superadmin-Schutz betrifft NUR Superadmin-Ziele -- ein
+    lokaler Admin darf weiterhin gewöhnliche Admin-/Auditor-Konten löschen."""
+    caller = await _mk_user(session, role="admin")
+    other_admin = await _mk_user(session, role="admin")
+    auditor = await _mk_user(session, role="auditor")
+    assert other_admin.id is not None and auditor.id is not None
+
+    out1 = await delete_user(None, caller, other_admin.id, session)  # type: ignore[arg-type]
+    assert out1.message
+    assert await session.get(AppUser, other_admin.id) is None
+
+    out2 = await delete_user(None, caller, auditor.id, session)  # type: ignore[arg-type]
+    assert out2.message
+    assert await session.get(AppUser, auditor.id) is None
 
 
 async def test_demote_one_of_two_superadmins_succeeds(session: AsyncSession) -> None:
