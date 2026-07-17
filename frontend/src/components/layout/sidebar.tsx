@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { LanguageSwitcher } from './language-switcher'
+import { TenantSwitcher } from './tenant-switcher'
 import { Logo } from '../logo'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
@@ -55,6 +56,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <TenantSwitcher collapsed={collapsed} />
         {nav.map((item) => {
           const link = (
             <NavLink

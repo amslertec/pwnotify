@@ -84,6 +84,12 @@
     "menu": "Menu",
     "audit": "Audit log"
   },
+  "tenant": {
+    "switcher_label": "Customer",
+    "switch_to": "Switch to {{name}}",
+    "switch_error": "Switch failed",
+    "current": "Current customer"
+  },
   "audit": {
     "title": "Audit log",
     "description": "Who changed what, and when. Entries are immutable and cannot be deleted.",
