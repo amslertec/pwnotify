@@ -114,6 +114,11 @@ async def delete_user(
 
 @router.post("/sso/sync", response_model=Message)
 async def sync_sso(_: AdminUser, session: SessionDep, svc: SettingsDep) -> Message:
+    # TODO(Phase 4, §8): läuft auf der Owner-Session -- liest oidc.*-Settings und
+    # synchronisiert app_user instanzweit über ALLE Tenants hinweg. Korrekt solange
+    # single-tenant; sobald ein zweiter Tenant existiert, ist unklar, wessen
+    # oidc.admin_group_id/oidc.enabled gilt (gleiche Owner-Session-Falle wie in
+    # branding.py vor Task 6). Muss per-Tenant werden.
     from ...services import oidc
 
     settings = await svc.get_all()

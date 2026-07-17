@@ -14,7 +14,7 @@ from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...schemas.common import Message
-from ..deps import AdminUser, SettingsDep
+from ..deps import AdminUser, TenantSettingsDep
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -69,7 +69,7 @@ def _branding_dir() -> Path:
 
 
 @router.get("")
-async def public_branding(svc: SettingsDep, response: Response) -> dict[str, Any]:
+async def public_branding(svc: TenantSettingsDep, response: Response) -> dict[str, Any]:
     """Öffentlich (kein Auth) — für Login-/Setup-Seiten-Theming."""
     response.headers["Cache-Control"] = "no-store"
     s = await svc.get_all()
@@ -156,39 +156,43 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
 
 
 @router.post("/logo", response_model=Message)
-async def upload_logo(_: AdminUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
+async def upload_logo(
+    _: AdminUser, svc: TenantSettingsDep, file: UploadFile = File(...)
+) -> Message:
     path = await _save_upload(file, "logo", trim=True)
     await svc.set("branding.logo_path", path)
     return Message(message="Logo gespeichert.")
 
 
 @router.post("/favicon", response_model=Message)
-async def upload_favicon(_: AdminUser, svc: SettingsDep, file: UploadFile = File(...)) -> Message:
+async def upload_favicon(
+    _: AdminUser, svc: TenantSettingsDep, file: UploadFile = File(...)
+) -> Message:
     path = await _save_upload(file, "favicon")
     await svc.set("branding.favicon_path", path)
     return Message(message="Favicon gespeichert.")
 
 
-async def _clear_upload(svc: SettingsDep, key: str, stem: str) -> None:
+async def _clear_upload(svc: TenantSettingsDep, key: str, stem: str) -> None:
     for old in _branding_dir().glob(f"{stem}.*"):
         old.unlink(missing_ok=True)
     await svc.set(key, None)
 
 
 @router.delete("/logo", response_model=Message)
-async def delete_logo(_: AdminUser, svc: SettingsDep) -> Message:
+async def delete_logo(_: AdminUser, svc: TenantSettingsDep) -> Message:
     await _clear_upload(svc, "branding.logo_path", "logo")
     return Message(message="Logo entfernt — Standard aktiv.")
 
 
 @router.delete("/favicon", response_model=Message)
-async def delete_favicon(_: AdminUser, svc: SettingsDep) -> Message:
+async def delete_favicon(_: AdminUser, svc: TenantSettingsDep) -> Message:
     await _clear_upload(svc, "branding.favicon_path", "favicon")
     return Message(message="Favicon entfernt — Standard aktiv.")
 
 
 @router.get("/logo")
-async def get_logo(svc: SettingsDep) -> Response:
+async def get_logo(svc: TenantSettingsDep) -> Response:
     path = await svc.get("branding.logo_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Logo gesetzt.", code="no_logo")
@@ -196,7 +200,7 @@ async def get_logo(svc: SettingsDep) -> Response:
 
 
 @router.get("/favicon")
-async def get_favicon(svc: SettingsDep) -> Response:
+async def get_favicon(svc: TenantSettingsDep) -> Response:
     path = await svc.get("branding.favicon_path")
     if not path or not Path(path).exists():
         raise NotFoundError("Kein Favicon gesetzt.", code="no_favicon")

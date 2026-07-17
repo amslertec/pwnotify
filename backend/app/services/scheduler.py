@@ -44,6 +44,11 @@ class SchedulerService:
 
     # -- Konfiguration ------------------------------------------------------- #
     async def _read_schedule(self) -> tuple[str, str]:
+        # TODO(Phase 4, §8): liest auf der Owner-Session -- instanzweit EIN Schedule für
+        # ALLE Tenants. Korrekt solange single-tenant; sobald ein zweiter Tenant existiert,
+        # ist "welcher Tenant meint dieses schedule.cron?" nicht mehr eindeutig (siehe
+        # branding.py-Fix, Task 6 -- gleiche Owner-Session-Falle, hier bewusst noch
+        # unangetastet). Muss auf Tenant-scoped Lesen umgestellt werden.
         async with self.session_factory() as session:
             svc = SettingsService(session)
             data = await svc.get_all()
