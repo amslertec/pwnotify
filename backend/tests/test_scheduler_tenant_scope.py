@@ -110,7 +110,9 @@ def _patch_heavy_dependencies(monkeypatch: pytest.MonkeyPatch, captured: dict[st
     async def _fake_sync_users(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
         return {"checked": 0}
 
-    async def _fake_sso_sync(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
+    async def _fake_sso_sync(
+        session: AsyncSession, settings: dict[str, Any], *, tenant_id: int
+    ) -> dict[str, int]:
         # Der eigentliche Beweis für Punkt 2 des Tasks: diese Funktion muss vom Runner mit
         # einer OWNER-Session aufgerufen werden -- trotz eines aktiven use_tenant(...)
         # rundherum. `app_user` ist instanzweit, kein Rollenwechsel/GUC hier erlaubt.

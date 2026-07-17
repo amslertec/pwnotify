@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..core.logging import get_logger
-from ..db.tenant_context import use_owner_context
+from ..db.tenant_context import current_tenant_or_none, use_owner_context
 from ..models.run import Run
 from ..repositories import (
     audit_repo,
@@ -159,24 +159,37 @@ async def execute_run(
             # bewusst auf einer eigenen Owner-Session, NICHT auf der tenant-gescopten
             # `session` dieses Laufs (die Einstellungen bleiben trotzdem die des
             # aktiven Tenants, aus `settings` oben gelesen).
-            try:
-                from . import oidc
+            # Sicherheitsfix: `sync_sso_users` braucht den aktiven Tenant, um Anlegen UND
+            # Entfernen strikt auf diesen Kunden zu scopen (sonst sähe es instanzweit auch
+            # SSO-Konten anderer Kunden als "nicht mehr in der Gruppe" an und löschte sie).
+            # Der Tenant MUSS hier, VOR `use_owner_context()`, gelesen werden -- der Wechsel
+            # in den Owner-Kontext setzt das ContextVar für die Dauer des Blocks auf `None`.
+            tenant_id_for_sso = current_tenant_or_none()
+            if tenant_id_for_sso is None:
+                # Kein aktiver Tenant (z. B. Owner-/Single-Tenant-Bootpfad) -- ohne Tenant
+                # ist der Sync nicht sicher scopebar, also überspringen statt zu raten.
+                log.warning("sso_sync_skipped", reason="no_active_tenant")
+            else:
+                try:
+                    from . import oidc
 
-                with use_owner_context():
-                    async with session_factory() as owner_session:
-                        sso_stats = await oidc.sync_sso_users(owner_session, settings)
-                if sso_stats.get("removal_blocked"):
-                    # Sichtbar machen: ein blockierter Abgleich heisst, dass die
-                    # Gruppenkonfiguration nicht stimmt. Der Lauf darf dann nicht
-                    # "success" melden, sonst bleibt die Fehlkonfiguration unbemerkt —
-                    # "partial" löst zusätzlich den Admin-Alert aus.
-                    status = "partial"
-                    detail.append({"step": "sso_sync", **sso_stats})
-                elif sso_stats["synced"] or sso_stats["removed"]:
-                    detail.append({"step": "sso_sync", **sso_stats})
-            except Exception as exc:
-                detail.append({"step": "sso_sync", "error": str(exc)})
-                log.warning("sso_sync_failed", error=str(exc))
+                    with use_owner_context():
+                        async with session_factory() as owner_session:
+                            sso_stats = await oidc.sync_sso_users(
+                                owner_session, settings, tenant_id=tenant_id_for_sso
+                            )
+                    if sso_stats.get("removal_blocked"):
+                        # Sichtbar machen: ein blockierter Abgleich heisst, dass die
+                        # Gruppenkonfiguration nicht stimmt. Der Lauf darf dann nicht
+                        # "success" melden, sonst bleibt die Fehlkonfiguration unbemerkt —
+                        # "partial" löst zusätzlich den Admin-Alert aus.
+                        status = "partial"
+                        detail.append({"step": "sso_sync", **sso_stats})
+                    elif sso_stats["synced"] or sso_stats["removed"]:
+                        detail.append({"step": "sso_sync", **sso_stats})
+                except Exception as exc:
+                    detail.append({"step": "sso_sync", "error": str(exc)})
+                    log.warning("sso_sync_failed", error=str(exc))
 
             # 1c) Aufbewahrungsfristen anwenden (alle standardmässig aus).
             try:

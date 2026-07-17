@@ -41,6 +41,7 @@ async def create(
     role: str = "admin",
     display_name: str | None = None,
     is_sso: bool = False,
+    tenant_id: int | None = None,
 ) -> AppUser:
     user = AppUser(
         username=username,
@@ -48,6 +49,7 @@ async def create(
         role=role,
         display_name=display_name,
         is_sso=is_sso,
+        tenant_id=tenant_id,
     )
     session.add(user)
     await session.commit()
@@ -62,6 +64,20 @@ async def list_all(session: AsyncSession) -> list[AppUser]:
 
 async def list_sso(session: AsyncSession) -> list[AppUser]:
     res = await session.execute(select(AppUser).where(AppUser.is_sso.is_(True)))
+    return list(res.scalars().all())
+
+
+async def list_sso_for_tenant(session: AsyncSession, tenant_id: int) -> list[AppUser]:
+    """SSO-Benutzer NUR dieses Mandanten -- Grundlage für den Sync-Abgleich
+
+    (Sicherheitsfix: `list_sso()` ist instanzweit; würde `sync_sso_users` damit die
+    Entfernungsmenge bilden, erschienen SSO-Konten ANDERER Kunden -- inklusive deren
+    Admins -- fälschlich als "in keiner Gruppe mehr" und würden gelöscht, sobald ein
+    zweiter SSO-Kunde existiert. Siehe `sync_sso_users` in `services/oidc.py`).
+    """
+    res = await session.execute(
+        select(AppUser).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tenant_id)
+    )
     return list(res.scalars().all())
 
 

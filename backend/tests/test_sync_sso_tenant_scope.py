@@ -78,7 +78,9 @@ async def test_sync_sso_only_syncs_the_tenant_with_its_own_oidc_config(
 ) -> None:
     seen: list[dict[str, Any]] = []
 
-    async def _fake_sync(session: Any, settings: dict[str, Any]) -> dict[str, int]:
+    async def _fake_sync(
+        session: Any, settings: dict[str, Any], *, tenant_id: int
+    ) -> dict[str, int]:
         seen.append(settings)
         return {"synced": 1, "removed": 0}
 

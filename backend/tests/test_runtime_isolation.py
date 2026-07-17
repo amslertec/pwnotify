@@ -269,7 +269,9 @@ def _patch_heavy_run_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _fake_sync_users(session: Any, settings: dict[str, Any]) -> dict[str, int]:
         return {"checked": 0}
 
-    async def _fake_sso_sync(session: Any, settings: dict[str, Any]) -> dict[str, int]:
+    async def _fake_sso_sync(
+        session: Any, settings: dict[str, Any], *, tenant_id: int
+    ) -> dict[str, int]:
         return {"synced": 0, "removed": 0}
 
     async def _no_excluded(session: Any, settings: dict[str, Any]) -> set[str]:

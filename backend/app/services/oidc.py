@@ -233,13 +233,23 @@ def removal_blocked_reason(
     return None
 
 
-async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
-    """Gleicht die SSO-Benutzer mit der Entra-Admin- und -Auditor-Gruppe ab.
+async def sync_sso_users(
+    session: AsyncSession, settings: dict[str, Any], *, tenant_id: int
+) -> dict[str, int]:
+    """Gleicht die SSO-Benutzer EINES Mandanten mit dessen Entra-Admin- und -Auditor-Gruppe ab.
 
     Mitglieder der Admin-Gruppe erhalten die Rolle ``admin``, Mitglieder der
     Auditor-Gruppe ``auditor`` (Admin hat Vorrang). Frühere SSO-Benutzer, die in
     keiner der Gruppen mehr sind, werden entfernt — abgesichert durch
     :func:`removal_blocked_reason`.
+
+    Sicherheitsfix: sowohl das Anlegen (``tenant_id`` auf dem neuen Konto) als auch die
+    Entfernungsmenge (``list_sso_for_tenant`` statt der instanzweiten ``list_sso``) sind
+    strikt auf ``tenant_id`` gescoped. Vorher hätte ein Sync für Kunde A die SSO-Konten
+    JEDES anderen Kunden als "in keiner Gruppe mehr" gesehen (deren UPNs stehen ja nicht
+    in A's ``desired``) und gelöscht -- inklusive deren Administratoren. `tenant_id` ist
+    deshalb Pflichtparameter, kein Default: ein Aufruf ohne aktiven Tenant muss beim
+    Aufrufer scheitern/übersprungen werden, nicht hier still instanzweit laufen.
     """
     admin_group = str(settings.get("oidc.admin_group_id") or "")
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
@@ -278,6 +288,7 @@ async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dic
                 display_name=name,
                 role=role,
                 is_sso=True,
+                tenant_id=tenant_id,
             )
         else:
             user.is_sso = True
@@ -286,8 +297,9 @@ async def sync_sso_users(session: AsyncSession, settings: dict[str, Any]) -> dic
             user.is_active = True
         synced += 1
 
-    # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen.
-    existing_sso = await user_repo.list_sso(session)
+    # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen -- NUR die
+    # dieses Mandanten (siehe Sicherheitsfix-Hinweis im Docstring oben).
+    existing_sso = await user_repo.list_sso_for_tenant(session, tenant_id)
     to_remove = [u.id for u in existing_sso if u.username.lower() not in desired]
 
     blocked = removal_blocked_reason(

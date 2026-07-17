@@ -143,7 +143,7 @@ async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
         if not settings.get("oidc.enabled") or not settings.get("oidc.admin_group_id"):
             continue
         configured = True
-        stats = await oidc.sync_sso_users(session, settings)
+        stats = await oidc.sync_sso_users(session, settings, tenant_id=tenant.id)
         synced += stats["synced"]
         removed += stats["removed"]
         if stats.get("removal_blocked"):
