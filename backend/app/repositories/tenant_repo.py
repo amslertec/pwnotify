@@ -258,10 +258,18 @@ async def is_provider_account(session: AsyncSession, user: AppUser) -> bool:
     return user.tenant_id == (await default_tenant(session)).id
 
 
-async def add_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind: str) -> None:
+async def add_grant(
+    session: AsyncSession, *, user_id: int, tenant_id: int, kind: str, source: str = "manual"
+) -> None:
     """Idempotente Zuweisung -- INSERT ... ON CONFLICT DO NOTHING auf dem zusammengesetzten
     Primärschlüssel (`user_id`, `tenant_id`). `kind` wählt die Zieltabelle: `"admin"` ->
     `admin_tenant` (Schreib-Kapazität), `"auditor"` -> `auditor_tenant` (nur lesend).
+
+    `source` (Multi-Tenant-Phase Task 1/2) hält fest, WIE die Zeile entstand -- `"manual"`
+    (Default) für eine explizite Admin-Aktion, hat Vorrang vor einem künftigen
+    `"group"`-Reconcile (Assignment-Groups): der Default hier hält ALLE bestehenden Aufrufer
+    (`create_local`, `set_assignments`) unverändert auf `"manual"`, ohne dass sie den
+    Parameter kennen müssten.
 
     Task 3 (`admin_users.create_local`): der lokale Admin erhält beim Anlegen eines neuen
     Kontos automatisch genau die zum neuen Konto passende Zuweisung auf seinen aktiven
@@ -270,7 +278,11 @@ async def add_grant(session: AsyncSession, *, user_id: int, tenant_id: int, kind
     if kind not in ("admin", "auditor"):
         raise ValueError(f"Unbekannte Zuweisungsart: {kind!r}")
     table = AdminTenant.__table__ if kind == "admin" else AuditorTenant.__table__
-    stmt = pg_insert(table).values(user_id=user_id, tenant_id=tenant_id).on_conflict_do_nothing()
+    stmt = (
+        pg_insert(table)
+        .values(user_id=user_id, tenant_id=tenant_id, source=source)
+        .on_conflict_do_nothing()
+    )
     await session.execute(stmt)
     await session.commit()
 
