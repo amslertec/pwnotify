@@ -15,7 +15,7 @@ from ...schemas.entities import NotificationOut
 from ...services.mail import build_sender
 from ...services.settings_service import effective_base_url
 from ...services.templating import build_context, email_logo, render
-from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -34,7 +34,7 @@ def _parse_day(value: str | None) -> dt.datetime | None:
 @router.get("", response_model=Page[NotificationOut])
 async def list_notifications(
     _: CurrentUser,
-    session: SessionDep,
+    session: TenantSessionDep,
     status: str | None = None,
     user_id: int | None = None,
     search: str | None = None,
@@ -67,7 +67,9 @@ async def list_notifications(
 
 
 @router.post("/{log_id}/retry", response_model=Message)
-async def retry(_: AdminUser, log_id: int, session: SessionDep, svc: SettingsDep) -> Message:
+async def retry(
+    _: AdminUser, log_id: int, session: TenantSessionDep, svc: TenantSettingsDep
+) -> Message:
     log_entry = await notification_repo.get(session, log_id)
     if log_entry is None:
         raise NotFoundError("Log-Eintrag nicht gefunden.", code="log_not_found")

@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 import jwt
 from fastapi import Depends, Request, Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import get_settings
 from ..core.errors import AuthError, ForbiddenError
 from ..core.security import TokenPair, decode_token
-from ..db.session import get_session
+from ..db.session import get_session, get_session_factory
+from ..db.tenant_context import tenant_scoped_session
 from ..models.user import AppUser
 from ..repositories import user_repo
 from ..services.settings_service import SettingsService
@@ -32,6 +35,52 @@ async def get_settings_service(session: SessionDep) -> SettingsService:
 
 
 SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
+
+# Übergangs-Cache für die Default-Tenant-Id (Phase 3): die Zeile wird von der Phase-1-
+# Migration einmalig angelegt (`slug='default'`) und nie mehr geändert -- ein Modul-Cache
+# erspart bei jedem kundendaten-Request eine eigene Owner-Session nur für dieses Lookup.
+# Phase 4 (loginabhängiger Tenant) ersetzt diesen Helfer durch die echte Tenant-Auflösung
+# aus der Benutzersitzung; dann entfällt der Cache wieder.
+_default_tenant_id_cache: int | None = None
+
+
+async def default_tenant_id(session: AsyncSession) -> int:
+    """Id des Default-Tenants (`tenant.slug = 'default'`), gecached.
+
+    Übergangs-Helfer: solange Login nicht tenant-bewusst ist (Phase 4), ist der aktive
+    Tenant für jede kundendaten-Route immer der Default-Tenant.
+    """
+    global _default_tenant_id_cache
+    if _default_tenant_id_cache is None:
+        tid = (
+            await session.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))
+        ).scalar_one()
+        _default_tenant_id_cache = int(tid)
+    return _default_tenant_id_cache
+
+
+async def get_tenant_session() -> AsyncGenerator[AsyncSession]:
+    """FastAPI-Dependency: tenant-scoped Session für kundendaten-Routen.
+
+    Übergang (Phase 3): der aktive Tenant ist immer der Default-Tenant -- die Instanz ist
+    single-tenant, Login wählt noch keinen Mandanten (das kommt in Phase 4). Die Session
+    läuft als eingeschränkte `pwnotify_app`-Rolle mit gesetztem Tenant-GUC -- RLS greift
+    tatsächlich, auch wenn aktuell alle Daten demselben (Default-)Tenant gehören.
+    """
+    async with get_session_factory()() as owner:
+        tid = await default_tenant_id(owner)
+    async with tenant_scoped_session(tid) as session:
+        yield session
+
+
+TenantSessionDep = Annotated[AsyncSession, Depends(get_tenant_session)]
+
+
+async def get_tenant_settings_service(session: TenantSessionDep) -> SettingsService:
+    return SettingsService(session)
+
+
+TenantSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_service)]
 
 
 async def get_current_user(request: Request, session: SessionDep) -> AppUser:

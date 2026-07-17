@@ -10,6 +10,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db.tenant_context import current_tenant_or_none
 from ..models.entra import EntraUser
 
 SORTABLE = {
@@ -25,10 +26,16 @@ SORTABLE = {
 
 
 async def upsert(session: AsyncSession, data: dict[str, Any]) -> None:
-    """Insert-or-update anhand ``entra_id`` (setzt beim Update ``excluded`` nicht zurück)."""
-    stmt = pg_insert(EntraUser).values(**data)
+    """Insert-or-update anhand ``entra_id`` (setzt beim Update ``excluded`` nicht zurück).
+
+    ``tenant_id`` kommt explizit aus dem aktiven Tenant-Kontext: dies ist ein Core-
+    ``pg_insert``, das (anders als ``session.add(EntraUser(...))``) den ORM-
+    ``default_factory`` NICHT durchläuft -- ohne diesen Wert würde die NOT-NULL-Spalte
+    fehlschlagen.
+    """
+    stmt = pg_insert(EntraUser).values(**data, tenant_id=current_tenant_or_none())
     update_cols = {k: stmt.excluded[k] for k in data if k not in ("entra_id", "id", "excluded")}
-    stmt = stmt.on_conflict_do_update(index_elements=["entra_id"], set_=update_cols)
+    stmt = stmt.on_conflict_do_update(index_elements=["tenant_id", "entra_id"], set_=update_cols)
     await session.execute(stmt)
 
 

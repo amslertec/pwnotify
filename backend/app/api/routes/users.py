@@ -18,7 +18,7 @@ from ...schemas.common import Message, Page
 from ...schemas.entities import EntraUserDetail, EntraUserOut
 from ...services.mail import build_sender
 from ...services.notifier import notify_user
-from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -39,7 +39,7 @@ class BulkRequest(BaseModel):
 @router.get("", response_model=Page[EntraUserOut])
 async def list_users(
     _: CurrentUser,
-    session: SessionDep,
+    session: TenantSessionDep,
     search: str | None = None,
     status: str | None = None,
     sort_by: str = "days_left",
@@ -67,7 +67,7 @@ async def list_users(
 @router.get("/export")
 async def export_users(
     _: CurrentUser,
-    session: SessionDep,
+    session: TenantSessionDep,
     fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
     search: str | None = None,
     status: str | None = None,
@@ -159,7 +159,7 @@ def _build_csv(headers: list[str], werte: list[list[Any]]) -> str:
 
 
 @router.get("/{user_id}", response_model=EntraUserDetail)
-async def get_user(_: CurrentUser, user_id: int, session: SessionDep) -> EntraUserDetail:
+async def get_user(_: CurrentUser, user_id: int, session: TenantSessionDep) -> EntraUserDetail:
     user = await entra_repo.get(session, user_id)
     if user is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -168,7 +168,7 @@ async def get_user(_: CurrentUser, user_id: int, session: SessionDep) -> EntraUs
 
 @router.post("/{user_id}/exclude", response_model=Message)
 async def set_exclude(
-    _: AdminUser, user_id: int, body: ExcludeRequest, session: SessionDep
+    _: AdminUser, user_id: int, body: ExcludeRequest, session: TenantSessionDep
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
@@ -178,7 +178,9 @@ async def set_exclude(
 
 
 @router.post("/{user_id}/notify", response_model=Message)
-async def notify_now(_: AdminUser, user_id: int, session: SessionDep, svc: SettingsDep) -> Message:
+async def notify_now(
+    _: AdminUser, user_id: int, session: TenantSessionDep, svc: TenantSettingsDep
+) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -204,7 +206,9 @@ async def notify_now(_: AdminUser, user_id: int, session: SessionDep, svc: Setti
 
 
 @router.post("/bulk", response_model=Message)
-async def bulk(_: AdminUser, body: BulkRequest, session: SessionDep, svc: SettingsDep) -> Message:
+async def bulk(
+    _: AdminUser, body: BulkRequest, session: TenantSessionDep, svc: TenantSettingsDep
+) -> Message:
     if body.action in ("exclude", "include"):
         for uid in body.ids:
             await entra_repo.set_excluded(session, uid, body.action == "exclude")

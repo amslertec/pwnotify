@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db.tenant_context import current_tenant_or_none
 from ..models.notification import NotificationLog
 
 
@@ -26,10 +27,15 @@ async def sent_stages(session: AsyncSession, entra_user_id: int, cycle: str) -> 
 
 
 async def record(session: AsyncSession, data: dict[str, Any]) -> NotificationLog:
-    """Upsert eines Log-Eintrags (bei Retry wird der bestehende Eintrag aktualisiert)."""
+    """Upsert eines Log-Eintrags (bei Retry wird der bestehende Eintrag aktualisiert).
+
+    ``tenant_id`` kommt explizit aus dem aktiven Tenant-Kontext: dies ist ein Core-
+    ``pg_insert``, das den ORM-``default_factory`` NICHT durchläuft -- ohne diesen Wert
+    würde die NOT-NULL-Spalte fehlschlagen.
+    """
     stmt = (
         pg_insert(NotificationLog)
-        .values(**data)
+        .values(**data, tenant_id=current_tenant_or_none())
         .on_conflict_do_update(
             constraint="uq_notif_dedup",
             set_={

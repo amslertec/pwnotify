@@ -26,13 +26,13 @@ from ...services.scheduler import compute_next_runs, get_scheduler
 from ...services.settings_schema import MASK, SETTINGS
 from ...services.settings_service import effective_base_url
 from ...services.templating import render, sample_context
-from ..deps import AdminUser, CurrentUser, SessionDep, SettingsDep
+from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_model=dict)
-async def get_all(_: CurrentUser, svc: SettingsDep) -> dict[str, Any]:
+async def get_all(_: CurrentUser, svc: TenantSettingsDep) -> dict[str, Any]:
     return await svc.get_public()
 
 
@@ -41,8 +41,8 @@ async def update(
     request: Request,
     admin: AdminUser,
     body: SettingsUpdate,
-    svc: SettingsDep,
-    session: SessionDep,
+    svc: TenantSettingsDep,
+    session: TenantSessionDep,
 ) -> dict[str, Any]:
     await svc.set_many(body.values)
 
@@ -81,7 +81,9 @@ async def update(
 
 
 @router.post("/graph/test", response_model=GraphTestResult)
-async def graph_test(_: AdminUser, body: GraphTestRequest, svc: SettingsDep) -> GraphTestResult:
+async def graph_test(
+    _: AdminUser, body: GraphTestRequest, svc: TenantSettingsDep
+) -> GraphTestResult:
     settings = await svc.get_all()
     result = await test_graph(
         settings,
@@ -94,7 +96,7 @@ async def graph_test(_: AdminUser, body: GraphTestRequest, svc: SettingsDep) -> 
 
 
 @router.post("/mail/test", response_model=Message)
-async def mail_test(_: AdminUser, body: MailTestRequest, svc: SettingsDep) -> Message:
+async def mail_test(_: AdminUser, body: MailTestRequest, svc: TenantSettingsDep) -> Message:
     settings = await svc.get_all()
     await send_test_mail(
         settings, to=body.to, locale=body.locale, base_url=effective_base_url(settings)
@@ -113,7 +115,7 @@ async def schedule_preview(_: CurrentUser, body: CronPreviewRequest) -> CronPrev
 
 @router.post("/template/preview", response_model=TemplatePreviewResult)
 async def template_preview(
-    _: CurrentUser, body: TemplatePreviewRequest, svc: SettingsDep
+    _: CurrentUser, body: TemplatePreviewRequest, svc: TenantSettingsDep
 ) -> TemplatePreviewResult:
     settings = await svc.get_all()
     locale = "en" if body.locale.lower().startswith("en") else "de"
@@ -125,7 +127,7 @@ async def template_preview(
 
 
 @router.post("/template/reset", response_model=dict)
-async def template_reset(_: AdminUser, svc: SettingsDep) -> dict[str, Any]:
+async def template_reset(_: AdminUser, svc: TenantSettingsDep) -> dict[str, Any]:
     defaults = {k: spec.default for k, spec in SETTINGS.items() if k.startswith("template.")}
     await svc.set_many(defaults)
     return await svc.get_public()
@@ -133,13 +135,15 @@ async def template_reset(_: AdminUser, svc: SettingsDep) -> dict[str, Any]:
 
 # ---- Exclusions ------------------------------------------------------------- #
 @router.get("/exclusions", response_model=list[ExclusionOut])
-async def list_exclusions(_: CurrentUser, session: SessionDep) -> list[ExclusionOut]:
+async def list_exclusions(_: CurrentUser, session: TenantSessionDep) -> list[ExclusionOut]:
     rows = await exclusion_repo.list_all(session)
     return [ExclusionOut.model_validate(r, from_attributes=True) for r in rows]
 
 
 @router.post("/exclusions", response_model=ExclusionOut)
-async def add_exclusion(_: AdminUser, body: dict[str, str], session: SessionDep) -> ExclusionOut:
+async def add_exclusion(
+    _: AdminUser, body: dict[str, str], session: TenantSessionDep
+) -> ExclusionOut:
     exc = await exclusion_repo.add(
         session,
         kind=body.get("kind", "user"),
@@ -150,6 +154,6 @@ async def add_exclusion(_: AdminUser, body: dict[str, str], session: SessionDep)
 
 
 @router.delete("/exclusions/{exclusion_id}", response_model=Message)
-async def delete_exclusion(_: AdminUser, exclusion_id: int, session: SessionDep) -> Message:
+async def delete_exclusion(_: AdminUser, exclusion_id: int, session: TenantSessionDep) -> Message:
     await exclusion_repo.delete(session, exclusion_id)
     return Message(message="Ausschluss entfernt.")

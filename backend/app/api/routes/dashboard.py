@@ -11,13 +11,15 @@ from ...repositories import entra_repo, notification_repo, run_repo
 from ...schemas.entities import EntraUserOut, RunOut
 from ...services import secret_expiry
 from ...services.scheduler import get_scheduler
-from ..deps import CurrentUser, SessionDep, SettingsDep
+from ..deps import CurrentUser, TenantSessionDep, TenantSettingsDep
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("")
-async def dashboard(_: CurrentUser, session: SessionDep, svc: SettingsDep) -> dict[str, Any]:
+async def dashboard(
+    _: CurrentUser, session: TenantSessionDep, svc: TenantSettingsDep
+) -> dict[str, Any]:
     counts = await entra_repo.counts_for_dashboard(session)
 
     today_start = dt.datetime.now(dt.UTC).replace(hour=0, minute=0, second=0, microsecond=0)

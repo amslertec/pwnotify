@@ -10,7 +10,7 @@ from ...repositories import run_repo
 from ...schemas.common import Page
 from ...schemas.entities import RunDetail, RunOut
 from ...services.scheduler import get_scheduler
-from ..deps import AdminUser, CurrentUser, SessionDep
+from ..deps import AdminUser, CurrentUser, TenantSessionDep
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -22,7 +22,7 @@ class TriggerRequest(BaseModel):
 @router.get("", response_model=Page[RunOut])
 async def list_runs(
     _: CurrentUser,
-    session: SessionDep,
+    session: TenantSessionDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ) -> Page[RunOut]:
@@ -36,7 +36,7 @@ async def list_runs(
 
 
 @router.get("/{run_id}", response_model=RunDetail)
-async def get_run(_: CurrentUser, run_id: int, session: SessionDep) -> RunDetail:
+async def get_run(_: CurrentUser, run_id: int, session: TenantSessionDep) -> RunDetail:
     run = await run_repo.get(session, run_id)
     if run is None:
         raise NotFoundError("Lauf nicht gefunden.", code="run_not_found")
