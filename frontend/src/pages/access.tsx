@@ -37,6 +37,20 @@ import { initials } from '@/lib/utils'
 const byRole = (list: AdminUser[] | undefined, role: string) =>
   (list ?? []).filter((u) => u.role === role)
 
+/** Gate für den Passwort-Reset-Button (Task 6): der Server lehnt einen Reset für ein Konto
+ *  ohne E-Mail ohnehin mit `email_required` ab -- dies ist die proaktive UX-Spiegelung davon,
+ *  damit der Button erst gar nicht anklickbar aussieht. Ein pending-Konto (`!is_active`) hat
+ *  weiterhin Vorrang vor dem E-Mail-Grund (kein Passwort zum Zurücksetzen vorhanden). SSO-
+ *  Konten werden NIE auf die lokale E-Mail-Regel gegated -- ihre E-Mail kommt aus Entra und
+ *  ihr Reset läuft ohnehin nicht über diesen Button (Route zeigt ihn nur für `!sso`). */
+export type ResetGate = { disabled: boolean; hint: 'pending' | 'noEmail' | null }
+
+export function resetGate(u: Pick<AdminUser, 'is_active' | 'is_sso' | 'email'>): ResetGate {
+  if (!u.is_active) return { disabled: true, hint: 'pending' }
+  if (!u.is_sso && !u.email) return { disabled: true, hint: 'noEmail' }
+  return { disabled: false, hint: null }
+}
+
 export default function AccessPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -204,6 +218,7 @@ function RoleSection({
                 <th className="px-4 py-3 font-medium">
                   {sso ? t('access.colUpn') : t('access.colUsername')}
                 </th>
+                <th className="px-4 py-3 font-medium">{t('access.colEmail')}</th>
                 {sso && <th className="px-4 py-3 font-medium">{t('access.colStatus')}</th>}
                 <th className="px-4 py-3 font-medium">{t('access.colLastLogin')}</th>
                 {!sso && <th className="px-4 py-3 font-medium">{t('access.colCreated')}</th>}
@@ -213,13 +228,13 @@ function RoleSection({
             <tbody className="divide-border divide-y">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="p-4">
+                  <td colSpan={6} className="p-4">
                     <Skeleton className="h-8 w-full" />
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-muted-foreground px-4 py-6 text-center">
+                  <td colSpan={6} className="text-muted-foreground px-4 py-6 text-center">
                     {t('access.emptyRole')}
                   </td>
                 </tr>
@@ -278,10 +293,10 @@ function UserRow({
 
   // Passwort-Reset-Link auslösen (§7c) -- nur für lokale, bereits aktivierte Konten
   // sinnvoll (SSO setzt sein Passwort über Entra zurück; ein noch nicht angenommenes
-  // `pending:`-Einladungskonto hat gar kein Passwort, das man zurücksetzen könnte).
-  // Ob eine E-Mail hinterlegt ist, weiss das Frontend hier nicht (`AdminUserOut` liefert
-  // sie nicht) -- ein Konto ohne E-Mail lehnt der Server mit `email_required` ab, das
-  // landet als Toast (`translateError`).
+  // `pending:`-Einladungskonto hat gar kein Passwort, das man zurücksetzen könnte). Der
+  // Server lehnt ein Konto ohne E-Mail zusätzlich mit `email_required` ab -- `resetGate`
+  // (Task 6) spiegelt das proaktiv in der UI, statt erst auf den Server-Fehler zu warten.
+  const gate = resetGate(u)
   const resetMut = useMutation({
     mutationFn: () => api.post<{ message: string }>(`/admin/users/${u.id}/reset`),
     onSuccess: (r) => toast.success(r.message),
@@ -301,6 +316,9 @@ function UserRow({
       </td>
       <td className="text-muted-foreground max-w-[260px] truncate px-4 py-2.5 font-mono text-xs">
         {u.username}
+      </td>
+      <td className="text-muted-foreground max-w-[260px] truncate px-4 py-2.5 text-xs">
+        {u.email ?? '—'}
       </td>
       {sso && (
         <td className="px-4 py-2.5">
@@ -337,10 +355,16 @@ function UserRow({
             <Button
               variant="ghost"
               size="icon"
-              disabled={!u.is_active || resetMut.isPending}
+              disabled={gate.disabled || resetMut.isPending}
               onClick={() => resetMut.mutate()}
               aria-label={t('access.sendReset')}
-              title={!u.is_active ? t('access.resetPendingHint') : t('access.sendReset')}
+              title={
+                gate.hint === 'pending'
+                  ? t('access.resetPendingHint')
+                  : gate.hint === 'noEmail'
+                    ? t('access.resetNoEmailHint')
+                    : t('access.sendReset')
+              }
             >
               <Send className="size-4" />
             </Button>

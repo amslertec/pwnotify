@@ -68,6 +68,10 @@ export interface AdminUser {
   role: string
   last_login_at: string | null
   created_at: string
+  /** E-Mail-Adresse (Access-Seite, Task 6) -- bei lokalen Konten selbst pflegbar, bei
+   *  SSO-Konten aus Entra. `null`, wenn (noch) keine hinterlegt ist -- ein lokales Konto
+   *  ohne E-Mail kann keinen Passwort-Reset-Link erhalten (`email_required`). */
+  email: string | null
 }
 
 export interface AdminUsers {

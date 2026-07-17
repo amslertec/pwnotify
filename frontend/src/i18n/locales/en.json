@@ -311,6 +311,7 @@
     "colLastLogin": "Last login",
     "colCreated": "Created",
     "colUpn": "UPN",
+    "colEmail": "Email",
     "colStatus": "Status",
     "syncEntra": "Sync with Entra group",
     "noSsoUsers": "No SSO users. Sync once SSO is active.",
@@ -343,7 +344,8 @@
     "sendInvite": "Send invitation",
     "inviteSent": "Invitation sent",
     "sendReset": "Send password reset",
-    "resetPendingHint": "Invitation not yet accepted — no password to reset."
+    "resetPendingHint": "Invitation not yet accepted — no password to reset.",
+    "resetNoEmailHint": "No email on file — add one before resetting."
   },
   "account": {
     "avatarTitle": "Profile picture",

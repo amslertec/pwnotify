@@ -30,8 +30,11 @@ es in diesem Testmodul bereits vormacht.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
+import pytest_asyncio
 from app.api.deps import default_tenant_id
 from app.api.routes.admin_users import create_local, delete_user, list_users, set_role
 from app.core.errors import ForbiddenError
@@ -41,6 +44,37 @@ from app.repositories import tenant_repo
 from app.schemas.auth import AdminUserCreate, RoleUpdate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class _FakeSender:
+    """Fakt den Mail-Versand für den Einladungspfad (Muster aus `test_invitation_flow.py`) --
+    kein echter Netzwerkzugriff, der Test hier interessiert sich nur für `AdminUserOut.email`
+    auf dem Rückgabewert, nicht für den Mailinhalt."""
+
+    backend = "fake"
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    async def send(
+        self,
+        *,
+        to: list[str],
+        subject: str,
+        html_body: str,
+        text_body: str | None = None,
+        inline_images: list[Any] | None = None,
+    ) -> None:
+        self.sent.append({"to": to, "subject": subject, "html": html_body, "text": text_body})
+
+
+@pytest_asyncio.fixture
+async def fake_sender(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[_FakeSender]:
+    import app.services.user_token as user_token_service
+
+    sender = _FakeSender()
+    monkeypatch.setattr(user_token_service, "build_sender", lambda _settings: sender)
+    yield sender
 
 
 def _slug() -> str:
@@ -484,6 +518,43 @@ async def test_user_in_both_tenants_rejected_for_admin_holding_only_one(
     refreshed = await session.get(AppUser, both.id)
     assert refreshed is not None
     assert refreshed.role == "admin"
+
+
+# ---- AdminUserOut.email (Task 6): populated in list + create ------------------------------ #
+
+
+async def test_list_users_populates_email_from_app_user(session: AsyncSession) -> None:
+    """`AdminUserOut.email` (Task 6) muss aus `app_user.email` durchgereicht werden -- ein
+    Konto mit hinterlegter E-Mail zeigt sie in der gescopten Liste, ein Konto ohne bleibt
+    `None` (non-vakuöser Beweis: beide Zustände kommen tatsächlich vor, keine zufällige
+    Übereinstimmung)."""
+    seed = await _seed(session)
+    seed.local_admin_a.email = "admin-a@example.test"
+    await session.flush()
+
+    out = await list_users(seed.local_admin_a, session, seed.a_id)  # type: ignore[arg-type]
+
+    local_by_id = {u.id: u for u in out["local"]}
+    assert local_by_id[seed.local_admin_a.id].email == "admin-a@example.test"
+    # sso_admin_a wurde ohne E-Mail geseedet -- bleibt None, kein Platzhalter-String.
+    sso_by_id = {u.id: u for u in out["sso"]}
+    assert sso_by_id[seed.sso_admin_a.id].email is None
+
+
+async def test_create_local_invite_populates_email_on_returned_admin_user_out(
+    session: AsyncSession, fake_sender: _FakeSender
+) -> None:
+    """Der Einladungspfad in `create_local` setzt `user.email` VOR dem
+    `AdminUserOut.model_validate(...)`-Rückgabewert (s. `admin_users.py`) -- muss also in der
+    Response ankommen, nicht nur in der DB. `fake_sender` fakt nur den Mail-Versand (Muster
+    aus `test_invitation_flow.py`), der hier nicht Gegenstand des Beweises ist."""
+    seed = await _seed(session)
+    body = AdminUserCreate(email=f"t3-invite-{uuid.uuid4().hex[:8]}@example.test", role="auditor")
+
+    out = await create_local(None, seed.local_admin_a, body, session, seed.a_id)  # type: ignore[arg-type]
+
+    assert out.email == body.email
+    assert fake_sender.sent, "Einladungsmail wurde nicht verschickt"
 
 
 async def test_superadmin_can_delete_and_set_role_across_tenants(session: AsyncSession) -> None:

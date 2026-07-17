@@ -311,6 +311,7 @@
     "colLastLogin": "Letzte Anmeldung",
     "colCreated": "Erstellt",
     "colUpn": "UPN",
+    "colEmail": "E-Mail",
     "colStatus": "Status",
     "syncEntra": "Mit Entra-Gruppe synchronisieren",
     "noSsoUsers": "Keine SSO-Benutzer. Synchronisieren, sobald SSO aktiv ist.",
@@ -343,7 +344,8 @@
     "sendInvite": "Einladung senden",
     "inviteSent": "Einladung versendet",
     "sendReset": "Passwort-Reset senden",
-    "resetPendingHint": "Einladung noch nicht angenommen — kein Passwort zum Zurücksetzen."
+    "resetPendingHint": "Einladung noch nicht angenommen — kein Passwort zum Zurücksetzen.",
+    "resetNoEmailHint": "Keine E-Mail-Adresse hinterlegt — vor dem Zurücksetzen ergänzen."
   },
   "account": {
     "avatarTitle": "Profilbild",

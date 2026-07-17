@@ -99,6 +99,10 @@ class AdminUserOut(BaseModel):
     role: str
     last_login_at: dt.datetime | None
     created_at: dt.datetime
+    # E-Mail-Adresse (Access-Seite, Task 6) -- bei lokalen Konten selbst pflegbar, bei
+    # SSO-Konten aus Entra. `default=None`, weil ältere Konten die Spalte leer haben können;
+    # kein Schema-Zwang -- die Spalte existiert bereits (Migration `5d152bfe7585`).
+    email: str | None = None
 
 
 class AdminUserCreate(BaseModel):
