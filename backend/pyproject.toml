@@ -85,6 +85,13 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    # slowapi 0.1.10 still calls the stdlib's deprecated `asyncio.iscoroutinefunction`
+    # (removal planned for 3.16) instead of `inspect.iscoroutinefunction`. Third-party
+    # code we don't control -- narrowly matched by module + message, not a blanket
+    # DeprecationWarning ignore, so a real deprecation elsewhere would still surface.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated.*:DeprecationWarning:slowapi.extension",
+]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

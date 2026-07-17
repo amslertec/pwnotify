@@ -537,6 +537,15 @@ async def switch_tenant(
     ):
         raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
 
+    # Wie `refresh`: ohne diese Prüfung könnte man den Idle-Timeout umgehen, indem man
+    # statt `refresh` einfach `switch-tenant` aufruft -- die Sitzung bliebe dann unbegrenzt
+    # am Leben, obwohl niemand mehr aktiv ist.
+    if await _end_if_idle(session, response, us, now):
+        raise AuthError(
+            "Sitzung wegen Inaktivität beendet. Bitte erneut anmelden.",
+            code="session_idle_timeout",
+        )
+
     pair = issue_token_pair(str(user.id), active_tenant=body.tenant_id)
     us.refresh_jti = pair.refresh_jti
     us.token_hash = hash_token(pair.refresh_token)

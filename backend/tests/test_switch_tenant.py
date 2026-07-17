@@ -12,11 +12,15 @@ Cleanup nötig, die Fixture rollt am Testende zurück.
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE
 from app.api.routes.auth import me, refresh, switch_tenant
+from app.core.config import get_settings
 from app.core.errors import AuthError, ForbiddenError
 from app.core.security import decode_token, hash_token, issue_token_pair
+from app.models._base import utcnow
 from app.models.tenant import AuditorTenant, Tenant
 from app.models.user import UserSession
 from app.repositories import user_repo
@@ -35,9 +39,13 @@ class _FakeRequest:
 class _FakeResponse:
     def __init__(self) -> None:
         self.cookie_values: dict[str, str] = {}
+        self.deleted_cookies: set[str] = set()
 
     def set_cookie(self, name: str, value: str, **_: object) -> None:
         self.cookie_values[name] = value
+
+    def delete_cookie(self, name: str, **_: object) -> None:
+        self.deleted_cookies.add(name)
 
 
 async def _make_tenant(session: AsyncSession, *, name: str, slug: str, active: bool = True) -> int:
@@ -272,3 +280,47 @@ async def test_switch_tenant_without_refresh_cookie_raises_auth_error(
             user,
             session,
         )
+
+
+# ---- Fix 2 (Task 5 whole-branch review): switch-tenant respektiert den Idle-Timeout - #
+
+
+async def test_switch_tenant_ends_idle_session(session: AsyncSession) -> None:
+    """`switch-tenant` validierte die Sitzungszeile bisher, ohne wie `refresh` auch
+    `_end_if_idle` aufzurufen -- ein Client hätte die Sitzung damit unbegrenzt am Leben
+    halten können, indem er statt `refresh` einfach `switch-tenant` aufruft (der
+    Idle-Timeout griffe nie). Mirror von `test_refresh_preserves_active_tenant`s Setup,
+    nur mit einem künstlich veralteten `last_used_at` -- exakt die Bedingung, die
+    `_end_if_idle` in `refresh` bereits abfängt."""
+    a = await _make_tenant(session, name="SwtIdleA", slug="swt-idle-a")
+    b = await _make_tenant(session, name="SwtIdleB", slug="swt-idle-b")
+    admin_id = await _make_local_admin(session, username="swt-idle-admin@local")
+    user = await user_repo.get(session, admin_id)
+    assert user is not None
+    us, refresh_token = await _seed_session(session, user_id=admin_id, active_tenant_id=a)
+
+    idle_min = get_settings().idle_timeout_min
+    us.last_used_at = utcnow() - dt.timedelta(minutes=idle_min + 1)
+    await session.commit()
+
+    request = _FakeRequest({REFRESH_COOKIE: refresh_token})
+    response = _FakeResponse()
+    with pytest.raises(AuthError) as exc_info:
+        await switch_tenant(
+            request,  # type: ignore[arg-type]
+            response,  # type: ignore[arg-type]
+            SwitchTenantRequest(tenant_id=b),
+            user,
+            session,
+        )
+    assert exc_info.value.code == "session_idle_timeout"
+
+    # Beendet heisst gelöscht (wie beim Refresh-Pfad), nicht bloss revoked -- und keine
+    # neuen Auth-Cookies dürfen gesetzt worden sein.
+    row = (
+        await session.execute(select(UserSession).where(UserSession.id == us.id))
+    ).scalar_one_or_none()
+    assert row is None, "Idle-Sitzung hätte gelöscht werden müssen"
+    assert ACCESS_COOKIE in response.deleted_cookies
+    assert REFRESH_COOKIE in response.deleted_cookies
+    assert not response.cookie_values, "Bei Idle-Timeout dürfen keine neuen Cookies gesetzt werden"

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from ...repositories import audit_repo
 from ...schemas.audit import AuditEntryOut, AuditPage
-from ..deps import AdminUser, SessionDep
+from ..deps import AdminUser, AuditSessionDep
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 @router.get("", response_model=AuditPage)
 async def list_audit(
     _: AdminUser,
-    session: SessionDep,
+    session: AuditSessionDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     action: str | None = None,
@@ -45,6 +45,6 @@ async def list_audit(
 
 
 @router.get("/actions", response_model=list[str])
-async def list_actions(_: AdminUser, session: SessionDep) -> list[str]:
+async def list_actions(_: AdminUser, session: AuditSessionDep) -> list[str]:
     """Vorhandene Aktionsarten — speist den Filter in der Oberfläche."""
     return await audit_repo.distinct_actions(session)

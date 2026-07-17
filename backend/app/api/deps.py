@@ -125,17 +125,16 @@ ActiveTenantClaim = Annotated[int | None, Depends(_claimed_active_tenant)]
 `get_tenant_session`/`TenantSessionDep`, die zusätzlich über `tenant_repo.is_allowed` gated)."""
 
 
-async def get_tenant_session(
-    request: Request, user: CurrentUser, session: SessionDep
-) -> AsyncGenerator[AsyncSession]:
-    """FastAPI-Dependency: tenant-scoped Session für authentifizierte Kundendaten-Routen.
+async def _resolve_authorized_tenant(request: Request, user: AppUser, session: AsyncSession) -> int:
+    """Löst den aktiven Mandanten auf und autorisiert ihn -- geteilte Logik zwischen
+    `get_tenant_session` (Kundendaten) und `get_audit_session` (Audit-Protokoll für
+    mandantengebundene Konten), damit beide exakt denselben autorisierten Tenant ermitteln.
 
-    Löst den aktiven Tenant aus dem `active_tenant`-Claim des Access-Tokens auf und
-    autorisiert ihn IMMER über `tenant_repo.is_allowed` -- auch wenn RLS einen fremden
-    Tenant ohnehin leer liefern würde, wird hier schon verweigert (403). Damit scheitert
-    ein gefälschter/veralteter Claim (z. B. ein zwischenzeitlich deaktivierter eigener
-    Tenant, oder ein fremder Tenant in einem manipulierten Token) NIE stillschweigend mit
-    0 Zeilen, sondern immer explizit.
+    Liest den `active_tenant`-Claim des Access-Tokens und autorisiert ihn IMMER über
+    `tenant_repo.is_allowed` -- auch wenn RLS einen fremden Tenant ohnehin leer liefern
+    würde, wird hier schon verweigert (403). Damit scheitert ein gefälschter/veralteter
+    Claim (z. B. ein zwischenzeitlich deaktivierter eigener Tenant, oder ein fremder Tenant
+    in einem manipulierten Token) NIE stillschweigend mit 0 Zeilen, sondern immer explizit.
 
     Kein Claim (älteres Token, oder noch nie gesetzt): der Tenant wird wie beim Login neu
     aufgelöst (`resolve_initial_tenant`) und ebenso über `is_allowed` gegengeprüft. Liefert
@@ -144,27 +143,62 @@ async def get_tenant_session(
 
     `user`/`session` laufen auf der Owner-Rolle (kein RLS-Rollenwechsel) -- `tenant`,
     `app_user` und `auditor_tenant` sind instanzweite Tabellen, genau das braucht
-    `tenant_repo` für seine Prüfungen. Erst danach wird die tenant-gescopte Session
-    (App-Rolle + GUC) geöffnet.
+    `tenant_repo` für seine Prüfungen.
     """
     claim_tid = await _claimed_active_tenant(request)
     if claim_tid is not None:
         if not await tenant_repo.is_allowed(session, user, claim_tid):
             raise ForbiddenError("Kein Zugriff auf diesen Mandanten.", code="tenant_forbidden")
-        tid = claim_tid
-    else:
-        resolved = await tenant_repo.resolve_initial_tenant(session, user)
-        if resolved is None or not await tenant_repo.is_allowed(session, user, resolved):
-            raise ForbiddenError(
-                "Diesem Konto ist kein Mandant zugeordnet.", code="tenant_forbidden"
-            )
-        tid = resolved
+        return claim_tid
 
+    resolved = await tenant_repo.resolve_initial_tenant(session, user)
+    if resolved is None or not await tenant_repo.is_allowed(session, user, resolved):
+        raise ForbiddenError("Diesem Konto ist kein Mandant zugeordnet.", code="tenant_forbidden")
+    return resolved
+
+
+async def get_tenant_session(
+    request: Request, user: CurrentUser, session: SessionDep
+) -> AsyncGenerator[AsyncSession]:
+    """FastAPI-Dependency: tenant-scoped Session für authentifizierte Kundendaten-Routen.
+
+    Autorisierung/Auflösung siehe `_resolve_authorized_tenant`. Erst danach wird die
+    tenant-gescopte Session (App-Rolle + GUC) geöffnet.
+    """
+    tid = await _resolve_authorized_tenant(request, user, session)
     async with tenant_scoped_session(tid) as scoped:
         yield scoped
 
 
 TenantSessionDep = Annotated[AsyncSession, Depends(get_tenant_session)]
+
+
+async def get_audit_session(
+    request: Request, user: CurrentUser, session: SessionDep
+) -> AsyncGenerator[AsyncSession]:
+    """FastAPI-Dependency für die Audit-Leserouten (`/audit`, `/audit/actions`).
+
+    Sicherheitsgrenze (Whole-Branch-Review, Fix 1): `audit_log` ist eine RLS-tenant-gescopte
+    Tabelle -- die Owner-Rolle umgeht RLS vollständig. Liefe die Route immer auf der
+    Owner-Session, könnte ein SSO-Admin, gebunden an Tenant B, das GESAMTE Protokoll aller
+    Mandanten lesen (Cross-Tenant-Offenlegung).
+
+    Design §2: der LOKALE Admin (`not is_sso`, `role == "admin"`) darf ALLE Mandanten sehen
+    -- dafür bleibt es bei der Owner-Session (kein RLS-Rollenwechsel). Jedes andere,
+    mandantengebundene Konto (jedes SSO-Konto, gleich welche Rolle, ODER ein lokaler
+    Auditor) sieht NUR sein autorisiertes aktives Mandanten-Protokoll -- dieselbe
+    Auflösung/Autorisierung wie bei Kundendaten (`_resolve_authorized_tenant`), RLS-scoped.
+    """
+    if not user.is_sso and user.role == "admin":
+        yield session
+        return
+
+    tid = await _resolve_authorized_tenant(request, user, session)
+    async with tenant_scoped_session(tid) as scoped:
+        yield scoped
+
+
+AuditSessionDep = Annotated[AsyncSession, Depends(get_audit_session)]
 
 
 async def get_tenant_settings_service(session: TenantSessionDep) -> SettingsService:
