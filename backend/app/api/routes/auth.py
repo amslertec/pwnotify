@@ -38,6 +38,7 @@ from ...core.twofa import (
     qr_png_data_uri,
     verify_totp,
 )
+from ...db.tenant_context import tenant_scoped_session
 from ...models._base import utcnow
 from ...models.user import AppUser
 from ...repositories import tenant_repo, user_repo
@@ -831,7 +832,16 @@ async def oidc_callback(
 
     oidc.verify_state(state)
     result = await oidc.exchange_and_verify(settings, code, _redirect_uri(base))
-    if not result.allowed or not result.username:
+    # Sicherheitsfix (Phase 4c Task 4): `result.allowed`/`result.role` sind gegen die
+    # OWNER-Session berechnet -- `SettingsService(session).get_all()` oben liest ohne
+    # RLS-Filterung ein undefiniertes Gemisch der `oidc.*`-Zeilen ALLER Kunden, sobald ein
+    # zweiter SSO-Kunde existiert. Diese Werte dürfen deshalb HIER NICHT über Zulassung
+    # entscheiden -- die massgebliche Prüfung erfolgt weiter unten, NACH der `tid`-Auflösung,
+    # gegen die Settings DES tatsächlich gefundenen Kunden. Hier wird nur abgelehnt, was
+    # unabhängig vom Kunden gar nicht erst auflösbar ist: kein Benutzername im Token, oder
+    # keine Gruppeninformation ermittelbar (`result.groups is None` -- weder Token-Claim
+    # noch Graph-Rückfrage) -- ohne Gruppen lässt sich in KEINEM Kunden eine Rolle bestimmen.
+    if not result.username or result.groups is None:
         # Abgelehnte SSO-Anmeldung protokollieren: Wer vergeblich versucht hereinzukommen,
         # gehört ins Protokoll — sonst sieht man einen Angriff auf die Gruppenzuordnung nie.
         await audit.record(
@@ -878,6 +888,40 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
+    # Rolle AUTORITATIV aus den Settings DES gefundenen Kunden neu bestimmen (Sicherheitsfix,
+    # Phase 4c Task 4) -- NICHT `result.role`/`result.allowed`, die oben gegen die
+    # Owner-Session-Gemisch-Settings berechnet wurden. `tenant_scoped_session` liest über die
+    # App-Rolle + RLS-GUC, sieht also GARANTIERT nur die `oidc.*`-Zeilen dieses einen Kunden,
+    # egal wie viele weitere SSO-Kunden existieren. Im Single-Tenant-/Übergangsfall
+    # (Bootstrap oben) sind Kunden- und Owner-Settings identisch -- gleiches Ergebnis wie
+    # zuvor, keine Verhaltensänderung dort.
+    assert tenant.id is not None  # persistierte Zeile aus der DB
+    async with tenant_scoped_session(tenant.id) as tsession:
+        tenant_settings = await SettingsService(tsession).get_all()
+    role, allowed, reason = oidc.resolve_role(result.groups, tenant_settings)
+    if not allowed:
+        # Der Benutzer ist zwar aus einem bekannten Entra-Tenant, aber in KEINER der
+        # berechtigten Gruppen DIESES Kunden -- z. B. Mitglied von Kunde A's Admin-Gruppe,
+        # aber nicht in Kunde B's Gruppen. Genau das ist die geschlossene Lücke: ohne diese
+        # Neuauflösung hätte `result.role`/`result.allowed` (Instanz-Gemisch) fälschlich
+        # Zugriff gewährt oder verweigert.
+        log.warning(
+            "oidc_role_denied_for_tenant",
+            tid=result.tid,
+            tenant_id=tenant.id,
+            username=result.username,
+        )
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_username=result.username,
+            outcome="failure",
+            request=request,
+            detail={"sso": True, "reason": reason or "not_in_tenant_group"},
+        )
+        await session.commit()
+        return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
+
     user = await user_repo.get_by_username(session, result.username)
     if user is None:
         # SSO-Nutzer ohne lokales Passwort (unbrauchbarer Zufalls-Hash).
@@ -886,13 +930,13 @@ async def oidc_callback(
             username=result.username,
             password_hash=hash_password(uuid.uuid4().hex),
             display_name=result.display_name,
-            role=result.role,
+            role=role,
             is_sso=True,
         )
     else:
         user.is_sso = True
         user.display_name = result.display_name
-        user.role = result.role  # Rolle folgt der Entra-Gruppenmitgliedschaft
+        user.role = role  # Rolle folgt der Entra-Gruppenmitgliedschaft DES gefundenen Kunden
 
     # SSO-Konto ist an genau diesen einen Tenant gebunden (Task 4) -- `tenant_repo`
     # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) liest ausschliesslich

@@ -46,6 +46,14 @@ class OidcResult:
     tid: str | None = None
     """Entra-Tenant-ID (`tid`-Claim) des ID-Tokens -- Grundlage für das SSO-Tenant-Mapping
     (Phase 4a Task 4). ``None`` nur, wenn das Token den Claim ausnahmsweise nicht enthält."""
+    groups: list[str] | None = None
+    """Roher Gruppen-Claim (bzw. Graph-Rückfrage-Ergebnis) des Tokens -- ``None`` nur, wenn
+    keine Gruppeninformation ermittelbar war. Grundlage für die AUTORITATIVE, per-Kunde
+    erfolgende Rollen-Neuauflösung im Callback (Sicherheitsfix, Phase 4c Task 4): `role`/
+    `allowed` oben sind gegen die OWNER-/Instanz-Settings berechnet (Übergang, s. u.) und
+    dürfen NICHT unbesehen für die Rolle in einem per `tid` gefundenen Kunden übernommen
+    werden, sobald ≥2 SSO-Kunden existieren -- `resolve_role(groups, tenant_settings)` muss
+    dafür erneut aufgerufen werden."""
 
 
 def is_configured(settings: dict[str, Any]) -> bool:
@@ -107,6 +115,37 @@ def build_login_url(
     return str(url)
 
 
+def resolve_role(
+    groups: list[str] | None, settings: dict[str, Any]
+) -> tuple[str, bool, str | None]:
+    """Bestimmt Rolle + Zugriff EINES per-Kunde-Settings-Dicts gegen einen Gruppen-Claim.
+
+    Rein/zustandslos, damit sie zweimal aufgerufen werden kann: einmal in
+    `exchange_and_verify` gegen die Owner-/Instanz-Settings (Übergangspfad, Token-Austausch
+    selbst läuft noch über die instanzweite App-Registrierung), und AUTORITATIV ein zweites
+    Mal im Callback gegen die Settings DES per `tid` gefundenen Kunden (Sicherheitsfix,
+    Phase 4c Task 4) -- erst dieser zweite Aufruf entscheidet über `user.role`/Zulassung.
+    Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
+
+    Gibt ``(role, allowed, reason)`` zurück; ``reason`` ist ``None`` bei Erfolg.
+    """
+    if groups is None:
+        return (
+            "admin",
+            False,
+            "Keine Gruppeninformationen im Token und Rückfrage bei Microsoft Graph "
+            "nicht möglich. Bitte im App-Manifest 'groupMembershipClaims' auf "
+            "'SecurityGroup' setzen.",
+        )
+    admin_group = str(settings.get("oidc.admin_group_id") or "")
+    auditor_group = str(settings.get("oidc.auditor_group_id") or "")
+    if admin_group and admin_group in groups:
+        return "admin", True, None
+    if auditor_group and auditor_group in groups:
+        return "auditor", True, None
+    return "admin", False, "Nicht Mitglied einer berechtigten Gruppe."
+
+
 async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri: str) -> OidcResult:
     app = _app(settings)
     result = await asyncio.to_thread(
@@ -136,30 +175,15 @@ async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri:
         groups = await _groups_via_graph(
             settings, claims.get("oid") or username, [admin_group, auditor_group]
         )
-    if groups is None:
-        return OidcResult(
-            username=username,
-            display_name=display_name,
-            allowed=False,
-            reason="Keine Gruppeninformationen im Token und Rückfrage bei Microsoft Graph "
-            "nicht möglich. Bitte im App-Manifest 'groupMembershipClaims' auf "
-            "'SecurityGroup' setzen.",
-            tid=tid,
-        )
-    # Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
-    if admin_group and admin_group in groups:
-        role, allowed = "admin", True
-    elif auditor_group and auditor_group in groups:
-        role, allowed = "auditor", True
-    else:
-        role, allowed = "admin", False
+    role, allowed, reason = resolve_role(groups, settings)
     return OidcResult(
         username=username,
         display_name=display_name,
         allowed=allowed,
         role=role,
-        reason=None if allowed else "Nicht Mitglied einer berechtigten Gruppe.",
+        reason=reason,
         tid=tid,
+        groups=groups,
     )
 
 
