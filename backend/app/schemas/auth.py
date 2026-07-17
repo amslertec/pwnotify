@@ -45,6 +45,10 @@ class UserOut(BaseModel):
     # ausblenden, es gibt nichts zum Wechseln.
     active_tenant: TenantRef | None = None
     switchable_tenants: list[TenantRef] = []
+    # Instanzweiter Schalter (Access-Modell/Superadmin-Design, Task 5) -- das Frontend
+    # braucht ihn, um sein Chrome zu gaten (Mandanten-Umschalter/-Verwaltung nur sichtbar,
+    # wenn Multi-Tenant-Mode aktiv ist). Default AUS, wie der zugrundeliegende Setting-Key.
+    multi_tenant_mode: bool = False
 
 
 class LanguageUpdate(BaseModel):

@@ -57,7 +57,7 @@ from ...schemas.auth import (
     UserOut,
 )
 from ...schemas.common import Message
-from ...services import audit, oidc
+from ...services import audit, instance_settings, oidc
 from ...services.graph import GraphClient, GraphConfig
 from ...services.settings_service import SettingsService, effective_base_url
 from ..deps import (
@@ -140,7 +140,11 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
     (Phase 4a Task 5): der aktive Mandant (aus Claim/Session, ungeprüft -- reine Anzeige,
     siehe `ActiveTenantClaim`-Docstring) sowie die Liste der Mandanten, zu denen dieses
     Konto umschalten darf (`tenant_repo.allowed_tenant_ids`: None -> alle aktiven, sonst
-    genau diese, jeweils weiter auf tatsächlich AKTIVE Tenants beschränkt)."""
+    genau diese, jeweils weiter auf tatsächlich AKTIVE Tenants beschränkt). Der Default-
+    Tenant steht dabei IMMER an Position 0 von `switchable_tenants` (Rest nach Name, Design
+    §8) -- damit jeder Konsument dieselbe, deterministische Reihenfolge sieht. Zusätzlich
+    trägt `UserOut.multi_tenant_mode` (Task 5) den instanzweiten Schalterstand, gelesen über
+    `services.instance_settings.read_mode` (immer default-tenant-gescopt, siehe dort)."""
     path = _avatar_path(user.id) if user.id is not None else None
     exists = bool(path and path.exists())
 
@@ -156,6 +160,9 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
         active_tenants = [t for t in active_tenants if t.id in allowed_ids]
     switchable = [TenantRef(id=t.id, name=t.name) for t in active_tenants]  # type: ignore[arg-type]
 
+    default = await tenant_repo.default_tenant(session)
+    switchable.sort(key=lambda t: t.id != default.id)
+
     return UserOut(
         id=user.id,  # type: ignore[arg-type]
         username=user.username,
@@ -170,6 +177,7 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
         idle_timeout_min=_settings.idle_timeout_min,
         active_tenant=active_tenant,
         switchable_tenants=switchable,
+        multi_tenant_mode=await instance_settings.read_mode(session),
     )
 
 

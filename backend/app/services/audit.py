@@ -44,6 +44,7 @@ TENANT_DELETED = "tenant.deleted"
 TENANT_ASSIGNED = "tenant.assigned"  # Zuweisung eines Kontos zu einem weiteren Mandanten
 TENANT_UNASSIGNED = "tenant.unassigned"  # Zuweisung entzogen (Task 4)
 SUPERADMIN_CREATED = "user.superadmin_created"
+INSTANCE_MODE_CHANGED = "instance.mode_changed"  # Multi-Tenant-Mode umgeschaltet (Task 5)
 
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.

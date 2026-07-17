@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from ...core.errors import ForbiddenError
 from ...repositories import exclusion_repo
 from ...schemas.common import Message
 from ...schemas.entities import ExclusionOut
@@ -30,6 +31,18 @@ from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+# `instance.*` (aktuell nur `instance.multi_tenant_mode`, Task 5) ist zwar in `SETTINGS`
+# registriert wie jeder andere Key -- aber ausschliesslich über die superadmin-gegatete
+# `PUT /admin/instance` schreibbar. Ohne diesen Guard könnte ein lokaler (Nicht-Super-)
+# Admin über DIESE generische Pro-Tenant-Route den instanzweiten Schalter auf seinem
+# eigenen Tenant umschalten (`SettingsService._upsert` stempelt `tenant_id` aus dem
+# aktiven Kontext) -- das würde den globalen Schalter faktisch aushebeln, weil
+# `instance_settings.read_mode` ihn ohnehin IMMER default-tenant-gescopt liest, ein
+# solcher Fremd-Tenant-Write also nur verwirrenden Datenmüll erzeugen, aber schlimmer:
+# ein Schreibversuch GEGEN den Default-Tenant selbst (falls der aufrufende Admin dort
+# berechtigt ist) würde den globalen Schalter tatsächlich unerwünscht umschalten.
+_INSTANCE_PREFIX = "instance."
+
 
 @router.get("", response_model=dict)
 async def get_all(_: CurrentUser, svc: TenantSettingsDep) -> dict[str, Any]:
@@ -44,6 +57,12 @@ async def update(
     svc: TenantSettingsDep,
     session: TenantSessionDep,
 ) -> dict[str, Any]:
+    forbidden = sorted(k for k in body.values if k.startswith(_INSTANCE_PREFIX))
+    if forbidden:
+        raise ForbiddenError(
+            "Instanzweite Einstellungen können nur über /admin/instance geändert werden.",
+            code="instance_setting_forbidden",
+        )
     await svc.set_many(body.values)
 
     # Protokolliert werden die geänderten SCHLÜSSEL, niemals ihre Werte — sonst stünden
