@@ -34,12 +34,22 @@ class Tenant(SQLModel, table=True):
 
 
 class AuditorTenant(SQLModel, table=True):
-    """Zuordnung: welcher LOKALE Auditor darf welche Kunden sehen (many-to-many)."""
+    """Zuordnung: welcher LOKALE Auditor darf welche Kunden sehen (many-to-many).
+
+    Höchstens EINE Zeile pro `(user_id, tenant_id)` -- die Composite-PK erzwingt das.
+    `source` hält fest, WIE die Zeile entstand: `'manual'` (Admin hat sie von Hand
+    gesetzt) hat Vorrang vor `'group'` (Assignment-Group-Reconcile, Task 4) -- existiert
+    für ein `(user, tenant)`-Paar bereits eine `'manual'`-Zeile, fasst der Reconcile sie
+    NICHT an (kein Konvertieren, kein Löschen)."""
 
     __tablename__ = "auditor_tenant"
 
     user_id: int = Field(foreign_key="app_user.id", primary_key=True)
     tenant_id: int = Field(foreign_key="tenant.id", primary_key=True)
+    source: str = Field(
+        default="manual",
+        sa_column=Column(String(16), nullable=False, server_default="manual"),
+    )
 
 
 class AdminTenant(SQLModel, table=True):
@@ -50,9 +60,19 @@ class AdminTenant(SQLModel, table=True):
     lokale Admin (role='admin') wird explizit auf seine(n) Kunden gebunden. FK-Kaskade
     lebt in der Migration (siehe `cd755854e58c`), nicht im Model -- exakt wie bei
     `AuditorTenant`/`a2b3c4d5e6f7`.
+
+    Höchstens EINE Zeile pro `(user_id, tenant_id)` -- die Composite-PK erzwingt das.
+    `source` hält fest, WIE die Zeile entstand: `'manual'` (Admin hat sie von Hand
+    gesetzt) hat Vorrang vor `'group'` (Assignment-Group-Reconcile, Task 4) -- existiert
+    für ein `(user, tenant)`-Paar bereits eine `'manual'`-Zeile, fasst der Reconcile sie
+    NICHT an (kein Konvertieren, kein Löschen).
     """
 
     __tablename__ = "admin_tenant"
 
     user_id: int = Field(foreign_key="app_user.id", primary_key=True)
     tenant_id: int = Field(foreign_key="tenant.id", primary_key=True)
+    source: str = Field(
+        default="manual",
+        sa_column=Column(String(16), nullable=False, server_default="manual"),
+    )

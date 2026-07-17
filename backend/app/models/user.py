@@ -17,6 +17,12 @@ class AppUser(SQLModel, table=True):
     username: str = Field(sa_column=Column(String(150), unique=True, index=True, nullable=False))
     password_hash: str
     display_name: str | None = Field(default=None, sa_column=Column(String(320)))
+    # E-Mail-Adresse fürs Console+Groups+Invite-Increment: NULL bei bestehenden lokalen +
+    # SSO-Konten (die SSO-UPN lebt bereits in `username`), NICHT unique -- eine Person kann
+    # sowohl ein SSO- als auch ein lokales Konto haben. Neu EINGELADENE lokale Konten erhalten
+    # hier eine nicht-NULL-Adresse, erzwungen auf API-/Invite-Ebene (Task 5), nicht per
+    # Spalten-Constraint.
+    email: str | None = Field(default=None, sa_column=Column(String(320)))
     role: str = Field(default="admin", sa_column=Column(String(32), nullable=False))
     is_active: bool = Field(default=True)
     is_sso: bool = Field(default=False)
