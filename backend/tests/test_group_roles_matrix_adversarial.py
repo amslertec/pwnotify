@@ -1,8 +1,10 @@
 """SECURITY ACCEPTANCE GATE (Group-Roles Task 7): the end-to-end adversarial matrix that
 proves team-driven SSO login produces the correct HOME role AND the correct per-customer
-GRANTS, that the provider-only tenant-isolation invariant holds, and that the customer /
-single-tenant paths are byte-for-byte unaffected. A red cell here is a real hole and blocks
-the branch -- it sends work back to Task 3 (reconcile) or Task 4 (login authorization).
+GRANTS, that the provider-only tenant-isolation invariant holds, that a Multi-Tenant SSO login
+is provider-only (a customer `tid` resolves group-based + default-homed, NOT via customer
+settings -- Provider-only SSO Task 4), and that the SINGLE-TENANT path is byte-for-byte
+unaffected. A red cell here is a real hole and blocks the branch -- it sends work back to
+Task 3 (reconcile) or Task 4 (login authorization).
 
 Everything is driven through the REAL `auth.oidc_callback` (the callback fake, `_result` and
 `_write_mode` are REUSED verbatim from `test_oidc_group_auth.py` so the matrix cannot drift
@@ -255,11 +257,13 @@ async def test_cell1_team_role_to_home_role_and_grants_admin_wins(
 
 
 # ========================================================================================= #
-# CELL 2 -- Provider-only isolation invariant. A customer-A-homed SSO admin whose token groups
-#   ALSO match provider Teams resolves via settings (customer path) and reconcile is a no-op;
-#   a NULL-home account with provider-Team groups is likewise a no-op. ZERO provider-Team grant
-#   rows for EITHER -- asserted directly on both tables. The `is_provider_account` gate (first
-#   line of reconcile) is the only thing that stops a foreign grant -- see the non-vacuity note.
+# CELL 2 -- Provider-only isolation invariant. A customer-A-homed SSO admin and a NULL-home
+#   account, each driven straight through the reconcile entry point with provider-Team groups,
+#   BOTH no-op -> ZERO provider-Team grant rows in either table. (Under Provider-only SSO Task 4
+#   a Multi-Tenant SSO LOGIN can no longer produce a customer home -- it homes every SSO login on
+#   the default tenant -- so the customer-homed account is created directly via the ORM, the same
+#   seam the NULL-home leg uses.) The `is_provider_account` gate (first line of reconcile) is the
+#   only thing that stops a foreign grant -- see the non-vacuity note.
 # ========================================================================================= #
 
 
@@ -268,21 +272,24 @@ async def test_cell2_customer_and_null_home_get_zero_provider_grants(
 ) -> None:
     await _write_mode(migrated_engine, env.default_id, True)
 
-    # (a) Customer-A-homed admin via the REAL login: groups carry BOTH provider Teams and A's
-    #     settings-admin group. The customer path (tenant A != default) authorizes via settings
-    #     -> allowed; reconcile then no-ops because the home tenant is A, not default.
-    cust_user = f"cell2-customer-a{_DOMAIN}"
+    # (a) Customer-A-homed admin created via the ORM (Provider-only SSO Task 4 homes every
+    #     Multi-Tenant SSO login on the default tenant, so a login can no longer yield a customer
+    #     home). Driven through the reconcile entry point with BOTH provider Teams: the
+    #     `is_provider_account` gate short-circuits to a no-op because the home tenant is A, not
+    #     the default -> ZERO provider-Team grants, either table. Never committed -> rolled back.
     async with get_session_factory()() as session:
-        resp = await _call_oidc_callback(
-            session, _result(cust_user, _TID_A, [_G1, _G2, _A_SETTINGS_ADMIN])
+        cust = AppUser(
+            username=f"cell2-customer-a{_DOMAIN}",
+            password_hash="x",
+            role="admin",
+            is_sso=True,
+            tenant_id=env.a_id,
         )
-    assert "sso_denied" not in resp.headers["location"]
-
-    async with get_session_factory()() as session:
-        cust = await user_repo.get_by_username(session, cust_user)
-        assert cust is not None and cust.id is not None
+        session.add(cust)
+        await session.flush()
+        assert cust.id is not None
+        await assignment_group_repo.reconcile_group_grants(session, cust, [_G1, _G2])
         assert cust.tenant_id == env.a_id  # homed at the CUSTOMER, not the default tenant
-        # No provider-Team grant materialized for a customer-homed account, either table.
         assert await _admin_pairs(session, cust.id) == set()
         assert await _auditor_pairs(session, cust.id) == set()
 
@@ -348,32 +355,52 @@ async def test_cell3_no_team_login_denied_no_side_effects(
 
 
 # ========================================================================================= #
-# CELL 4 -- Customer path unaffected. tid=customer A -> settings role-groups decide; a provider-
-#   Team member who is NOT in A's settings-admin group is DENIED (Team membership is irrelevant
-#   on the customer path) and gets ZERO grants.
+# CELL 4 -- Customer path in Multi-Tenant is provider-only (FLIP, Provider-only SSO Task 4).
+#   tid=customer A no longer resolves via A's settings -- it is group-based + default-homed like
+#   any provider login. A provider admin-Team member logging in with A's tid is authorized by
+#   Team membership, homed at the DEFAULT tenant, and materializes the team's per-customer grants
+#   exactly as a default-tid login would ({A,C} admin via T1); a login with NO Team is DENIED.
 # ========================================================================================= #
 
 
-async def test_cell4_customer_path_ignores_team_membership(
+async def test_cell4_customer_tid_in_mt_is_group_based_and_default_homed(
     env: _Env, migrated_engine: AsyncEngine
 ) -> None:
     await _write_mode(migrated_engine, env.default_id, True)
-    username = f"cell4-team-but-not-a-settings{_DOMAIN}"
 
-    # In a provider ADMIN team, but NOT in customer A's settings-admin group -> DENIED.
+    # (a) Provider admin-Team member via customer A's tid -> allowed, default-homed, grants {A,C}.
+    ok = f"cell4-provider-via-customer-tid{_DOMAIN}"
     async with get_session_factory()() as session:
-        resp = await _call_oidc_callback(session, _result(username, _TID_A, [_G1]))
+        resp = await _call_oidc_callback(session, _result(ok, _TID_A, [_G1]))
+    assert "sso_denied" not in resp.headers["location"]
+
+    async with get_session_factory()() as session:
+        user = await user_repo.get_by_username(session, ok)
+        assert user is not None and user.id is not None
+        assert user.tenant_id == env.default_id  # default-homed, NOT customer A
+        assert user.role == "admin"
+        # Grants materialize exactly as for a default-tid login: T1 admin -> {A, C}.
+        assert await _admin_pairs(session, user.id) == {
+            (env.a_id, "group"),
+            (env.c_id, "group"),
+        }
+        assert await _auditor_pairs(session, user.id) == set()
+
+    # (b) A login via customer A's tid, in A's settings-admin group but NO Team, is DENIED
+    #     (not_in_any_team) -- the settings path is genuinely bypassed in Multi-Tenant mode.
+    denied = f"cell4-a-settings-but-no-team{_DOMAIN}"
+    async with get_session_factory()() as session:
+        resp = await _call_oidc_callback(session, _result(denied, _TID_A, [_A_SETTINGS_ADMIN]))
     assert resp.status_code == 302
     assert "sso_denied=1" in resp.headers["location"]
 
     async with get_session_factory()() as session:
-        assert await user_repo.get_by_username(session, username) is None
+        assert await user_repo.get_by_username(session, denied) is None
         row = (
-            await session.execute(select(AuditLog).where(AuditLog.actor_username == username))
+            await session.execute(select(AuditLog).where(AuditLog.actor_username == denied))
         ).scalar_one()
         assert row.action == LOGIN_FAILED
-        # The denial reason comes from resolve_role (settings path), NOT the Team path.
-        assert row.detail.get("reason") != "not_in_any_team"
+        assert row.detail.get("reason") == "not_in_any_team"
 
 
 # ========================================================================================= #

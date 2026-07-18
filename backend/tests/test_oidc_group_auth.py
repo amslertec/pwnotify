@@ -1,14 +1,16 @@
-"""SICHERHEITSKRITISCH (Group-Roles Task 4): SSO-Login-AUTORISIERUNG für Provider-Personal.
+"""SICHERHEITSKRITISCH (Group-Roles Task 4 + Provider-only SSO, Tenant-Refinements Task 4):
+SSO-Login-AUTORISIERUNG für Provider-Personal.
 
-Im Multi-Tenant-Mode und NUR wenn ein SSO-Login auf den DEFAULT-Tenant matcht (Provider-
-Personal), entscheiden Team-Mitgliedschaften (`AssignmentGroup`) über Zulassung und Rolle --
-NICHT die per-Kunde-Rollen-Gruppen-Settings (`oidc.resolve_role`). Jeder andere Pfad
-(Kunden-gematchter Tenant ODER Single-Tenant-Mode) bleibt byte-genau bei `resolve_role`.
+Im Multi-Tenant-Mode ist SSO ausschliesslich ein Provider-Personal-Login: JEDER SSO-Login
+(auch mit Kunden-`tid`) entscheidet über Team-Mitgliedschaften (`AssignmentGroup`) und wird
+auf dem DEFAULT-Tenant beheimatet -- NICHT über die per-Kunde-Rollen-Gruppen-Settings
+(`oidc.resolve_role`). Nur der SINGLE-TENANT-Mode bleibt byte-genau bei `resolve_role`.
 
 Angriffs-orientiert:
 - Provider ohne passendes Team -> fail-closed abgelehnt (kein Settings-Fallback).
 - Auditor-Team -> `auditor`; Admin- + Auditor-Team -> `admin` (Admin gewinnt).
-- Kunden-Match ignoriert Team-Mitgliedschaft komplett (Settings entscheiden).
+- Kunden-`tid` im Multi-Tenant-Mode -> group-basiert + default-beheimatet (nicht der Kunde);
+  ohne Team abgelehnt, selbst wenn die Settings-Admin-Gruppe des Kunden matcht.
 - Single-Tenant-Mode ignoriert Teams komplett (Settings entscheiden).
 - Der Verweigerungs-Grund wird in BEIDEN Zweigen auditiert.
 
@@ -28,6 +30,7 @@ import pytest_asyncio
 from app.api.routes.auth import oidc_callback
 from app.db.session import get_session_factory
 from app.models.audit import AuditLog
+from app.models.user import UserSession
 from app.repositories import user_repo
 from app.services import oidc
 from app.services.audit import LOGIN_FAILED
@@ -261,21 +264,65 @@ async def test_provider_admin_team_wins(env: _Env, migrated_engine: AsyncEngine)
         assert user.role == "admin"
 
 
-# ---- Kunden-Match ignoriert Team-Mitgliedschaft (Settings entscheiden) ------------------ #
+# ---- Kunden-`tid` im Multi-Tenant-Mode -> group-basiert + default-beheimatet ------------ #
 
 
-async def test_customer_match_ignores_team_membership(
+async def test_customer_tid_in_mt_is_group_based_and_default_homed(
     env: _Env, migrated_engine: AsyncEngine
 ) -> None:
+    """FLIP (Provider-only SSO Task 4): früher entschieden bei einem Kunden-`tid` die Settings
+    des Kunden. Jetzt ist SSO im Multi-Tenant-Mode ausschliesslich Provider-Login -- der
+    Kunden-`tid` wird group-basiert autorisiert und auf dem DEFAULT-Tenant beheimatet."""
     await _write_mode(migrated_engine, env.default_id, True)
-    username = f"customer-denied{_USER_DOMAIN}"
 
-    # In einem Provider-Admin-Team, aber NICHT in Kunde A's Settings-Admin-Gruppe -> DENIED.
+    # (a) Provider-Team-Mitglied mit Kunden-`tid`: über TEAM autorisiert, Rolle folgt
+    #     Admin-gewinnt, Heimat = DEFAULT-Tenant (NICHT der Kunde).
+    ok = f"customer-tid-team-member{_USER_DOMAIN}"
     async with get_session_factory()() as session:
         resp = await _call_oidc_callback(
-            session, _result(username, _TID_CUSTOMER, [_TEAM_ADMIN_GROUP])
+            session, _result(ok, _TID_CUSTOMER, [_TEAM_ADMIN_GROUP, _TEAM_AUDITOR_GROUP])
         )
+    assert "sso_denied" not in resp.headers["location"]
 
+    async with get_session_factory()() as session:
+        user = await user_repo.get_by_username(session, ok)
+        assert user is not None
+        assert user.role == "admin"  # Admin-Team gewinnt gegen Auditor-Team
+        assert user.tenant_id == env.default_id  # default-beheimatet, NICHT der Kunde
+
+    # (b) In Kunde A's Settings-Admin-Gruppe, aber in KEINEM Team -> jetzt DENIED (kein
+    #     Settings-Fallback im Multi-Tenant-Mode). Deny wird als `not_in_any_team` auditiert.
+    denied = f"customer-settings-no-team{_USER_DOMAIN}"
+    async with get_session_factory()() as session:
+        resp = await _call_oidc_callback(
+            session, _result(denied, _TID_CUSTOMER, [_CUSTOMER_SETTINGS_ADMIN_GROUP])
+        )
+    assert resp.status_code == 302
+    assert "sso_denied=1" in resp.headers["location"]
+
+    async with get_session_factory()() as session:
+        assert await user_repo.get_by_username(session, denied) is None
+        row = (
+            await session.execute(select(AuditLog).where(AuditLog.actor_username == denied))
+        ).scalar_one()
+        assert row.action == LOGIN_FAILED
+        assert row.outcome == "failure"
+        assert row.detail.get("sso") is True
+        # Grund kommt jetzt aus dem TEAM-Pfad, nicht mehr aus `resolve_role`.
+        assert row.detail.get("reason") == "not_in_any_team"
+
+
+# ---- Unbekannter `tid` -> DENIED (unverändert, äussere Verteidigung) -------------------- #
+
+
+async def test_unknown_tid_denied(env: _Env, migrated_engine: AsyncEngine) -> None:
+    await _write_mode(migrated_engine, env.default_id, True)
+    username = f"unknown-tid{_USER_DOMAIN}"
+
+    async with get_session_factory()() as session:
+        resp = await _call_oidc_callback(
+            session, _result(username, "group-auth-unknown-tid", [_TEAM_ADMIN_GROUP])
+        )
     assert resp.status_code == 302
     assert "sso_denied=1" in resp.headers["location"]
 
@@ -285,9 +332,37 @@ async def test_customer_match_ignores_team_membership(
             await session.execute(select(AuditLog).where(AuditLog.actor_username == username))
         ).scalar_one()
         assert row.action == LOGIN_FAILED
-        # Grund kommt aus `resolve_role` (Settings-Pfad), NICHT "not_in_any_team".
-        assert row.detail.get("reason")
-        assert row.detail.get("reason") != "not_in_any_team"
+        assert row.detail.get("reason") == "unknown_tenant"
+
+
+# ---- Heimat + Sitzungs-`active_tenant` stimmen überein (== Default) ---------------------- #
+
+
+async def test_home_and_session_active_tenant_agree_on_default(
+    env: _Env, migrated_engine: AsyncEngine
+) -> None:
+    """Nach JEDEM erfolgreichen Multi-Tenant-SSO-Login MUSS `user.tenant_id` ==
+    `user_session.active_tenant_id` == Default sein -- sonst bootet die Sitzung in einen
+    Kontext, für den das Konto ggf. keinen Grant hält (siehe `resolve_initial_tenant`)."""
+    await _write_mode(migrated_engine, env.default_id, True)
+    username = f"home-active-agree{_USER_DOMAIN}"
+
+    # Kunden-`tid`, autorisiert über ein Provider-Team -> Heimat + active_tenant == Default.
+    async with get_session_factory()() as session:
+        resp = await _call_oidc_callback(
+            session, _result(username, _TID_CUSTOMER, [_TEAM_ADMIN_GROUP])
+        )
+    assert "sso_denied" not in resp.headers["location"]
+
+    async with get_session_factory()() as session:
+        user = await user_repo.get_by_username(session, username)
+        assert user is not None
+        assert user.tenant_id == env.default_id
+        row = (
+            await session.execute(select(UserSession).where(UserSession.user_id == user.id))
+        ).scalar_one()
+        assert row.active_tenant_id == env.default_id
+        assert user.tenant_id == row.active_tenant_id == env.default_id
 
 
 # ---- Single-Tenant-Mode ignoriert Teams (Settings entscheiden) -------------------------- #

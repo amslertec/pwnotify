@@ -929,25 +929,28 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
-    # Rolle + Zulassung AUTORITATIV bestimmen (Sicherheitsfix, Phase 4c Task 4) -- NICHT
-    # `result.role`/`result.allowed`, die oben gegen die Owner-Session-Gemisch-Settings
-    # berechnet wurden. Zwei disjunkte Pfade: Provider-Personal (Multi-Tenant-Mode + Match auf
-    # den Default-Tenant) autorisiert über TEAM-Mitgliedschaft; jeder andere Fall (Kunden-Match
-    # ODER Single-Tenant-Mode) bleibt byte-genau bei den per-Kunde-Rollen-Gruppen-Settings.
+    # Rolle + Zulassung AUTORITATIV bestimmen (Sicherheitsfix, Phase 4c Task 4; Provider-only
+    # SSO, Tenant-Refinements Task 4) -- NICHT `result.role`/`result.allowed`, die oben gegen
+    # die Owner-Session-Gemisch-Settings berechnet wurden. Zwei disjunkte Pfade, allein durch
+    # den Instanz-Modus getrennt: Im MULTI-TENANT-Mode ist SSO ausschliesslich ein Provider-
+    # Personal-Login -- JEDER SSO-Login (auch mit Kunden-`tid`) autorisiert über die TEAM-
+    # Mitgliedschaft (`AssignmentGroup`) und wird auf dem Default-Tenant beheimatet (siehe
+    # `home_tenant_id` unten). Nur der SINGLE-TENANT-Mode bleibt byte-genau bei den per-Kunde-
+    # Rollen-Gruppen-Settings.
     assert tenant.id is not None  # persistierte Zeile aus der DB
     multi_tenant = await instance_settings.read_mode(session)
-    if multi_tenant and tenant.is_default:
-        # Provider-Personal (Match auf den Default-Tenant im Multi-Tenant-Mode): Zulassung +
+    if multi_tenant:
+        # Provider-Personal (Multi-Tenant-Mode, unabhängig vom gematchten `tid`): Zulassung +
         # Rolle kommen aus der TEAM-Mitgliedschaft (`AssignmentGroup`), NICHT aus den
-        # Rollen-Gruppen-Settings des Default-Tenants -- fail-closed ohne Settings-Fallback.
+        # Rollen-Gruppen-Settings irgendeines Tenants -- fail-closed ohne Settings-Fallback.
         role, allowed = await oidc.resolve_group_role(session, result.groups)
         reason = None if allowed else "not_in_any_team"
     else:
-        # UNVERÄNDERT: Kunden-gematchter Tenant ODER Single-Tenant-Mode -> per-Kunde-Settings-
-        # Rollen-Gruppen. `tenant_scoped_session` liest über die App-Rolle + RLS-GUC, sieht also
-        # GARANTIERT nur die `oidc.*`-Zeilen dieses einen Kunden, egal wie viele weitere
-        # SSO-Kunden existieren. Im Single-Tenant-/Übergangsfall (Bootstrap oben) sind Kunden-
-        # und Owner-Settings identisch -- gleiches Ergebnis wie zuvor, keine Verhaltensänderung.
+        # UNVERÄNDERT (Single-Tenant-Mode): per-Kunde-Settings-Rollen-Gruppen.
+        # `tenant_scoped_session` liest über die App-Rolle + RLS-GUC, sieht also GARANTIERT nur
+        # die `oidc.*`-Zeilen dieses einen Tenants. Im Single-Tenant-/Übergangsfall (Bootstrap
+        # oben) sind Kunden- und Owner-Settings identisch -- gleiches Ergebnis wie zuvor, keine
+        # Verhaltensänderung.
         async with tenant_scoped_session(tenant.id) as tsession:
             tenant_settings = await SettingsService(tsession).get_all()
         role, allowed, reason = oidc.resolve_role(result.groups, tenant_settings)
@@ -974,6 +977,15 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
+    # Heim-Tenant EINMAL bestimmen (Provider-only SSO, Task 4): im Multi-Tenant-Mode wird JEDES
+    # SSO-Konto auf dem Default-Tenant (dem Provider) beheimatet -- unabhängig vom gematchten
+    # `tid`. Im Single-Tenant-Mode ist der gematchte Tenant ohnehin der Default (Bootstrap oben),
+    # also ein No-op. Heimat und initialer `active_tenant` der Sitzung MÜSSEN übereinstimmen:
+    # `resolve_initial_tenant` liefert für SSO-Konten `AppUser.tenant_id`, ein Kunden-`active_
+    # tenant` bei Default-Heimat würde das Konto in einen Kunden-Kontext booten, für den es ggf.
+    # keinen Grant hält.
+    home_tenant_id = (await tenant_repo.default_tenant(session)).id if multi_tenant else tenant.id
+
     user = await user_repo.get_by_username(session, result.username)
     if user is None:
         # SSO-Nutzer ohne lokales Passwort (unbrauchbarer Zufalls-Hash).
@@ -990,10 +1002,10 @@ async def oidc_callback(
         user.display_name = result.display_name
         user.role = role  # Rolle folgt der Entra-Gruppenmitgliedschaft DES gefundenen Kunden
 
-    # SSO-Konto ist an genau diesen einen Tenant gebunden (Task 4) -- `tenant_repo`
+    # SSO-Konto ist an genau seinen Heim-Tenant gebunden (Task 4) -- `tenant_repo`
     # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) liest ausschliesslich
     # `AppUser.tenant_id` für SSO-Konten.
-    user.tenant_id = tenant.id
+    user.tenant_id = home_tenant_id
 
     # Gruppen-Reconcile (SICHERHEITSKRITISCH, Console+Groups+Invite Task 4): materialisiert
     # `source='group'`-Grants aus den Team-Mitgliedschaften (`result.groups`) dieses Logins.
@@ -1018,7 +1030,7 @@ async def oidc_callback(
     # `active_tenant` schliesst den Task-3-Defer: die SSO-Sitzung trägt den Tenant-Claim
     # direkt ab dem Login, statt ihn bei jedem Request über `resolve_initial_tenant` neu
     # aufzulösen.
-    pair = issue_token_pair(str(user.id), active_tenant=tenant.id)
+    pair = issue_token_pair(str(user.id), active_tenant=home_tenant_id)
     await user_repo.create_session(
         session,
         user_id=user.id,  # type: ignore[arg-type]
@@ -1027,7 +1039,7 @@ async def oidc_callback(
         expires_at=pair.refresh_expires,
         user_agent=request.headers.get("user-agent"),
         ip=request.client.host if request.client else None,
-        active_tenant_id=tenant.id,
+        active_tenant_id=home_tenant_id,
     )
     await session.commit()
     # Profilfoto aus Entra holen und cachen (best effort; blockiert Login nicht bei Fehler).
