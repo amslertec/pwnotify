@@ -488,6 +488,9 @@
       "scheduled": "Scheduled"
     },
     "noDetailLog": "No detail log.",
+    "detail": {
+      "graphNotConfigured": "Microsoft Graph is not configured — user sync was skipped."
+    },
     "pagination": {
       "summary": "{{count}} runs · Page {{page}}/{{total}}",
       "prev": "Back",

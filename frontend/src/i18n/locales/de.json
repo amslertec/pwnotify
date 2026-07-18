@@ -488,6 +488,9 @@
       "scheduled": "Geplant"
     },
     "noDetailLog": "Kein Detail-Log.",
+    "detail": {
+      "graphNotConfigured": "Microsoft-Graph ist nicht konfiguriert — der Benutzer-Abgleich wurde übersprungen."
+    },
     "pagination": {
       "summary": "{{count}} Läufe · Seite {{page}}/{{total}}",
       "prev": "Zurück",

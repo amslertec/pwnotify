@@ -16,6 +16,18 @@ import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 10
 
+/**
+ * Maps a single `detail_log` entry to human-readable text where a known outcome
+ * shape is recognized (currently: Microsoft Graph not configured, so sync was
+ * skipped). Unknown/diagnostic entries fall back to raw JSON unchanged.
+ */
+export function renderDetailEntry(entry: Record<string, unknown>, t: (key: string) => string): string {
+  if (entry.step === 'sync' && entry.skipped === 'graph_not_configured') {
+    return t('runs.detail.graphNotConfigured')
+  }
+  return JSON.stringify(entry)
+}
+
 export default function RunsPage() {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
@@ -170,17 +182,28 @@ function RunRow({ run, open, onToggle }: { run: Run; open: boolean; onToggle: ()
       {open && (
         <tr className="bg-muted/20">
           <td colSpan={8} className="px-4 py-3">
+            {/* graph_not_configured has run.error===null (Task 1) and is surfaced only via
+                detail_log below, so no separate suppression is needed here to avoid doubling. */}
             {run.error && (
               <p className="text-danger mb-2 font-mono text-xs break-words">{run.error}</p>
             )}
             {detail ? (
               detail.detail_log.length > 0 ? (
                 <div className="max-h-72 space-y-1 overflow-auto">
-                  {detail.detail_log.map((entry, i) => (
-                    <div key={i} className="text-muted-foreground font-mono text-xs break-words">
-                      {JSON.stringify(entry)}
-                    </div>
-                  ))}
+                  {detail.detail_log.map((entry, i) => {
+                    const isKnown = entry.step === 'sync' && entry.skipped === 'graph_not_configured'
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'text-xs break-words',
+                          isKnown ? 'text-foreground' : 'text-muted-foreground font-mono',
+                        )}
+                      >
+                        {renderDetailEntry(entry, t)}
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <p className="text-muted-foreground text-xs">{t('runs.noDetailLog')}</p>
