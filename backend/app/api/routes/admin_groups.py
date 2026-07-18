@@ -51,6 +51,7 @@ async def _to_out(session: SessionDep, group: AssignmentGroup) -> GroupOut:
         id=group.id,
         name=group.name,
         entra_group_id=group.entra_group_id,
+        role=group.role,  # type: ignore[arg-type]
         tenant_ids=await assignment_group_repo.list_tenant_ids(session, group.id),
         member_count=await assignment_group_member_repo.count(session, group.id),
         last_synced_at=group.last_synced_at,
@@ -95,7 +96,7 @@ async def create_group(
     session: SessionDep,
 ) -> GroupOut:
     group = await assignment_group_repo.create(
-        session, name=body.name, entra_group_id=body.entra_group_id
+        session, name=body.name, entra_group_id=body.entra_group_id, role=body.role
     )
     await audit.record(
         session,
@@ -103,7 +104,7 @@ async def create_group(
         actor=admin,
         target=group.name,
         request=request,
-        detail={"entra_group_id": group.entra_group_id},
+        detail={"entra_group_id": group.entra_group_id, "role": group.role},
     )
     await session.commit()
     assert group.id is not None
@@ -121,14 +122,14 @@ async def update_group(
 ) -> GroupOut:
     if await assignment_group_repo.get(session, group_id) is None:
         raise NotFoundError("Gruppe nicht gefunden.", code="group_not_found")
-    group = await assignment_group_repo.update(session, group_id, name=body.name)
+    group = await assignment_group_repo.update(session, group_id, name=body.name, role=body.role)
     await audit.record(
         session,
         action=audit.GROUP_UPDATED,
         actor=admin,
         target=group.name,
         request=request,
-        detail={"name": group.name},
+        detail={"name": group.name, "role": group.role},
     )
     await session.commit()
     return await _to_out(session, group)

@@ -136,7 +136,9 @@ async def test_sync_route_returns_counters_and_updates_group_out(
     assert tenant.id is not None
 
     entra = _entra_id()
-    group = await assignment_group_repo.create(session, name="Sync Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Sync Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
     await assignment_group_repo.set_tenants(session, group.id, [tenant.id])
 
@@ -175,7 +177,9 @@ async def test_sync_route_graph_error_is_sync_failed_not_500(
     superadmin = await _mk_superadmin(session)
     await _default_context_request(session, superadmin)
     entra = _entra_id()
-    group = await assignment_group_repo.create(session, name="Broken Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Broken Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
 
     _patch_graph(monkeypatch, {}, raises=GraphError("boom", code="graph_error"))
@@ -207,7 +211,9 @@ async def test_members_route_paginates(
     superadmin = await _mk_superadmin(session)
     await _default_context_request(session, superadmin)
     entra = _entra_id()
-    group = await assignment_group_repo.create(session, name="Big Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Big Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
 
     members = [_member(f"user{i:03d}-{uuid.uuid4().hex[:6]}@provider.example") for i in range(30)]
@@ -248,7 +254,7 @@ async def test_auto_sync_fires_on_create(
     created = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Auto Team", entra_group_id=entra),
+        GroupCreate(name="Auto Team", entra_group_id=entra, role="admin"),
         session,
     )
     assert created.member_count == 1
@@ -271,7 +277,7 @@ async def test_auto_sync_graph_error_on_create_leaves_group_created(
     created = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Auto Fail Team", entra_group_id=entra),
+        GroupCreate(name="Auto Fail Team", entra_group_id=entra, role="admin"),
         session,
     )
     assert created.id is not None
@@ -294,7 +300,9 @@ async def test_auto_sync_fires_on_set_tenants(
     upn = f"autosync-tenants-{uuid.uuid4().hex}@provider.example"
     _patch_graph(monkeypatch, {entra: [_member(upn)]})
 
-    group = await assignment_group_repo.create(session, name="Retag Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Retag Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
 
     updated = await set_group_tenants(
@@ -321,7 +329,9 @@ async def test_auto_sync_graph_error_on_set_tenants_leaves_tenants_set(
     tenant = await tenant_repo.create(session, name="Set Tenants Fail Tenant", slug=_slug())
     assert tenant.id is not None
     entra = _entra_id()
-    group = await assignment_group_repo.create(session, name="Fail Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Fail Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
 
     _patch_graph(monkeypatch, {}, raises=GraphError("boom", code="graph_error"))
@@ -444,7 +454,9 @@ async def test_sync_route_reads_provider_graph_config_from_default_tenant_scope(
     superadmin = await _mk_superadmin(session)
     await _default_context_request(session, superadmin)
 
-    group = await assignment_group_repo.create(session, name="Scope Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="Scope Team", entra_group_id=entra, role="admin"
+    )
     assert group.id is not None
 
     await sync_group_route(superadmin, group.id, session)  # type: ignore[arg-type]
@@ -477,7 +489,7 @@ async def test_auto_sync_reads_provider_graph_config_from_default_tenant_scope(
     await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Auto Scope Team", entra_group_id=entra),
+        GroupCreate(name="Auto Scope Team", entra_group_id=entra, role="admin"),
         session,
     )
 

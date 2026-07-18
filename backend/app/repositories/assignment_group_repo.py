@@ -40,10 +40,12 @@ async def get_by_entra_group_id(
     return res.scalar_one_or_none()
 
 
-async def create(session: AsyncSession, *, name: str, entra_group_id: str) -> AssignmentGroup:
+async def create(
+    session: AsyncSession, *, name: str, entra_group_id: str, role: str
+) -> AssignmentGroup:
     if await get_by_entra_group_id(session, entra_group_id) is not None:
         raise ConflictError("Diese Entra-Gruppen-ID wird bereits verwendet.", code="group_exists")
-    group = AssignmentGroup(name=name, entra_group_id=entra_group_id)
+    group = AssignmentGroup(name=name, entra_group_id=entra_group_id, role=role)
     session.add(group)
     try:
         await session.commit()
@@ -69,14 +71,15 @@ async def get(session: AsyncSession, group_id: int) -> AssignmentGroup | None:
     return await session.get(AssignmentGroup, group_id)
 
 
-async def update(session: AsyncSession, group_id: int, *, name: str) -> AssignmentGroup:
-    """Reine Umbenennung -- `entra_group_id` ist unveränderlich (kein Feld in `GroupUpdate`),
-    die Route lehnt Unbekanntes vorab mit `group_not_found` ab (404), diese Funktion bleibt
-    aus Konsistenzgründen zu `tenant_repo.update` trotzdem defensiv."""
+async def update(session: AsyncSession, group_id: int, *, name: str, role: str) -> AssignmentGroup:
+    """Umbenennung + Re-Rolung -- `entra_group_id` ist unveränderlich (kein Feld in
+    `GroupUpdate`), die Route lehnt Unbekanntes vorab mit `group_not_found` ab (404), diese
+    Funktion bleibt aus Konsistenzgründen zu `tenant_repo.update` trotzdem defensiv."""
     group = await session.get(AssignmentGroup, group_id)
     if group is None:
         raise NotFoundError("Gruppe nicht gefunden.", code="group_not_found")
     group.name = name
+    group.role = role
     await session.commit()
     await session.refresh(group)
     return group

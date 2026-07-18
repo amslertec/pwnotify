@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 
+import pydantic
 import pytest
 from app.api.deps import ACCESS_COOKIE, require_superadmin, require_superadmin_default_context
 from app.api.routes.admin_groups import (
@@ -119,10 +120,11 @@ async def test_group_lifecycle_create_assign_rename_set_delete_cascades(
     created = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team Alpha", entra_group_id=_entra_id()),
+        GroupCreate(name="Team Alpha", entra_group_id=_entra_id(), role="admin"),
         session,
     )
     assert created.name == "Team Alpha"
+    assert created.role == "admin"
     assert created.tenant_ids == []
     group_id = created.id
 
@@ -143,10 +145,11 @@ async def test_group_lifecycle_create_assign_rename_set_delete_cascades(
         request,  # type: ignore[arg-type]
         superadmin,
         group_id,
-        GroupUpdate(name="Team Alpha Renamed"),
+        GroupUpdate(name="Team Alpha Renamed", role="admin"),
         session,
     )
     assert renamed.name == "Team Alpha Renamed"
+    assert renamed.role == "admin"
     assert set(renamed.tenant_ids) == {tenant_a.id, tenant_b.id}
 
     narrowed = await set_group_tenants(
@@ -166,6 +169,58 @@ async def test_group_lifecycle_create_assign_rename_set_delete_cascades(
     assert await _tenant_row(session, group_id, tenant_a.id) is None
 
 
+# ---- Task 2: `role` surfaced through create/update/`GroupOut`, invalid role is a 422 -------- #
+
+
+async def test_create_group_with_auditor_role_is_reflected_in_group_out(
+    session: AsyncSession,
+) -> None:
+    superadmin = await _mk_superadmin(session)
+    request = await _default_context_request(session, superadmin)
+
+    created = await create_group(
+        request,  # type: ignore[arg-type]
+        superadmin,
+        GroupCreate(name="Auditor Team", entra_group_id=_entra_id(), role="auditor"),
+        session,
+    )
+    assert created.role == "auditor"
+
+
+async def test_update_group_role_flips_from_auditor_to_admin(session: AsyncSession) -> None:
+    superadmin = await _mk_superadmin(session)
+    request = await _default_context_request(session, superadmin)
+
+    created = await create_group(
+        request,  # type: ignore[arg-type]
+        superadmin,
+        GroupCreate(name="Flip Team", entra_group_id=_entra_id(), role="auditor"),
+        session,
+    )
+    assert created.role == "auditor"
+
+    updated = await update_group(
+        request,  # type: ignore[arg-type]
+        superadmin,
+        created.id,
+        GroupUpdate(name="Flip Team", role="admin"),
+        session,
+    )
+    assert updated.role == "admin"
+
+
+def test_group_create_rejects_invalid_role() -> None:
+    """`role` is `Literal["admin", "auditor"]` -- an unknown value never reaches the route or
+    the DB, Pydantic rejects it at the edge (FastAPI turns this into a 422 for real requests)."""
+    with pytest.raises(pydantic.ValidationError):
+        GroupCreate(name="Bad Role Team", entra_group_id=_entra_id(), role="superadmin")  # type: ignore[arg-type]
+
+
+def test_group_update_rejects_invalid_role() -> None:
+    with pytest.raises(pydantic.ValidationError):
+        GroupUpdate(name="Bad Role Team", role="nope")  # type: ignore[arg-type]
+
+
 # ---- Guard rails: duplicate entra_group_id / inactive tenant ------------------------------- #
 
 
@@ -177,7 +232,7 @@ async def test_duplicate_entra_group_id_is_rejected(session: AsyncSession) -> No
     await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team A", entra_group_id=entra_id),
+        GroupCreate(name="Team A", entra_group_id=entra_id, role="admin"),
         session,
     )
 
@@ -185,7 +240,7 @@ async def test_duplicate_entra_group_id_is_rejected(session: AsyncSession) -> No
         await create_group(
             request,  # type: ignore[arg-type]
             superadmin,
-            GroupCreate(name="Team B", entra_group_id=entra_id),
+            GroupCreate(name="Team B", entra_group_id=entra_id, role="admin"),
             session,
         )
     assert exc_info.value.code == "group_exists"
@@ -197,7 +252,7 @@ async def test_set_tenants_rejects_inactive_tenant(session: AsyncSession) -> Non
     created = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team Inactive", entra_group_id=_entra_id()),
+        GroupCreate(name="Team Inactive", entra_group_id=_entra_id(), role="admin"),
         session,
     )
     inactive = await _mk_tenant(session, active=False)
@@ -230,7 +285,7 @@ async def test_create_group_toctou_integrity_error_maps_to_group_exists_409(
     await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team First", entra_group_id=entra_id),
+        GroupCreate(name="Team First", entra_group_id=entra_id, role="admin"),
         session,
     )
 
@@ -243,7 +298,7 @@ async def test_create_group_toctou_integrity_error_maps_to_group_exists_409(
         await create_group(
             request,  # type: ignore[arg-type]
             superadmin,
-            GroupCreate(name="Team Second", entra_group_id=entra_id),
+            GroupCreate(name="Team Second", entra_group_id=entra_id, role="admin"),
             session,
         )
     assert exc_info.value.code == "group_exists"
@@ -258,7 +313,7 @@ async def test_update_and_delete_unknown_group_raise_not_found(session: AsyncSes
             request,  # type: ignore[arg-type]
             superadmin,
             999_999_999,
-            GroupUpdate(name="Whatever"),
+            GroupUpdate(name="Whatever", role="admin"),
             session,
         )
     assert exc_info.value.code == "group_not_found"
@@ -304,13 +359,13 @@ async def test_tenant_ids_for_entra_groups_unions_across_groups(session: AsyncSe
     group_1 = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team 1", entra_group_id=_entra_id()),
+        GroupCreate(name="Team 1", entra_group_id=_entra_id(), role="admin"),
         session,
     )
     group_2 = await create_group(
         request,  # type: ignore[arg-type]
         superadmin,
-        GroupCreate(name="Team 2", entra_group_id=_entra_id()),
+        GroupCreate(name="Team 2", entra_group_id=_entra_id(), role="admin"),
         session,
     )
     await set_group_tenants(

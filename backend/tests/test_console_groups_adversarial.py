@@ -175,9 +175,11 @@ async def _mk_user(
     return u
 
 
-async def _mk_team(session: AsyncSession, tenant_ids: list[int]) -> str:
+async def _mk_team(session: AsyncSession, tenant_ids: list[int], *, role: str = "admin") -> str:
     entra = _entra()
-    group = await assignment_group_repo.create(session, name="T9 Team", entra_group_id=entra)
+    group = await assignment_group_repo.create(
+        session, name="T9 Team", entra_group_id=entra, role=role
+    )
     assert group.id is not None
     await assignment_group_repo.set_tenants(session, group.id, tenant_ids)
     return entra
