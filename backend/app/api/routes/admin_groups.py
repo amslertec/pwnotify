@@ -20,6 +20,7 @@ from fastapi import APIRouter, Query, Request
 
 from ...core.errors import NotFoundError
 from ...core.logging import get_logger
+from ...db.tenant_context import tenant_scoped_session
 from ...models.assignment_group import AssignmentGroup
 from ...repositories import assignment_group_member_repo, assignment_group_repo
 from ...schemas.assignment_group import (
@@ -35,7 +36,7 @@ from ...schemas.common import Message
 from ...services import audit, group_sync
 from ...services.group_sync import GroupSyncError
 from ...services.settings_service import SettingsService
-from ..deps import SessionDep, SuperadminDefaultContextUser
+from ..deps import SessionDep, SuperadminDefaultContextUser, default_tenant_id
 
 router = APIRouter(prefix="/admin/groups", tags=["admin-groups"])
 
@@ -59,15 +60,25 @@ async def _to_out(session: SessionDep, group: AssignmentGroup) -> GroupOut:
 async def _auto_sync(session: SessionDep, group_id: int) -> None:
     """Best-effort-Sync nach `create_group`/`set_group_tenants` (Design §5): die primäre
     Mutation ist bereits committet, ein Graph-Fehler hier darf sie NICHT zurückrollen oder
-    als 500 durchschlagen -- der Sync ist über den Button jederzeit erneut auslösbar."""
+    als 500 durchschlagen -- der Sync ist über den Button jederzeit erneut auslösbar.
+
+    Die Provider-Graph-Config wird über `tenant_scoped_session` auf dem DEFAULT-Tenant
+    gelesen (wie `services/instance_settings.read_mode`/`auth.sync_sso`) -- NICHT über die
+    rohe Owner-`session`: `setting`s PK ist `(tenant_id, key)`, die Owner-Rolle umgeht RLS,
+    also läse `SettingsService(session).get_all()` hier ein undefiniertes Gemisch der
+    `graph.*`-Zeilen ALLER Tenants, sobald ein zweiter Kunde Graph konfiguriert. Nur der
+    SETTINGS-Read ist tenant-scoped -- der eigentliche `sync_group`-Aufruf (Snapshot- +
+    Grant-Schreibzugriffe) bleibt bewusst auf der übergebenen Request-`session`."""
     try:
-        settings = await SettingsService(session).get_all()
+        async with tenant_scoped_session(await default_tenant_id(session)) as scoped:
+            settings = await SettingsService(scoped).get_all()
         await group_sync.sync_group(session, settings, group_id)
         await session.commit()
     except GroupSyncError as exc:
         log.warning("group_auto_sync_failed", group_id=group_id, message=exc.message)
     except Exception:  # pragma: no cover - unerwarteter Fehler, darf primäre Mutation nie stören
         log.exception("group_auto_sync_unexpected_error", group_id=group_id)
+        await session.rollback()
 
 
 @router.get("")
@@ -178,7 +189,13 @@ async def sync_group_route(
     group_id: int,
     session: SessionDep,
 ) -> GroupSyncResult:
-    settings = await SettingsService(session).get_all()
+    # Provider-Graph-Config aus dem DEFAULT-Tenant-Scope lesen (nicht aus der rohen
+    # Owner-`session`) -- selbe Begründung wie in `_auto_sync` oben: die Owner-Rolle umgeht
+    # RLS, `SettingsService(session).get_all()` läse sonst ein Gemisch der `graph.*`-Zeilen
+    # ALLER Tenants. Nur der Settings-Read ist gescoped; Snapshot-/Grant-Schreibzugriffe in
+    # `sync_group` bleiben auf der Request-`session`.
+    async with tenant_scoped_session(await default_tenant_id(session)) as scoped:
+        settings = await SettingsService(scoped).get_all()
     result = await group_sync.sync_group(session, settings, group_id)
     await session.commit()
     return GroupSyncResult(**result)

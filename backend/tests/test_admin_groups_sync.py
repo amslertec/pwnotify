@@ -10,9 +10,11 @@ ob `sync_group` von der Route oder direkt aufgerufen wird."""
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
+import pytest_asyncio
 from app.api.deps import ACCESS_COOKIE, require_superadmin, require_superadmin_default_context
 from app.api.routes.admin_groups import (
     create_group,
@@ -26,8 +28,10 @@ from app.models.user import AppUser
 from app.repositories import assignment_group_repo, tenant_repo
 from app.schemas.assignment_group import GroupCreate, GroupTenants
 from app.services import group_sync
+from app.services.graph.client import GraphConfig
 from app.services.group_sync import GroupSyncError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
 class _FakeRequest:
@@ -331,6 +335,159 @@ async def test_auto_sync_graph_error_on_set_tenants_leaves_tenants_set(
     assert updated.tenant_ids == [tenant.id]
     assert updated.member_count == 0
     assert updated.last_synced_at is None
+
+
+# ---- Multi-tenant correctness: provider Graph config must come from the DEFAULT tenant ------ #
+#
+# Bug: both `sync_group_route` and `_auto_sync` built the Graph config from
+# `SettingsService(session).get_all()` on the RAW owner session. `setting`'s PK is
+# `(tenant_id, key)` and the owner DB role bypasses RLS, so an unscoped `select(Setting)`
+# returns EVERY tenant's `graph.*` rows; `get_all()` folds them into a single dict keyed by
+# `key` alone, so whichever tenant's row the (unordered) scan visits last silently wins --
+# an undefined mix the instant a second customer configures Graph. Provider group
+# enumeration must always resolve the DEFAULT/provider tenant's config, deterministically,
+# never the customer's.
+#
+# Seeded via real, committed SQL against `migrated_engine` (not the savepoint-isolated
+# `session` fixture): the fix reads settings through `tenant_scoped_session`, which opens
+# its OWN connection via the app engine and therefore -- exactly as documented in
+# `test_isolation_attack.py` -- sees no uncommitted data from a savepoint on a different
+# connection.
+
+
+@pytest_asyncio.fixture
+async def default_and_customer_graph_settings(
+    migrated_engine: AsyncEngine,
+) -> AsyncGenerator[tuple[int, int]]:
+    """DEFAULT tenant configured with `graph.tenant_id='provider-tenant'`, a second,
+    freshly created CUSTOMER tenant configured with a DIFFERENT `graph.tenant_id=
+    'customer-tenant'` -- the sync must resolve the former, never the latter."""
+    async with migrated_engine.connect() as conn:
+        default_id = int(
+            (await conn.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))).scalar_one()
+        )
+        customer_id = int(
+            (
+                await conn.execute(
+                    text(
+                        "INSERT INTO tenant (name, slug, is_active, created_at) VALUES "
+                        "('GroupSyncScopeCustomer','group-sync-scope-customer',true,now()) "
+                        "RETURNING id"
+                    )
+                )
+            ).scalar_one()
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO setting (tenant_id, key, value, is_secret, updated_at) VALUES "
+                "(:default_id, 'graph.tenant_id', to_jsonb('provider-tenant'::text), "
+                "false, now()), "
+                "(:default_id, 'graph.client_id', to_jsonb('provider-client'::text), "
+                "false, now()), "
+                "(:default_id, 'graph.client_secret', to_jsonb('provider-secret'::text), "
+                "false, now()), "
+                "(:default_id, 'graph.cloud', to_jsonb('global'::text), false, now()), "
+                "(:customer_id, 'graph.tenant_id', to_jsonb('customer-tenant'::text), "
+                "false, now()), "
+                "(:customer_id, 'graph.client_id', to_jsonb('customer-client'::text), "
+                "false, now()), "
+                "(:customer_id, 'graph.client_secret', to_jsonb('customer-secret'::text), "
+                "false, now()), "
+                "(:customer_id, 'graph.cloud', to_jsonb('global'::text), false, now())"
+            ),
+            {"default_id": default_id, "customer_id": customer_id},
+        )
+        await conn.commit()
+        try:
+            yield default_id, customer_id
+        finally:
+            await conn.execute(
+                text(
+                    "DELETE FROM setting WHERE tenant_id = :default_id AND key IN "
+                    "('graph.tenant_id', 'graph.client_id', 'graph.client_secret', "
+                    "'graph.cloud')"
+                ),
+                {"default_id": default_id},
+            )
+            # Kaskadiert automatisch auf die `setting`-Zeilen des Customer-Tenants.
+            await conn.execute(text("DELETE FROM tenant WHERE id = :cid"), {"cid": customer_id})
+            await conn.commit()
+
+
+def _patch_graph_capturing(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: list[GraphConfig],
+    members_by_entra: dict[str, list[dict[str, Any]]],
+) -> None:
+    def _make(cfg: GraphConfig) -> _FakeGraph:
+        captured.append(cfg)
+        return _FakeGraph(members_by_entra)
+
+    monkeypatch.setattr(group_sync, "GraphClient", _make)
+
+
+async def test_sync_route_reads_provider_graph_config_from_default_tenant_scope(
+    session: AsyncSession,
+    default_and_customer_graph_settings: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Bewusst KEIN `set_tenants(...,[customer_id])`: der Beweis gilt unabhängig davon, welchem
+    # Kunden die Gruppe zugeordnet ist -- Provider-Gruppen-Enumeration muss IMMER das
+    # Default-/Provider-Config nutzen. Ein FK-Grant auf den Customer-Tenant würde dessen
+    # Zeile zudem bis zum Rollback der savepoint-`session` sperren und mit dem Teardown der
+    # (echt committenden) Settings-Fixture kollidieren.
+    _default_id, _customer_id = default_and_customer_graph_settings
+    captured: list[GraphConfig] = []
+    entra = _entra_id()
+    _patch_graph_capturing(monkeypatch, captured, {entra: []})
+
+    superadmin = await _mk_superadmin(session)
+    await _default_context_request(session, superadmin)
+
+    group = await assignment_group_repo.create(session, name="Scope Team", entra_group_id=entra)
+    assert group.id is not None
+
+    await sync_group_route(superadmin, group.id, session)  # type: ignore[arg-type]
+
+    assert captured, "GraphClient wurde nie konstruiert -- der Sync ist nicht gelaufen."
+    used = captured[-1]
+    assert used.tenant_id == "provider-tenant", (
+        f"Sync hat NICHT das Default-/Provider-Tenant-Graph-Config gelesen, sondern "
+        f"{used.tenant_id!r} -- Owner-Session-Gemisch aus mehreren Tenants?"
+    )
+    assert used.client_id == "provider-client"
+    assert used.tenant_id != "customer-tenant"
+
+
+async def test_auto_sync_reads_provider_graph_config_from_default_tenant_scope(
+    session: AsyncSession,
+    default_and_customer_graph_settings: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gleicher Beweis über den `_auto_sync`-Pfad (`create_group`), der Task-4c-Bug sass an
+    BEIDEN Stellen -- Route und Auto-Sync-Helfer -- getrennt."""
+    _default_id, _customer_id = default_and_customer_graph_settings
+    captured: list[GraphConfig] = []
+    entra = _entra_id()
+    _patch_graph_capturing(monkeypatch, captured, {entra: []})
+
+    superadmin = await _mk_superadmin(session)
+    request = await _default_context_request(session, superadmin)
+
+    await create_group(
+        request,  # type: ignore[arg-type]
+        superadmin,
+        GroupCreate(name="Auto Scope Team", entra_group_id=entra),
+        session,
+    )
+
+    assert captured, "GraphClient wurde nie konstruiert -- der Auto-Sync ist nicht gelaufen."
+    used = captured[-1]
+    assert used.tenant_id == "provider-tenant", (
+        f"Auto-Sync hat NICHT das Default-/Provider-Tenant-Graph-Config gelesen, sondern "
+        f"{used.tenant_id!r} -- Owner-Session-Gemisch aus mehreren Tenants?"
+    )
+    assert used.tenant_id != "customer-tenant"
 
 
 # ---- Guard rails: non-superadmin / superadmin in a customer context ------------------------- #
