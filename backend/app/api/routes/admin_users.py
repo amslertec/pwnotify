@@ -110,14 +110,17 @@ async def list_users(
       für den Superadmin. Provider-Personal (heim am Default-Tenant) erscheint deshalb nur
       in der Default-Ansicht, nicht in irgendeiner Kunden-Ansicht -- Cross-Tenant-Zuweisungen
       laufen über `/admin/assignments`, nicht über diese Seite.
-    - **Lokaler Admin** (`not is_sso and role=='admin'`): Heim-Konten NUR des aktiven
-      Tenants (lokal + SSO), sofern er diesen Tenant hält (s. Autorisierung oben). Nie
-      Superadmins, nie ein `superadmins`-Schlüssel.
-    - **Alles andere** (Auditor, SSO-Konto, unbekannter Zustand): default-deny -> leere
-      Listen. Die `/access`-Seite ist zwar admin-only im Frontend, dieses Gate gilt aber
-      unabhängig davon hier ebenfalls.
+    - **Admin** (`role=='admin'`, LOKAL ODER SSO): Heim-Konten NUR des aktiven Tenants
+      (lokal + SSO), sofern er diesen Tenant hält (s. Autorisierung oben). Ein SSO-Admin
+      hält per Kern-Invariante sein Heim-Tenant (`admin_tenants` = `admin_tenant`-Grants
+      vereinigt mit dem SSO-Heim bei Admin-Rolle, Design §2) plus zugewiesene Kunden -- er
+      verwaltet die Access-Seite seines Kunden genau wie ein lokaler Admin. Nie Superadmins,
+      nie ein `superadmins`-Schlüssel.
+    - **Alles andere** (Auditor, unbekannter Zustand): default-deny -> leere Listen. Die
+      `/access`-Seite ist zwar admin-only im Frontend, dieses Gate gilt aber unabhängig
+      davon hier ebenfalls.
     """
-    if user.is_sso or user.role not in ("admin", "superadmin"):
+    if user.role not in ("admin", "superadmin"):
         return {"local": [], "sso": []}
 
     is_superadmin_caller = user.role == "superadmin"

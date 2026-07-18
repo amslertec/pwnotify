@@ -184,6 +184,44 @@ async def test_local_admin_a_sees_only_a_accounts_no_superadmins_key(
     assert seed.superadmin.id not in local_ids
 
 
+async def test_sso_admin_a_sees_own_tenant_accounts_like_a_local_admin(
+    session: AsyncSession,
+) -> None:
+    """Ein SSO-Admin hält per Kern-Invariante sein Heim-Tenant (`admin_tenants` = Grants
+    vereinigt mit dem SSO-Heim bei Admin-Rolle) und verwaltet die Access-Seite seines Kunden
+    wie ein lokaler Admin. Regressionsschutz gegen das frühere `is_sso`-Blanket-Gate, das
+    SSO-Admins fälschlich immer leere Listen lieferte."""
+    seed = await _seed(session)
+
+    out = await list_users(seed.sso_admin_a, session, seed.a_id)  # type: ignore[arg-type]
+
+    assert "superadmins" not in out
+    sso_ids = {u.id for u in out["sso"]}
+    local_ids = {u.id for u in out["local"]}
+
+    # A's Konten (inkl. des SSO-Admins selbst) sind da ...
+    assert seed.sso_admin_a.id in sso_ids
+    assert seed.sso_auditor_a.id in sso_ids
+    assert seed.local_admin_a.id in local_ids
+
+    # ... B's Konten NIE (non-vakuöser Beweis: B ist tatsächlich befüllt).
+    assert seed.sso_admin_b.id not in sso_ids
+    assert seed.sso_auditor_b.id not in sso_ids
+
+
+async def test_sso_admin_a_forged_claim_for_unheld_tenant_is_denied(
+    session: AsyncSession,
+) -> None:
+    """Ein SSO-Admin von A, der einen `active_tenant`-Claim für B (nicht gehalten) fälscht,
+    bekommt leere Listen -- `is_allowed` gated ihn wie jeden Nicht-Superadmin (sein
+    `admin_tenants` ist nur `{A}`)."""
+    seed = await _seed(session)
+
+    out = await list_users(seed.sso_admin_a, session, seed.b_id)  # type: ignore[arg-type]
+
+    assert out == {"local": [], "sso": []}
+
+
 async def test_superadmin_default_context_sees_only_default_homed_plus_superadmins(
     session: AsyncSession,
 ) -> None:
