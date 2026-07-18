@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveTab, showGeneralTab } from './settings'
+import { resolveTab, showGeneralTab, showSsoTab } from './settings'
 import type { User } from '@/lib/types'
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -48,17 +48,58 @@ describe('showGeneralTab', () => {
   })
 })
 
+describe('showSsoTab', () => {
+  it('zeigt im Single-Tenant-Betrieb fuer jeden Benutzer', () => {
+    expect(showSsoTab(makeUser({ multi_tenant_mode: false, role: 'admin' }))).toBe(true)
+    expect(
+      showSsoTab(makeUser({ multi_tenant_mode: false, role: 'superadmin', active_tenant_is_default: false })),
+    ).toBe(true)
+  })
+
+  it('versteckt im Mandantenmodus fuer einen Nicht-Default-Kontext', () => {
+    expect(
+      showSsoTab(
+        makeUser({ multi_tenant_mode: true, role: 'superadmin', active_tenant_is_default: false }),
+      ),
+    ).toBe(false)
+    expect(
+      showSsoTab(makeUser({ multi_tenant_mode: true, role: 'admin', active_tenant_is_default: true })),
+    ).toBe(false)
+  })
+
+  it('zeigt im Mandantenmodus nur im Default-/Provider-Kontext eines Superadmins', () => {
+    expect(
+      showSsoTab(
+        makeUser({ multi_tenant_mode: true, role: 'superadmin', active_tenant_is_default: true }),
+      ),
+    ).toBe(true)
+  })
+
+  it('zeigt fuer null/undefined (Fallback: kein Mandantenmodus)', () => {
+    expect(showSsoTab(null)).toBe(true)
+    expect(showSsoTab(undefined)).toBe(true)
+  })
+})
+
 describe('resolveTab', () => {
   it('laesst andere Tabs unangetastet', () => {
-    expect(resolveTab('graph', false)).toBe('graph')
-    expect(resolveTab('mail', true)).toBe('mail')
+    expect(resolveTab('graph', false, true)).toBe('graph')
+    expect(resolveTab('mail', true, true)).toBe('mail')
   })
 
   it('faellt von general auf graph zurueck, wenn General nicht sichtbar ist', () => {
-    expect(resolveTab('general', false)).toBe('graph')
+    expect(resolveTab('general', false, true)).toBe('graph')
   })
 
   it('behaelt general, wenn es sichtbar ist', () => {
-    expect(resolveTab('general', true)).toBe('general')
+    expect(resolveTab('general', true, true)).toBe('general')
+  })
+
+  it('faellt von sso auf graph zurueck, wenn SSO nicht sichtbar ist', () => {
+    expect(resolveTab('sso', true, false)).toBe('graph')
+  })
+
+  it('behaelt sso, wenn es sichtbar ist', () => {
+    expect(resolveTab('sso', true, true)).toBe('sso')
   })
 })

@@ -44,10 +44,21 @@ export function showGeneralTab(me: User | null | undefined): boolean {
   return isDefaultContext(me)
 }
 
-/** Fällt auf den Default-Tab zurück, wenn ein `?tab=general`-Deep-Link ohne Rechte
- *  aufgerufen wird -- sonst strandet der Aufrufer auf einem ausgeblendeten Tab. */
-export function resolveTab(requestedTab: string, showGeneral: boolean): string {
-  return requestedTab === 'general' && !showGeneral ? 'graph' : requestedTab
+/** SSO ist provider-only (eine einzige App-Registrierung im Default-/Provider-Kontext) —
+ *  im Mandantenmodus sehen Kunden-Kontexte (auch ein Superadmin nach Kundenwechsel) den
+ *  gesamten SSO-Tab nicht. Im Single-Tenant-Betrieb bleibt der Tab unverändert für alle
+ *  sichtbar, wie bisher. */
+export function showSsoTab(me: User | null | undefined): boolean {
+  const multiTenant = me?.multi_tenant_mode ?? false
+  return !multiTenant || isDefaultContext(me)
+}
+
+/** Fällt auf den Default-Tab zurück, wenn ein `?tab=general`- oder `?tab=sso`-Deep-Link
+ *  ohne Rechte aufgerufen wird -- sonst strandet der Aufrufer auf einem ausgeblendeten Tab. */
+export function resolveTab(requestedTab: string, showGeneral: boolean, showSso: boolean): string {
+  if (requestedTab === 'general' && !showGeneral) return 'graph'
+  if (requestedTab === 'sso' && !showSso) return 'graph'
+  return requestedTab
 }
 
 export default function SettingsPage() {
@@ -56,8 +67,11 @@ export default function SettingsPage() {
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const showGeneral = showGeneralTab(user)
-  const tab = resolveTab(params.get('tab') ?? 'graph', showGeneral)
-  const visibleTabs = TABS.filter((item) => item.value !== 'general' || showGeneral)
+  const showSso = showSsoTab(user)
+  const tab = resolveTab(params.get('tab') ?? 'graph', showGeneral, showSso)
+  const visibleTabs = TABS.filter(
+    (item) => (item.value !== 'general' || showGeneral) && (item.value !== 'sso' || showSso),
+  )
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -111,9 +125,11 @@ export default function SettingsPage() {
             <TabsContent value="graph">
               <GraphTab {...tabProps} />
             </TabsContent>
-            <TabsContent value="sso">
-              <SsoTab {...tabProps} />
-            </TabsContent>
+            {showSso && (
+              <TabsContent value="sso">
+                <SsoTab {...tabProps} />
+              </TabsContent>
+            )}
             <TabsContent value="mail">
               <MailTab {...tabProps} />
             </TabsContent>
