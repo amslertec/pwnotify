@@ -7,7 +7,6 @@ describe('resolveTenantsTab', () => {
     expect(resolveTenantsTab('customers')).toBe('customers')
     expect(resolveTenantsTab('assignments')).toBe('assignments')
     expect(resolveTenantsTab('groups')).toBe('groups')
-    expect(resolveTenantsTab('superadmins')).toBe('superadmins')
     expect(resolveTenantsTab('settings')).toBe('settings')
   })
 
@@ -15,5 +14,8 @@ describe('resolveTenantsTab', () => {
     expect(resolveTenantsTab('unknown')).toBe('customers')
     expect(resolveTenantsTab('')).toBe('customers')
     expect(resolveTenantsTab('general')).toBe('customers')
+    // 'superadmins' ist kein Tenants-Konsolen-Tab mehr -- die Superadmin-Verwaltung lebt
+    // jetzt auf der Access-Seite (superadmin-only), daher Fallback auf 'customers'.
+    expect(resolveTenantsTab('superadmins')).toBe('customers')
   })
 })

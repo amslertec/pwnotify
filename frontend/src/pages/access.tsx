@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
+import { Crown, KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { AvatarImage } from '@/components/avatar-image'
 import { PageHeader } from '@/components/page-header'
 import { StatusDot } from '@/components/status-badge'
+import { SuperadminsTab } from '@/components/tenants/superadmins-tab'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -29,7 +30,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
-import { hasAdminRights, useAuth } from '@/lib/auth'
+import { hasAdminRights, isDefaultContext, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import type { AdminUser, AdminUsers } from '@/lib/types'
@@ -65,6 +66,11 @@ export default function AccessPage() {
   const qc = useQueryClient()
   const { user: me } = useAuth()
   const isAdmin = hasAdminRights(me?.role)
+  // Superadmin-Verwaltung erscheint NUR für einen Superadmin im Default-Kontext (Provider-Ebene) --
+  // dieselbe Gate-Regel, unter der die Tenant-Konsole diese Tabelle früher zeigte. `isDefaultContext`
+  // impliziert bereits `role==='superadmin'`; ein Kunden-Kontext (oder jeder Nicht-Superadmin) blendet
+  // den Tab aus, und der Server liefert dort ohnehin keinen `superadmins`-Schlüssel.
+  const showSuperadmins = isDefaultContext(me)
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -107,6 +113,11 @@ export default function AccessPage() {
           <TabsTrigger value="sso">
             <ShieldCheck className="size-4" /> {t('access.tabSso')}
           </TabsTrigger>
+          {showSuperadmins && (
+            <TabsTrigger value="superadmins">
+              <Crown className="size-4" /> {t('access.tabSuperadmins')}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Lokale Benutzer — je Rolle eine Tabelle */}
@@ -184,6 +195,12 @@ export default function AccessPage() {
             </div>
           )}
         </TabsContent>
+
+        {showSuperadmins && (
+          <TabsContent value="superadmins">
+            <SuperadminsTab />
+          </TabsContent>
+        )}
       </Tabs>
 
       <CreateDialog open={createOpen} onOpenChange={setCreateOpen} />

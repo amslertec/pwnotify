@@ -334,6 +334,7 @@
     "description": "Local accounts and accounts authorized via SSO.",
     "tabLocal": "Local users",
     "tabSso": "SSO users",
+    "tabSuperadmins": "Superadmins",
     "newLocalUser": "Local user",
     "colName": "Name",
     "colUsername": "Username",

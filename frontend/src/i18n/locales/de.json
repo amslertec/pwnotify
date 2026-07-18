@@ -334,6 +334,7 @@
     "description": "Lokale Konten und per SSO berechtigte Konten.",
     "tabLocal": "Lokale Benutzer",
     "tabSso": "SSO-Benutzer",
+    "tabSuperadmins": "Superadmins",
     "newLocalUser": "Lokaler Benutzer",
     "colName": "Name",
     "colUsername": "Benutzername",

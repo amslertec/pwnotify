@@ -6,7 +6,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { CustomersTab } from '@/components/tenants/customers-tab'
 import { GroupsTab } from '@/components/tenants/groups-tab'
-import { SuperadminsTab } from '@/components/tenants/superadmins-tab'
 import { UsersAssignmentsTab } from '@/components/tenants/users-assignments-tab'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -23,7 +22,6 @@ const TABS = [
   { value: 'customers', labelKey: 'tenants.tabs.customers' },
   { value: 'assignments', labelKey: 'tenants.tabs.assignments' },
   { value: 'groups', labelKey: 'tenants.tabs.groups' },
-  { value: 'superadmins', labelKey: 'tenants.tabs.superadmins' },
   { value: 'settings', labelKey: 'tenants.tabs.settings' },
 ] as const
 
@@ -70,9 +68,6 @@ export default function TenantsPage() {
         </TabsContent>
         <TabsContent value="groups">
           <GroupsTab tenants={tenants} />
-        </TabsContent>
-        <TabsContent value="superadmins">
-          <SuperadminsTab />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsTabLink />
