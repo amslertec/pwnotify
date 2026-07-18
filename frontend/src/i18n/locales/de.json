@@ -1154,6 +1154,8 @@
       "collapseMembers": "Mitglieder ausblenden",
       "sync": "Mitglieder synchronisieren",
       "syncResult": "{{count}} Mitglieder synchronisiert ({{materialized}} übernommen)",
+      "showCustomers": "{{count}} zugewiesene Kunden anzeigen",
+      "assignedCustomers": "Zugewiesene Kunden",
       "members": {
         "colName": "Name",
         "colUpn": "UPN",

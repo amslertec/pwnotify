@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
+import { Building2, ChevronDown, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -15,6 +14,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -223,13 +230,31 @@ function GroupRow({
           {group.tenant_ids.length === 0 ? (
             <span className="text-muted-foreground text-xs">{t('tenants.groups.none')}</span>
           ) : (
-            <div className="flex flex-wrap gap-1">
-              {group.tenant_ids.map((id) => (
-                <Badge key={id} variant="secondary">
-                  {tenantName(id)}
-                </Badge>
-              ))}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 px-2"
+                  aria-label={t('tenants.groups.showCustomers', {
+                    count: group.tenant_ids.length,
+                  })}
+                  title={t('tenants.groups.showCustomers', { count: group.tenant_ids.length })}
+                >
+                  <Building2 className="size-4" />
+                  <span className="text-xs font-medium">{group.tenant_ids.length}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                <DropdownMenuLabel>{t('tenants.groups.assignedCustomers')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {group.tenant_ids.map((id) => (
+                  <DropdownMenuItem key={id} className="text-sm">
+                    {tenantName(id)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </td>
         <td className="text-muted-foreground px-4 py-2.5 text-xs">

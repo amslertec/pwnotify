@@ -1154,6 +1154,8 @@
       "collapseMembers": "Hide members",
       "sync": "Sync members",
       "syncResult": "{{count}} members synced ({{materialized}} materialized)",
+      "showCustomers": "Show {{count}} assigned customers",
+      "assignedCustomers": "Assigned customers",
       "members": {
         "colName": "Name",
         "colUpn": "UPN",
