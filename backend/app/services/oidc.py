@@ -149,14 +149,14 @@ def resolve_role(
 async def resolve_group_role(session: AsyncSession, groups: list[str] | None) -> tuple[str, bool]:
     """Rolle + Zugriff für PROVIDER-Personal im Multi-Tenant-Mode aus der TEAM-Mitgliedschaft.
 
-    WARUM es existiert: Läuft eine Instanz im Multi-Tenant-Mode und matcht ein SSO-Login auf
-    den DEFAULT-Tenant (Provider-Personal), entscheidet NICHT mehr die per-Kunde-Settings-
-    Rollen-Gruppe (`resolve_role`), sondern die Mitgliedschaft in einem Team (`AssignmentGroup`)
-    über Zulassung und Rolle -- das Provider-Personal wird über Teams verwaltet, nicht über die
-    `oidc.admin_group_id`/`oidc.auditor_group_id`-Settings des Default-Tenants. Diese Funktion
-    ist ausschliesslich hinter dem Callback-Gate erreichbar (`multi_tenant AND
-    tenant.is_default`); jeder andere Pfad (Single-Tenant ODER Kunden-Match) bleibt bei
-    `resolve_role`.
+    WARUM es existiert: SSO ist im Multi-Tenant-Mode ein PROVIDER-Feature. Läuft eine Instanz
+    im Multi-Tenant-Mode, entscheidet NICHT mehr die per-Kunde-Settings-Rollen-Gruppe
+    (`resolve_role`), sondern die Mitgliedschaft in einem Team (`AssignmentGroup`) über Zulassung
+    und Rolle -- das gesamte SSO-Personal wird über Teams verwaltet, nicht über die
+    `oidc.admin_group_id`/`oidc.auditor_group_id`-Settings. Diese Funktion ist hinter dem
+    Callback-Gate für JEDEN Multi-Tenant-SSO-Login erreichbar (`if multi_tenant`, unabhängig vom
+    gematchten `tid`); das Konto homet dabei stets auf dem Default-Tenant. Nur im SINGLE-Tenant-
+    Mode bleibt der Login bei `resolve_role`.
 
     Fail-closed OHNE Settings-Fallback: kein Token-`groups`-Claim oder KEIN Claim, der auf
     IRGENDEIN Team zeigt, heisst NICHT autorisiert (`("admin", False)`). Sonst gewinnt Admin --
