@@ -24,6 +24,7 @@ class AssignmentGroup(SQLModel, table=True):
     entra_group_id: str = Field(
         sa_column=Column(String(64), unique=True, index=True, nullable=False)
     )
+    role: str = Field(sa_column=Column(String(16), nullable=False))
     created_at: dt.datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
