@@ -72,7 +72,7 @@ async def get(session: AsyncSession, group_id: int) -> AssignmentGroup | None:
 
 
 async def update(session: AsyncSession, group_id: int, *, name: str, role: str) -> AssignmentGroup:
-    """Umbenennung + Re-Rolung -- `entra_group_id` ist unveränderlich (kein Feld in
+    """Umbenennung + Rollenwechsel -- `entra_group_id` ist unveränderlich (kein Feld in
     `GroupUpdate`), die Route lehnt Unbekanntes vorab mit `group_not_found` ab (404), diese
     Funktion bleibt aus Konsistenzgründen zu `tenant_repo.update` trotzdem defensiv."""
     group = await session.get(AssignmentGroup, group_id)
