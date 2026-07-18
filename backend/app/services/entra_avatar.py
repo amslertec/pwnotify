@@ -92,10 +92,12 @@ async def _fetch_from_graph(entra_id: str, settings: dict[str, Any]) -> bytes | 
 
 
 def _fresh(path: Path, ttl: timedelta) -> bool:
-    """True, wenn `path` existiert und jünger als `ttl` ist (Vergleich gegen mtime)."""
+    """True, wenn `path` existiert und jünger als `ttl` ist (Vergleich gegen mtime). Jeder
+    `OSError` (fehlende Datei ODER nicht erreichbares `data_dir`, z. B. read-only `/data` vor
+    Volume-Mount) -> nicht frisch, statt die Anfrage mit 500 zu quittieren."""
     try:
         return time.time() - path.stat().st_mtime < ttl.total_seconds()
-    except FileNotFoundError:
+    except OSError:
         return False
 
 
@@ -134,12 +136,23 @@ async def serve(entra_id: str, tenant_id: int | None, settings: dict[str, Any]) 
     raw = await _fetch_from_graph(entra_id, settings)
     processed = _process_avatar(raw) if raw else None
     if processed is None:
-        tenant_dir.mkdir(parents=True, exist_ok=True)
-        none.write_bytes(b"")  # Negative-Cache: kein Foto / Graph-Fehler
+        # Negative-Cache best-effort: ist `data_dir` nicht schreibbar, trotzdem sauber 404.
+        with contextlib.suppress(OSError):
+            tenant_dir.mkdir(parents=True, exist_ok=True)
+            none.write_bytes(b"")
         raise _no_photo()
 
-    tenant_dir.mkdir(parents=True, exist_ok=True)
-    png.write_bytes(processed)
-    with contextlib.suppress(FileNotFoundError):  # ein vorheriger Negativ-Eintrag ist veraltet
-        none.unlink()
-    return _serve_file(png)
+    # Foto cachen ist best-effort: schlägt der Schreibzugriff fehl (read-only/nicht erreichbares
+    # `data_dir`), liefern wir die Bytes direkt aus dem Speicher statt zu 500en.
+    try:
+        tenant_dir.mkdir(parents=True, exist_ok=True)
+        png.write_bytes(processed)
+        with contextlib.suppress(OSError):  # ein vorheriger Negativ-Eintrag ist veraltet
+            none.unlink()
+        return _serve_file(png)
+    except OSError:
+        return Response(
+            content=processed,
+            media_type="image/png",
+            headers={"Cache-Control": f"max-age={_BROWSER_MAX_AGE}"},
+        )

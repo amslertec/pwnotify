@@ -52,6 +52,18 @@ def _avatar_path(user_id: int) -> Path:
     return Path(get_settings().data_dir) / "avatars" / f"{user_id}.png"
 
 
+def _avatar_mtime(user_id: int) -> int | None:
+    """mtime des Profilbilds als Cache-Buster, oder `None` wenn kein Bild existiert bzw. das
+    `data_dir` nicht lesbar ist. Jeder `OSError` (fehlende Datei, nicht erreichbares `/data`
+    -- z. B. frischer Deploy vor Volume-Mount oder CI ohne `/data`) -> "kein Avatar", damit
+    die Nutzer-Serialisierung nie an einem Dateisystemzustand 500t (`Path.exists()` würde ein
+    `EACCES` durchreichen statt es als "nein" zu werten)."""
+    try:
+        return int(_avatar_path(user_id).stat().st_mtime)
+    except OSError:
+        return None
+
+
 def _admin_user_out(user: AppUser) -> AdminUserOut:
     """`AdminUserOut.model_validate(..., from_attributes=True)` + die dateibasierten
     Avatar-Felder (Task B) -- die füllt `from_attributes` NICHT, `app_user` hat keine
@@ -59,10 +71,10 @@ def _admin_user_out(user: AppUser) -> AdminUserOut:
     `auth.py`s `UserOut`-Aufbau es für das eigene Profilbild vormacht."""
     out = AdminUserOut.model_validate(user, from_attributes=True)
     if user.id is not None:
-        path = _avatar_path(user.id)
-        if path.exists():
+        mtime = _avatar_mtime(user.id)
+        if mtime is not None:
             out.has_avatar = True
-            out.avatar_version = int(path.stat().st_mtime)
+            out.avatar_version = mtime
     return out
 
 
@@ -692,7 +704,8 @@ async def get_user_avatar(_: AdminUser, user_id: int) -> FileResponse:
     `avatar_version` als Cache-Buster-Query (`?v=...`, s. `access.tsx`) -- eine neue
     Version bekommt automatisch eine neue URL, ein langes Caching der alten URL ist also
     gefahrlos und entlastet die Access-Seite bei vielen Konten."""
-    path = _avatar_path(user_id)
-    if not path.exists():
+    if _avatar_mtime(user_id) is None:
         raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
-    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+    return FileResponse(
+        _avatar_path(user_id), media_type="image/png", headers={"Cache-Control": "max-age=3600"}
+    )

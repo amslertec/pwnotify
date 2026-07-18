@@ -87,13 +87,32 @@ _AVATAR_MAX_BYTES = 5 * 1024 * 1024
 # Profilbild (lokal hochgeladen oder aus Entra gecacht) — als quadratisches PNG
 # --------------------------------------------------------------------------- #
 def _avatar_dir() -> Path:
-    d = Path(_settings.data_dir) / "avatars"
+    # Bewusst KEIN mkdir hier: diese Funktion wird auch auf reinen LESEpfaden benutzt
+    # (`_user_out`, GET /me/avatar). Ein mkdir auf einem nicht schreib-/erreichbaren
+    # `data_dir` (frischer Deploy vor Volume-Mount, Tests/CI ohne `/data`) würde sonst
+    # `PermissionError: '/data'` werfen und jede Nutzer-Serialisierung 500en. Das Verzeichnis
+    # wird ausschliesslich unmittelbar VOR einem Schreibzugriff angelegt (s. `_ensure_avatar_dir`).
+    return Path(_settings.data_dir) / "avatars"
+
+
+def _ensure_avatar_dir() -> Path:
+    d = _avatar_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _avatar_path(user_id: int) -> Path:
     return _avatar_dir() / f"{user_id}.png"
+
+
+def _avatar_mtime(user_id: int) -> int | None:
+    """mtime des Profilbilds als Cache-Buster, oder `None` wenn kein Bild existiert bzw. das
+    `data_dir` nicht lesbar ist. Jeder `OSError` (fehlende Datei, nicht erreichbares `/data`)
+    -> "kein Avatar", damit die Nutzer-Serialisierung nie an einem Dateisystemzustand 500t."""
+    try:
+        return int(_avatar_path(user_id).stat().st_mtime)
+    except OSError:
+        return None
 
 
 def _process_avatar(data: bytes) -> bytes | None:
@@ -132,6 +151,7 @@ async def _cache_sso_avatar(user_id: int, upn: str, settings: dict[str, object])
         return
     processed = _process_avatar(raw)
     if processed is not None:
+        _ensure_avatar_dir()
         _avatar_path(user_id).write_bytes(processed)
 
 
@@ -148,8 +168,7 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
     `UserOut.active_tenant_is_default` (Context-Gating v2, Matrix B) meldet, ob der aktive
     Mandant der Default-Tenant ist -- reuse des `default` unten (bereits für den
     switchable-first-Sort aufgelöst), keine zusätzliche Abfrage."""
-    path = _avatar_path(user.id) if user.id is not None else None
-    exists = bool(path and path.exists())
+    avatar_mtime = _avatar_mtime(user.id) if user.id is not None else None
 
     active_tenant: TenantRef | None = None
     if active_tenant_id is not None:
@@ -175,8 +194,8 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
         language=user.language,
         two_factor_enabled=user.totp_enabled,
         last_login_at=user.last_login_at,
-        has_avatar=exists,
-        avatar_version=int(path.stat().st_mtime) if exists and path else 0,
+        has_avatar=avatar_mtime is not None,
+        avatar_version=avatar_mtime or 0,
         idle_timeout_min=_settings.idle_timeout_min,
         email=user.email,
         active_tenant=active_tenant,
@@ -609,10 +628,11 @@ async def set_language(
 
 @router.get("/me/avatar")
 async def get_my_avatar(user: CurrentUser) -> FileResponse:
-    path = _avatar_path(user.id) if user.id is not None else None
-    if not (path and path.exists()):
+    if user.id is None or _avatar_mtime(user.id) is None:
         raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
-    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
+    return FileResponse(
+        _avatar_path(user.id), media_type="image/png", headers={"Cache-Control": "no-cache"}
+    )
 
 
 @router.post("/me/avatar", response_model=UserOut)
@@ -643,6 +663,7 @@ async def upload_my_avatar(
     processed = _process_avatar(data)
     if processed is None:
         raise PwNotifyError("Ungültige Bilddatei.", code="invalid_image")
+    _ensure_avatar_dir()
     _avatar_path(user.id).write_bytes(processed)  # type: ignore[arg-type]
     return await _user_out(session, user, active_tenant)
 
