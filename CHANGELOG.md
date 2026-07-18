@@ -4,6 +4,15 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] — 2026-07-18
+
+### Fixed
+
+- **The unconfigured-Graph sync error is now fully suppressed.** 0.2.3 skipped the user sync
+  cleanly, but a second step — resolving group-based exclusion rules — still built a Graph client
+  and surfaced the raw Microsoft library error alongside the localized note. That step now shares
+  the same guard, so a tenant without Graph configured produces only the clean skip message.
+
 ## [0.2.3] — 2026-07-18
 
 ### Fixed
@@ -652,6 +661,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.4
 [0.2.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.3
 [0.2.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.2
 [0.2.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.1
