@@ -147,7 +147,15 @@ async def execute_run(
             # 1) Graph-Sync
             try:
                 stats = await sync_users(session, settings)
-                detail.append({"step": "sync", "checked": stats["checked"]})
+                if stats.get("skipped") == "graph_not_configured":
+                    # Kein MSAL-Token-Versuch ohne Graph-Konfiguration -- kein Fehler,
+                    # der Lauf bleibt "success". Sichtbar wird das ausschliesslich über
+                    # diesen `detail_log`-Eintrag, NICHT zusätzlich als `run.error`
+                    # (sonst erschiene die Meldung doppelt).
+                    detail.append({"step": "sync", "skipped": "graph_not_configured"})
+                    log.info("run_sync_skipped", reason="graph_not_configured")
+                else:
+                    detail.append({"step": "sync", "checked": stats["checked"]})
             except Exception as exc:
                 status = "partial"
                 error = f"Sync-Fehler: {exc}"

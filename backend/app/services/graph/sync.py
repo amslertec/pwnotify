@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from fnmatch import fnmatch
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,28 @@ from ..expiry import compute_expiry
 from .client import GraphClient, GraphConfig
 
 log = get_logger("graph.sync")
+
+
+class SyncOutcome(TypedDict, total=False):
+    checked: int
+    skipped: str
+
+
+def is_graph_configured(settings: dict[str, Any]) -> bool:
+    """Graph gilt erst als konfiguriert, wenn Mandant, Client und Secret ALLE gesetzt sind.
+
+    Fehlt eines, baut ``sync_users`` erst gar keinen ``GraphClient`` -- sonst entstünde
+    eine MSAL-Authority ohne Mandanten-Segment (``.../login.microsoftonline.com/``) und
+    ein roher, englischer MSAL-Fehler landete (zusätzlich noch doppelt) im Lauf-Protokoll.
+    Spiegelt die Form von ``oidc.is_configured`` (``oidc.py``), aber bewusst OHNE die
+    SSO-spezifischen Bedingungen (``oidc.enabled``/``oidc.admin_group_id``) -- die sind
+    für den reinen Passwort-Sync irrelevant.
+    """
+    return bool(
+        str(settings.get("graph.tenant_id") or "").strip()
+        and str(settings.get("graph.client_id") or "").strip()
+        and str(settings.get("graph.client_secret") or "").strip()
+    )
 
 
 def _parse_dt(value: str | None) -> dt.datetime | None:
@@ -56,7 +78,14 @@ def resolve_validity(
     return default_validity
 
 
-async def sync_users(session: AsyncSession, settings: dict[str, Any]) -> dict[str, int]:
+async def sync_users(session: AsyncSession, settings: dict[str, Any]) -> SyncOutcome:
+    if not is_graph_configured(settings):
+        # Kein Token-Versuch ohne Mandant/Client/Secret -- sonst roher MSAL-Fehler
+        # (siehe `is_graph_configured`-Docstring). `execute_run` verbucht das als
+        # harmlosen `detail_log`-Eintrag, ohne `status="partial"`/`error`.
+        log.info("graph_sync_skipped", reason="graph_not_configured")
+        return {"checked": 0, "skipped": "graph_not_configured"}
+
     graph = GraphClient(
         GraphConfig(
             tenant_id=settings.get("graph.tenant_id") or "",
