@@ -103,6 +103,15 @@ class AdminUserOut(BaseModel):
     # SSO-Konten aus Entra. `default=None`, weil ältere Konten die Spalte leer haben können;
     # kein Schema-Zwang -- die Spalte existiert bereits (Migration `5d152bfe7585`).
     email: str | None = None
+    # Profilbild (Access-Seite, Multi-Tenant-Feature Task B) -- dateibasiert, spiegelt
+    # `UserOut.has_avatar`/`avatar_version` (s. dort für die Cache-Buster-Begründung).
+    # Beide Felder sind DATEI-abgeleitet, nicht Spalten von `app_user` -- `model_validate(
+    # ..., from_attributes=True)` füllt sie deshalb NICHT automatisch; der Aufrufer
+    # (`admin_users.py`) setzt sie explizit anhand eines Filesystem-`stat` nach der
+    # Validierung. Default `False`/`0`, falls das je vergessen ginge -- sicherer Fallback
+    # (Initialen statt eines kaputten Bild-Links), keine falsche Behauptung.
+    has_avatar: bool = False
+    avatar_version: int = 0
 
 
 class AdminUserCreate(BaseModel):

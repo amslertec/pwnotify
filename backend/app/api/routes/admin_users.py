@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse
 
+from ...core.config import get_settings
 from ...core.errors import ConflictError, ForbiddenError, NotFoundError
 from ...core.security import hash_password
 from ...db.tenant_context import tenant_scoped_session
 from ...models._base import utcnow
+from ...models.user import AppUser
 from ...repositories import tenant_repo, user_repo, user_token_repo
 from ...schemas.auth import (
     AdminUserCreate,
@@ -32,6 +36,34 @@ from ..deps import (
 )
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
+
+
+# --------------------------------------------------------------------------- #
+# Profilbild-Pfad (Task B) -- eigene, minimale Kopie von `auth.py`s `_avatar_path`
+# (dort `_avatar_dir()` + `_avatar_path(user_id)`, Zeile 89/95), NICHT von dort
+# importiert: `auth.py` ist für diesen Task read-only (Referenz), ein Import würde
+# ausserdem unnötig an dessen Upload-/2FA-Import-Baum koppeln. `get_settings()` wird
+# bewusst PRO AUFRUF (nicht einmalig modulweit gecacht wie `auth.py`s `_settings`)
+# gelesen -- so greifen Tests, die `PWNOTIFY_DATA_DIR` + `get_settings.cache_clear()`
+# nutzen (Muster aus `test_branding_tenant_scope.py`), auch nach diesem Modul-Import.
+# Kein `mkdir` hier (anders als `auth.py`s `_avatar_dir`): diese Seite liest nur,
+# legt nie ab -- ein nicht existierendes Verzeichnis ist einfach "kein Avatar".
+def _avatar_path(user_id: int) -> Path:
+    return Path(get_settings().data_dir) / "avatars" / f"{user_id}.png"
+
+
+def _admin_user_out(user: AppUser) -> AdminUserOut:
+    """`AdminUserOut.model_validate(..., from_attributes=True)` + die dateibasierten
+    Avatar-Felder (Task B) -- die füllt `from_attributes` NICHT, `app_user` hat keine
+    entsprechenden Spalten. `avatar_version` ist die mtime als Cache-Buster, exakt wie
+    `auth.py`s `UserOut`-Aufbau es für das eigene Profilbild vormacht."""
+    out = AdminUserOut.model_validate(user, from_attributes=True)
+    if user.id is not None:
+        path = _avatar_path(user.id)
+        if path.exists():
+            out.has_avatar = True
+            out.avatar_version = int(path.stat().st_mtime)
+    return out
 
 
 @router.get("")
@@ -85,15 +117,13 @@ async def list_users(
     local_rows = await user_repo.list_local_homed_in_tenant(session, tid)
     sso_rows = await user_repo.list_sso_in_tenants(session, {tid})
     out: dict[str, list[AdminUserOut]] = {
-        "local": [AdminUserOut.model_validate(u, from_attributes=True) for u in local_rows],
-        "sso": [AdminUserOut.model_validate(u, from_attributes=True) for u in sso_rows],
+        "local": [_admin_user_out(u) for u in local_rows],
+        "sso": [_admin_user_out(u) for u in sso_rows],
     }
 
     if is_superadmin_caller and tid == await default_tenant_id(session):
         superadmin_rows = [u for u in await user_repo.list_all(session) if u.role == "superadmin"]
-        out["superadmins"] = [
-            AdminUserOut.model_validate(u, from_attributes=True) for u in superadmin_rows
-        ]
+        out["superadmins"] = [_admin_user_out(u) for u in superadmin_rows]
 
     return out
 
@@ -233,7 +263,7 @@ async def create_local(
         assert admin.id is not None
         await user_token.issue_invite(session, user=user, created_by=admin.id)
 
-    return AdminUserOut.model_validate(user, from_attributes=True)
+    return _admin_user_out(user)
 
 
 @router.post("/{user_id}/reset", response_model=Message)
@@ -354,7 +384,7 @@ async def set_role(
     )
     await session.commit()
     await session.refresh(target)
-    return AdminUserOut.model_validate(target, from_attributes=True)
+    return _admin_user_out(target)
 
 
 @router.post("/superadmin", response_model=AdminUserOut)
@@ -449,7 +479,7 @@ async def create_superadmin(
         assert admin.id is not None
         await user_token.issue_invite(session, user=user, created_by=admin.id)
 
-    return AdminUserOut.model_validate(user, from_attributes=True)
+    return _admin_user_out(user)
 
 
 @router.post("/{user_id}/superadmin", response_model=AdminUserOut)
@@ -484,7 +514,7 @@ async def set_superadmin(
 
     if body.promote:
         if target.role == "superadmin":
-            return AdminUserOut.model_validate(target, from_attributes=True)
+            return _admin_user_out(target)
         if target.is_sso:
             raise ConflictError(
                 "Nur lokale Konten können zu Superadmin befördert werden.",
@@ -508,7 +538,7 @@ async def set_superadmin(
         )
     else:
         if target.role != "superadmin":
-            return AdminUserOut.model_validate(target, from_attributes=True)
+            return _admin_user_out(target)
         if await user_repo.count_superadmins(session) <= 1:
             raise ConflictError(
                 "Der letzte Superadmin kann nicht herabgestuft werden.",
@@ -526,7 +556,7 @@ async def set_superadmin(
 
     await session.commit()
     await session.refresh(target)
-    return AdminUserOut.model_validate(target, from_attributes=True)
+    return _admin_user_out(target)
 
 
 @router.delete("/{user_id}", response_model=Message)
@@ -644,3 +674,25 @@ async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
             f" Entfernen blockiert für: {', '.join(blocked_tenants)} (Schutz vor Aussperrung)."
         )
     return Message(message=message)
+
+
+@router.get("/{user_id}/avatar")
+async def get_user_avatar(_: AdminUser, user_id: int) -> FileResponse:
+    """Profilbild EINES Kontos für die Access-Seite (Task B) -- Pendant zu `auth.py`s
+    `GET /auth/me/avatar`, aber admin-facing (beliebiges `user_id`, nicht nur der
+    Aufrufer selbst). Gate ist bewusst `AdminUser` (jeder Admin/Superadmin) statt einer
+    tenant-gescopten Prüfung: die Access-Seite selbst scopt bereits, wer welche Konten
+    überhaupt zu sehen bekommt (`list_users` oben); ein rein lesendes Bild-Serving ohne
+    jede weitere Kontodaten-Preisgabe rechtfertigt keine zusätzliche Tenant-Prüfung hier.
+    Kein Graph-Abgleich -- die Datei liegt bereits lokal gecacht (SSO-Login-Cache bzw.
+    Selbst-Upload), diese Route liest nur.
+
+    `Cache-Control: max-age=3600`: anders als `auth.py`s `/me/avatar` (dort `no-cache`,
+    weil ein Selbst-Upload sofort sichtbar sein soll) trägt die URL hier IMMER
+    `avatar_version` als Cache-Buster-Query (`?v=...`, s. `access.tsx`) -- eine neue
+    Version bekommt automatisch eine neue URL, ein langes Caching der alten URL ist also
+    gefahrlos und entlastet die Access-Seite bei vielen Konten."""
+    path = _avatar_path(user_id)
+    if not path.exists():
+        raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})

@@ -72,6 +72,11 @@ export interface AdminUser {
    *  SSO-Konten aus Entra. `null`, wenn (noch) keine hinterlegt ist -- ein lokales Konto
    *  ohne E-Mail kann keinen Passwort-Reset-Link erhalten (`email_required`). */
   email: string | null
+  /** Profilbild (Access-Seite, Multi-Tenant-Feature Task B) -- spiegelt `User.has_avatar`/
+   *  `avatar_version` (s. dort für die Cache-Buster-Begründung), aber für ein BELIEBIGES
+   *  Konto statt nur den angemeldeten Benutzer. */
+  has_avatar: boolean
+  avatar_version: number
 }
 
 export interface AdminUsers {

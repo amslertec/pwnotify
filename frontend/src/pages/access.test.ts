@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resetGate } from './access'
+import { adminAvatarSrc, resetGate } from './access'
 
 describe('resetGate', () => {
   it('sperrt ein pending-Konto (noch nicht aktiv) unabhaengig von der E-Mail', () => {
@@ -33,5 +33,17 @@ describe('resetGate', () => {
       disabled: false,
       hint: null,
     })
+  })
+})
+
+describe('adminAvatarSrc', () => {
+  it('baut die versionierte Admin-Avatar-URL, wenn has_avatar gesetzt ist', () => {
+    expect(adminAvatarSrc({ id: 7, has_avatar: true, avatar_version: 42 })).toBe(
+      '/api/admin/users/7/avatar?v=42',
+    )
+  })
+
+  it('liefert undefined ohne has_avatar -- AvatarImage faellt dann auf Initialen zurueck', () => {
+    expect(adminAvatarSrc({ id: 7, has_avatar: false, avatar_version: 0 })).toBeUndefined()
   })
 })

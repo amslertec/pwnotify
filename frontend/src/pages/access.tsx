@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { AvatarImage } from '@/components/avatar-image'
 import { PageHeader } from '@/components/page-header'
 import { StatusDot } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
@@ -32,10 +33,18 @@ import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import type { AdminUser, AdminUsers } from '@/lib/types'
-import { initials } from '@/lib/utils'
 
 const byRole = (list: AdminUser[] | undefined, role: string) =>
   (list ?? []).filter((u) => u.role === role)
+
+/** Bild-Quelle für `AvatarImage` (Task B) -- dieselbe Logik wie `UserAvatar`s eigenes Profilbild
+ *  (`components/user-avatar.tsx`), aber admin-facing über die neue `/admin/users/{id}/avatar`-
+ *  Route statt `/auth/me/avatar`. `undefined` ohne `has_avatar` -> `AvatarImage` fällt selbst auf
+ *  die Initialen zurück, kein zusätzliches Gating hier nötig. Als eigene Funktion exportiert,
+ *  damit sie ohne DOM/JSX getestet werden kann (Muster wie `resetGate`/`resolveAvatarView`). */
+export function adminAvatarSrc(u: Pick<AdminUser, 'id' | 'has_avatar' | 'avatar_version'>) {
+  return u.has_avatar ? `/api/admin/users/${u.id}/avatar?v=${u.avatar_version}` : undefined
+}
 
 /** Gate für den Passwort-Reset-Button (Task 6): der Server lehnt einen Reset für ein Konto
  *  ohne E-Mail ohnehin mit `email_required` ab -- dies ist die proaktive UX-Spiegelung davon,
@@ -307,9 +316,11 @@ function UserRow({
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <span className="bg-primary/10 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">
-            {initials(u.display_name || u.username)}
-          </span>
+          <AvatarImage
+            name={u.display_name || u.username}
+            src={adminAvatarSrc(u)}
+            className="size-8 shrink-0 text-xs"
+          />
           <span className="font-medium">{u.display_name || '—'}</span>
           {isSelf && <Badge variant="secondary">{t('access.you')}</Badge>}
         </div>
