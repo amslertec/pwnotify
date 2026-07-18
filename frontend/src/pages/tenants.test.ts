@@ -7,15 +7,16 @@ describe('resolveTenantsTab', () => {
     expect(resolveTenantsTab('customers')).toBe('customers')
     expect(resolveTenantsTab('assignments')).toBe('assignments')
     expect(resolveTenantsTab('groups')).toBe('groups')
-    expect(resolveTenantsTab('settings')).toBe('settings')
   })
 
   it('faellt auf den Default-Tab (customers) zurueck bei unbekanntem Wert', () => {
     expect(resolveTenantsTab('unknown')).toBe('customers')
     expect(resolveTenantsTab('')).toBe('customers')
     expect(resolveTenantsTab('general')).toBe('customers')
-    // 'superadmins' ist kein Tenants-Konsolen-Tab mehr -- die Superadmin-Verwaltung lebt
-    // jetzt auf der Access-Seite (superadmin-only), daher Fallback auf 'customers'.
+    // Weder 'superadmins' (jetzt auf der Access-Seite) noch 'settings' (der redundante
+    // Verweis-Tab wurde entfernt -- Instanz-Einstellungen leben unter /settings) sind
+    // noch Tenants-Konsolen-Tabs, daher Fallback auf 'customers'.
     expect(resolveTenantsTab('superadmins')).toBe('customers')
+    expect(resolveTenantsTab('settings')).toBe('customers')
   })
 })

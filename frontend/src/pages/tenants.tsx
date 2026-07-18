@@ -1,14 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import { PageHeader } from '@/components/page-header'
 import { CustomersTab } from '@/components/tenants/customers-tab'
 import { GroupsTab } from '@/components/tenants/groups-tab'
 import { UsersAssignmentsTab } from '@/components/tenants/users-assignments-tab'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import type { Tenant } from '@/lib/types'
@@ -22,7 +19,6 @@ const TABS = [
   { value: 'customers', labelKey: 'tenants.tabs.customers' },
   { value: 'assignments', labelKey: 'tenants.tabs.assignments' },
   { value: 'groups', labelKey: 'tenants.tabs.groups' },
-  { value: 'settings', labelKey: 'tenants.tabs.settings' },
 ] as const
 
 const DEFAULT_TAB = TABS[0].value
@@ -69,32 +65,7 @@ export default function TenantsPage() {
         <TabsContent value="groups">
           <GroupsTab tenants={tenants} />
         </TabsContent>
-        <TabsContent value="settings">
-          <SettingsTabLink />
-        </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-/** Einstellungen-Tab (Design §7, aufgelöst): statt Modus-Schalter/Standard-Kunden-Name
- *  HIER zu duplizieren, verlinkt dieser Tab auf den bestehenden Settings-General-Tab
- *  (`settings.tsx`, superadmin+default-context-gated, s. `showGeneralTab`) -- niedrigeres
- *  Risiko als ein zweiter Satz Steuerelemente für dieselben Instanz-Werte. */
-function SettingsTabLink() {
-  const { t } = useTranslation()
-
-  return (
-    <Card className="p-6">
-      <h3 className="mb-1 text-sm font-semibold">{t('tenants.settingsTab.title')}</h3>
-      <p className="text-muted-foreground mb-4 max-w-xl text-sm">
-        {t('tenants.settingsTab.description')}
-      </p>
-      <Button asChild variant="outline">
-        <Link to="/settings?tab=general">
-          {t('tenants.settingsTab.link')} <ArrowRight className="size-4" />
-        </Link>
-      </Button>
-    </Card>
   )
 }
