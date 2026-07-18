@@ -4,6 +4,29 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-07-18
+
+### Added
+
+- **Teams carry a role.** Each Assignment-Group (Team) now has an **Admin** or **Auditor** role,
+  chosen when the Team is created or edited and shown as a badge in the list. In multi-tenant
+  mode the Team's role — not the member's global role — decides whether its mapped customers grant
+  admin or read-only access; when two Teams map the same customer, admin wins.
+- **Teams govern SSO for provider staff.** In multi-tenant mode, a provider staff member's SSO
+  login is authorized purely by Team membership (no separate admin/auditor login group needed), and
+  their role is the highest role across their Teams. The SSO settings role-group fields and the
+  access page's "SSO users" tab are hidden in multi-tenant mode, where everything is managed through
+  Teams on the Customers page. Single-tenant mode and a customer's own SSO users are unchanged —
+  they still use the settings role-groups.
+
+### Security
+
+- Grant materialization stays confined to the single, provider-gated code path: a Team's role only
+  ever produces `admin_tenant`/`auditor_tenant` rows for provider accounts, a customer-homed account
+  can never gain a foreign grant, and manual assignments are never touched. The SSO
+  group-authorization path is reachable only in multi-tenant mode for the provider tenant; every
+  other login path is unchanged. Both changes ship with adversarial isolation test matrices.
+
 ## [0.2.1] — 2026-07-18
 
 ### Fixed
@@ -604,6 +627,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.2
 [0.2.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.1
 [0.2.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.0
 [0.1.15]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.15
