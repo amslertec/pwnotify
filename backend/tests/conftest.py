@@ -8,10 +8,20 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+# Tests dürfen NICHT vom Deployment-Pfad `/data` abhängen: GitHub-CI-Runner laufen als
+# non-root und können `/data` nicht anlegen, sodass `crypto._load_key` (secret.key-Erzeugung)
+# und die Avatar-Schreibpfade sonst mit `PermissionError: '/data'` fehlschlagen. Ein
+# schreibbares Temp-`data_dir` plus ein fester Fernet-Testschlüssel (KEIN echtes Secret) machen
+# die Suite unabhängig von `/data`. `setdefault`: ein aussen gesetzter Wert gewinnt. Muss VOR
+# dem ersten `get_settings()`-Aufruf stehen -- Conftest wird von pytest zuerst importiert.
+os.environ.setdefault("PWNOTIFY_DATA_DIR", tempfile.mkdtemp(prefix="pwnotify-test-data-"))
+os.environ.setdefault("PWNOTIFY_SECRET_KEY", "ZLh5EzxtulsRYjWpEqW8Ax1lL2P40JugKp2DjUpGsUU=")
 
 TEST_DB_URL = os.environ.get(
     "PWNOTIFY_TEST_DATABASE_URL",
