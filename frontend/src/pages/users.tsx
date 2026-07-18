@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { UserDrawer } from '@/components/user-drawer'
+import { AvatarImage } from '@/components/avatar-image'
 import { DaysBadge, StatusDot } from '@/components/status-badge'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
@@ -34,7 +35,7 @@ import { hasAdminRights, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
 import { fmtDate } from '@/lib/format'
 import type { EntraUser, Page } from '@/lib/types'
-import { cn, initials } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 const COLUMNS = [
   { key: 'mail', labelKey: 'users.columns.mail' },
@@ -318,9 +319,11 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <span className="bg-primary/10 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">
-                          {initials(u.display_name)}
-                        </span>
+                        <AvatarImage
+                          name={u.display_name}
+                          src={'/api/entra-avatar/' + u.entra_id}
+                          className="size-8 shrink-0 text-xs"
+                        />
                         <div className="min-w-0">
                           <p className="truncate font-medium">{u.display_name}</p>
                           {(u.is_shared || u.excluded) && (

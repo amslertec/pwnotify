@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  entraAvatarPath,
   groupMembersPath,
   groupMembersQueryKey,
   groupSyncPath,
@@ -43,6 +44,14 @@ describe('groupMembersQueryKey', () => {
 describe('groupSyncPath', () => {
   it('baut den Sync-Endpoint je Gruppe', () => {
     expect(groupSyncPath(42)).toBe('/admin/groups/42/sync')
+  })
+})
+
+describe('entraAvatarPath', () => {
+  it('baut den Foto-Endpoint aus der Entra-Objekt-GUID', () => {
+    expect(entraAvatarPath('11111111-2222-3333-4444-555555555555')).toBe(
+      '/api/entra-avatar/11111111-2222-3333-4444-555555555555',
+    )
   })
 })
 

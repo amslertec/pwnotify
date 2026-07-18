@@ -4,6 +4,7 @@ import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { AvatarImage } from '@/components/avatar-image'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -49,6 +50,12 @@ export function groupMembersQueryKey(groupId: number, page: number) {
 /** Pfad für `POST /admin/groups/{id}/sync`. */
 export function groupSyncPath(groupId: number): string {
   return `/admin/groups/${groupId}/sync`
+}
+
+/** Pfad für `GET /api/entra-avatar/{entra_id}` -- liefert 404, falls kein Foto vorhanden
+ *  (AvatarImage fällt dann automatisch auf Initialen zurück). */
+export function entraAvatarPath(entraId: string): string {
+  return `/api/entra-avatar/${entraId}`
 }
 
 /** true, sobald die aktuelle Seite die letzte ist (`page * size >= total`) -- steuert das
@@ -366,7 +373,16 @@ function GroupMembers({
           ) : (
             members.map((m) => (
               <tr key={m.entra_id}>
-                <td className="px-2 py-1.5">{memberDisplayName(m)}</td>
+                <td className="px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <AvatarImage
+                      name={memberDisplayName(m)}
+                      src={entraAvatarPath(m.entra_id)}
+                      className="size-6 text-[10px]"
+                    />
+                    {memberDisplayName(m)}
+                  </div>
+                </td>
                 <td className="text-muted-foreground px-2 py-1.5 font-mono">{m.upn}</td>
                 <td className="text-muted-foreground px-2 py-1.5">{m.mail ?? '—'}</td>
               </tr>
