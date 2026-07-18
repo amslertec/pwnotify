@@ -24,7 +24,7 @@ from ..repositories import (
 from . import alerts, retention
 from .expiry import due_reminder_stage
 from .graph import GraphClient, GraphConfig
-from .graph.sync import sync_users
+from .graph.sync import is_graph_configured, sync_users
 from .mail import build_sender
 from .notifier import notify_user
 from .settings_service import SettingsService, effective_base_url
@@ -99,7 +99,12 @@ async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[s
     """Ausschluss-IDs aus den Regeln (User-Werte + transitive Gruppenmitglieder)."""
     excluded: set[str] = set(await exclusion_repo.user_values(session))
     group_ids = await exclusion_repo.group_ids(session)
-    if group_ids:
+    # Gruppen-basierte Ausschlüsse brauchen Graph. Ist Graph NICHT konfiguriert, den Client
+    # gar nicht bauen -- die MSAL-Authority-Validierung wirft sonst schon bei der Konstruktion
+    # (leere `graph.tenant_id` -> `https://login.microsoftonline.com/` ohne Tenant-Segment) und
+    # zwar AUSSERHALB des `try` unten, sodass der rohe MSAL-Fehler in den Run leckt (gleiche
+    # Ursache wie beim gegateten `sync_users`). Ohne Graph bleiben die User-Wert-Ausschlüsse.
+    if group_ids and is_graph_configured(settings):
         graph = GraphClient(
             GraphConfig(
                 tenant_id=settings.get("graph.tenant_id") or "",

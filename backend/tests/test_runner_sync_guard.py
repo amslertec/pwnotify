@@ -201,3 +201,65 @@ async def test_execute_run_skips_sync_cleanly_when_graph_unconfigured(
         async with migrated_engine.connect() as conn:
             await conn.execute(text("DELETE FROM run WHERE id = :rid"), {"rid": run.id})
             await conn.commit()
+
+
+async def test_resolve_excluded_ids_skips_graph_when_unconfigured(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_resolve_excluded_ids` baute den GraphClient bislang bei JEDER Gruppen-Ausschlussregel
+    -- auch ohne Graph-Konfiguration, sodass die MSAL-Authority-Validierung (leere
+    `graph.tenant_id`) den rohen Fehler in den Run leakte (die zweite Quelle neben `sync_users`).
+    Jetzt gilt derselbe `is_graph_configured`-Guard: ohne Graph wird KEIN Client gebaut und es
+    bleiben nur die User-Wert-Ausschlüsse. Non-vakuös -- ohne Guard löst `_boom_if_constructed`
+    aus."""
+    from app.services import runner
+
+    async def _user_values(_session: Any) -> list[str]:
+        return ["excluded-1", "excluded-2"]
+
+    async def _group_ids(_session: Any) -> list[str]:
+        return ["group-a"]  # nicht-leer: ohne Guard würde der GraphClient gebaut
+
+    monkeypatch.setattr(runner.exclusion_repo, "user_values", _user_values)
+    monkeypatch.setattr(runner.exclusion_repo, "group_ids", _group_ids)
+    monkeypatch.setattr(runner, "GraphClient", _boom_if_constructed)
+
+    excluded = await runner._resolve_excluded_ids(session, _unconfigured_settings())
+
+    assert excluded == {"excluded-1", "excluded-2"}
+
+
+async def test_resolve_excluded_ids_uses_graph_when_configured(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gegenprobe: mit konfiguriertem Graph wird der Client gebaut und die Gruppenmitglieder
+    fliessen in die Ausschlussmenge -- der Guard ist bei konfiguriertem Graph ein No-op."""
+    from app.services import runner
+
+    async def _user_values(_session: Any) -> list[str]:
+        return ["excluded-1"]
+
+    async def _group_ids(_session: Any) -> list[str]:
+        return ["group-a"]
+
+    class _FakeExclGraph:
+        def __init__(self, _config: Any) -> None:
+            pass
+
+        async def get_group_member_ids(self, _gid: str) -> set[str]:
+            return {"member-x"}
+
+    monkeypatch.setattr(runner.exclusion_repo, "user_values", _user_values)
+    monkeypatch.setattr(runner.exclusion_repo, "group_ids", _group_ids)
+    monkeypatch.setattr(runner, "GraphClient", _FakeExclGraph)
+
+    excluded = await runner._resolve_excluded_ids(
+        session,
+        {
+            "graph.tenant_id": "t",
+            "graph.client_id": "c",
+            "graph.client_secret": "s",
+        },
+    )
+
+    assert excluded == {"excluded-1", "member-x"}
