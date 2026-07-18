@@ -4,6 +4,22 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-07-18
+
+### Fixed
+
+- **SSO admins see their customer's accounts on the access page again.** The account list
+  blanket-excluded every SSO caller, so an SSO admin — who by the access model holds their home
+  tenant and manages that customer like a local admin — got empty lists. The listing now scopes
+  by role and tenant grants exactly as it does for local admins; a forged claim for a tenant the
+  caller does not hold stays denied.
+
+### Changed
+
+- **Superadmin management moved to the access page.** The superadmin table is now a third tab on
+  the access page, shown only to a superadmin in the provider (default) context, instead of a tab
+  in the customer console.
+
 ## [0.2.0] — 2026-07-18
 
 Multi-tenancy. One PwNotify instance can now manage many customer Entra tenants with
@@ -588,6 +604,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.1
 [0.2.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.0
 [0.1.15]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.15
 [0.1.14]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.14
