@@ -236,14 +236,23 @@ async def test_manual_auditor_grant_blocks_deletion(
 async def test_other_team_membership_blocks_deletion(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P is also a member of a second group T2 (its snapshot). Removing P from T only ->
-    groups_containing_upn stays non-empty -> P is NOT deleted."""
+    """Isolates gate condition (4) (`groups_containing_upn` non-empty -> KEPT) from condition
+    (5) (holds a grant row -> KEPT), which a naive setup would leave conflated.
+
+    T2 is a ZERO-TENANT team (`_mk_team(session, [])`): P is added to its Graph membership, so
+    it lands in T2's local snapshot, but `set_tenants` maps T2 to no customer at all, so
+    `reconcile_group_grants` materializes NOTHING for T2 -- T2 membership grants P no grant row
+    on any tenant. P's ONLY grant is the T-derived group grant on A, which is revoked the
+    moment P leaves T. So right after the sync: P holds ZERO grant rows in either grant table
+    (condition 5 would NOT block the delete on its own) yet P still appears in T2's snapshot
+    (condition 4 alone blocks it). This isolates (4): if a developer deleted condition (4) from
+    `_is_fully_deprovisioned`, conditions 1/2/3/5 would all pass (P is_sso, non-superadmin,
+    provider-homed, and grant-less) and P WOULD be deleted -- this test would go RED."""
     default = await tenant_repo.default_tenant(session)
     tenant_a = await _mk_tenant(session)
-    tenant_b = await _mk_tenant(session)
-    assert tenant_a.id is not None and tenant_b.id is not None
+    assert tenant_a.id is not None
     t_id, t = await _mk_team(session, [tenant_a.id])
-    t2_id, t2 = await _mk_team(session, [tenant_b.id])
+    t2_id, t2 = await _mk_team(session, [])  # zero-tenant team -- membership only, no grant.
 
     upn = f"provider-{uuid.uuid4().hex}@provider.example"
     p = await _mk_user(session, upn=upn, role="admin", tenant_id=default.id)
@@ -253,18 +262,23 @@ async def test_other_team_membership_blocks_deletion(
     _patch_graph(monkeypatch, {t: [_member(upn)], t2: [_member(upn)]})
     await group_sync.sync_group(session, {}, t_id)
     await group_sync.sync_group(session, {}, t2_id)
+    # T2 maps no tenant -> P's T2 membership produced no grant row.
+    assert {(r.tenant_id, r.source) for r in await _admin_rows(session, p.id)} == {
+        (tenant_a.id, "group")
+    }
 
     # Remove P from T only; T2 still fetches P.
     _patch_graph(monkeypatch, {t: [], t2: [_member(upn)]})
     await group_sync.sync_group(session, {}, t_id)
 
-    # T2's snapshot still holds P -> groups_containing_upn non-empty -> KEPT.
+    # T2's snapshot still holds P -> groups_containing_upn non-empty -> condition (4) KEEPS P.
     assert await member_repo.groups_containing_upn(session, upn)
+    assert upn in await member_repo.upns_for_group(session, t2_id)
     assert await _user_exists(session, p.id)
-    # And P retains its T2-derived group grant on B.
-    assert {(r.tenant_id, r.source) for r in await _admin_rows(session, p.id)} == {
-        (tenant_b.id, "group")
-    }
+    # And P holds NO grant row anywhere -- condition (5) alone would NOT have blocked the
+    # delete; only condition (4) is doing the work here.
+    assert await _admin_rows(session, p.id) == []
+    assert await _auditor_rows(session, p.id) == []
 
 
 # ---- Customer-homed account -> NEVER deleted (not a provider account) ---------------------- #
