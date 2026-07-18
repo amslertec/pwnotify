@@ -4,6 +4,55 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-07-18
+
+Multi-tenancy. One PwNotify instance can now manage many customer Entra tenants with
+database-level isolation, a superadmin/admin/auditor access model, group-based access, and
+e-mail invitations. Single-tenant installs are unaffected — the mode is off by default.
+
+### Added
+
+- **Multi-tenant mode.** A single toggle in Settings → General turns one instance into a
+  multi-customer console. Each customer's data — users, notifications, runs, settings, audit
+  log — is isolated at the database level via PostgreSQL Row-Level Security enforced under a
+  restricted `NOBYPASSRLS` role, not just filtered in application code. Off by default;
+  existing single-tenant installs behave exactly as before.
+- **Three-tier access model.** A global **superadmin** (the first-run account, instance-wide),
+  **local admins** and **read-only auditors** scoped to one or more customers via explicit
+  grants, and **Microsoft-SSO accounts** with a home tenant. A superadmin-only customer
+  console manages tenants and assignments; the access page is scoped to the active customer.
+- **Teams — group-based access.** Map an Entra security group to one or more customers so
+  group membership drives access. PwNotify fetches the group's members from Graph (per-group
+  manual sync plus a paginated member list) and materializes access for already-onboarded
+  provider accounts; members who haven't signed in yet get access at their first SSO login.
+- **E-mail invitations.** Create a local account or a superadmin by e-mail: the invitee opens
+  a branded link and sets their own first/last name, username, and password behind a live
+  password-policy checklist. Admins can trigger a branded **password-reset link** from the
+  access page, and local accounts can edit their own e-mail on the profile page.
+- **Profile photos across the user tables.** The Entra users list, the group-members list, and
+  the access page show real profile photos when available — Entra directory photos are fetched
+  lazily via Graph (`User.Read.All`, no extra permission) and cached, local/SSO account photos
+  come from the avatar store — with an initials fallback.
+- **Assigned customers as a popover.** A group's assigned customers collapse into a
+  click-to-open list instead of a long inline badge row.
+
+### Security
+
+- **Tenant isolation enforced at the database.** Runtime queries run under a restricted DB
+  role with per-tenant Row-Level Security, so a bug in application code cannot leak another
+  customer's data. Group-based access is materialized only for provider accounts through a
+  single gated code path; a customer-homed account can never be cross-granted a foreign
+  tenant. Adversarial test matrices assert the isolation invariant directly against the grant
+  tables.
+- **Hardening.** Atomic single-use invitation and reset tokens (no double-consume),
+  rate-limited public token endpoints, provider Graph config read from the default-tenant
+  scope (no cross-tenant setting mixing), and path-traversal-guarded photo caching.
+
+### Changed
+
+- **Audit log fully localized.** Every audit action and its detail fields render as readable
+  DE/EN text instead of raw keys.
+
 ## [0.1.15] — 2026-07-16
 
 ### Added
@@ -539,6 +588,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.0
 [0.1.15]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.15
 [0.1.14]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.14
 [0.1.13]: https://github.com/amslertec/pwnotify/releases/tag/v0.1.13

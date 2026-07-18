@@ -29,9 +29,22 @@ alternate (SSPR) address, or both. Self-hosted, hardened, and driven by a modern
   appears on phones and disappears once installed.
 - **Admin alerts** — optional digest after each scheduled run and immediate failure alerts
   to a configurable recipient list.
+- **Multi-tenant** — manage one Entra tenant or many customer tenants from a single
+  instance; per-customer isolation via PostgreSQL Row-Level Security under a restricted DB
+  role. Off by default (single-tenant behaves as before), toggled in Settings → General.
+- **Access model** — global superadmin, plus local admins and read-only auditors scoped to
+  specific customers via grants; Microsoft-SSO accounts with a home tenant. Superadmin-only
+  customer console.
+- **Teams (group-based access)** — map Entra security groups to customers; Graph member
+  sync (per-group) drives access automatically.
+- **Invitations & resets** — create local accounts/superadmins by branded e-mail invitation
+  (the invitee sets their own name, username, password with a live policy checklist);
+  one-click password-reset links from the Access page.
+- **Profile photos** — Entra directory photos (lazy Graph fetch + cache) and local/SSO
+  avatars across the user tables and Access page, with initials fallback.
 - **Security** — Argon2id logins, **TOTP two-factor auth** (with recovery codes) for local
-  accounts, **roles** (admin / read-only auditor), rotating JWT cookies, rate limiting,
-  Fernet-encrypted secrets at rest, dark/light theme, WCAG-AA, keyboard navigation.
+  accounts, rotating JWT cookies, rate limiting, Fernet-encrypted secrets at rest,
+  dark/light theme, WCAG-AA, keyboard navigation.
 - **Compliance** — Chainguard base, non-root, read-only FS, **0 known HIGH/CRITICAL CVEs**,
   multi-arch, SBOM + provenance.
 
@@ -125,7 +138,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.1.15`.
+`amslertec/pwnotify:0.2.0`.
 
 ### Building the image yourself
 
@@ -166,6 +179,31 @@ variables are only a **first-run seed** (see `example.env` for the full list). K
 > **Backup the Fernet key.** If `PWNOTIFY_SECRET_KEY` is unset, the key is generated into
 > the `data` volume at `/data/secret.key`. Losing it means encrypted secrets (Graph client
 > secret, SMTP password) can no longer be decrypted — you would re-enter them.
+
+---
+
+## Multi-tenant
+
+PwNotify can run in **single-tenant** mode (one Entra tenant, the default — every existing
+install stays exactly as it behaves today) or **multi-tenant** mode, aimed at IT providers
+who manage password expiry for many customers from one instance. The mode is a single
+toggle in **Settings → General**; turning it on lets you switch between customer tenants
+in the UI, and each customer's data — users, notifications, runs, settings — is isolated at
+the database level via PostgreSQL Row-Level Security enforced under a restricted,
+`NOBYPASSRLS` database role, not just filtered in application code.
+
+Access is three-tiered: a global **superadmin** (the account created during first-run setup,
+instance-wide, not tied to any single customer), **local admins** and **read-only auditors**
+scoped to one or more customers via explicit grants, and **Microsoft-SSO accounts** (home
+tenant + grants). Only the superadmin assigns which customers an admin or auditor can see,
+from a superadmin-only customer console.
+
+For larger customers, **Teams** map an Entra security group to one or more customers, so
+group membership drives access instead of manual grants — PwNotify syncs the group's
+members from Graph (per-group, with a manual sync button) and applies access to
+already-onboarded provider accounts immediately; members who haven't signed in yet get
+access at their first SSO login. Teams and SSO-based group access both need the
+`GroupMember.Read.All` permission listed in the Entra table above.
 
 ---
 
