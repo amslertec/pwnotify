@@ -15,18 +15,56 @@ export class ApiError extends Error {
 
 const BASE = '/api'
 
+// Endpunkte, deren 401 NICHT über einen automatischen Refresh + Retry laufen darf -- sie
+// ETABLIEREN die Session selbst, ein verschachtelter Refresh wäre eine Endlosschleife. Alles
+// andere (inkl. `/auth/me`) DARF refreshen -- so überlebt ein Bootstrap-`/auth/me` nach
+// abgelaufenem 15-Min-Access-Token, statt die noch gültige 14-Tage-Refresh-Session zu verwerfen.
+// `/auth/2fa/verify` (nicht das breite `/auth/2fa`!) -- nur der Login-2FA-Schritt etabliert
+// die Session; die 2FA-VERWALTUNG (`/auth/2fa/setup|enable|disable`) ist ein normaler
+// authentifizierter Call und DARF wie `/auth/me` refreshen. `/auth/logout` braucht keinen
+// Refresh (die Sitzung wird ohnehin verworfen).
+const NO_AUTO_REFRESH = ['/auth/refresh', '/auth/login', '/auth/2fa/verify', '/auth/logout']
+
+// Idle-Flag-Key -- muss mit `IDLE_LOGOUT_FLAG` in `auth.tsx` übereinstimmen (hier als Literal,
+// weil `auth.tsx` `api.ts` importiert und ein Rück-Import einen Zyklus erzeugte).
+const IDLE_LOGOUT_FLAG = 'pwnotify-idle-logout'
+
 let refreshPromise: Promise<boolean> | null = null
+
+/** Führt `fn` TAB-ÜBERGREIFEND serialisiert aus (Web Locks API). Ohne die API (ältere Browser)
+ *  Fallback auf direkte Ausführung -- dann greift nur der In-Tab-Single-Flight (`refreshPromise`). */
+function withCrossTabLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (!locks?.request) return fn()
+  return locks.request(name, fn) as Promise<T>
+}
 
 async function tryRefresh(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = fetch(`${BASE}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
+    // CROSS-TAB-SERIALISIERUNG: nur EIN Tab refresht gleichzeitig; die anderen warten und
+    // senden danach das bereits rotierte (geteilte) Cookie. Ohne das sendet ein zweiter Tab
+    // an der 15-Min-Grenze noch das eben verbrauchte Refresh-Token -> der Server wertet den
+    // Hash-Mismatch als Token-Diebstahl und widerruft die GANZE Sitzung (`revoke_all`) ->
+    // stiller Logout in allen Tabs (die gemeldete Ursache).
+    refreshPromise = withCrossTabLock('pwnotify-token-refresh', async () => {
+      const r = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      if (!r.ok) {
+        // Ein SERVER-seitiger Idle-Logout soll dieselbe Meldung zeigen wie der Client-Timer
+        // (sonst wäre er stumm) -- das Flag liest die Login-Seite aus.
+        try {
+          const data = await r.json()
+          if (data?.error?.code === 'session_idle_timeout') {
+            sessionStorage.setItem(IDLE_LOGOUT_FLAG, '1')
+          }
+        } catch {
+          /* kein JSON */
+        }
+      }
+      return r.ok
     })
-      .then((r) => r.ok)
       .catch(() => false)
       .finally(() => {
-        // Promise nach kurzem Tick freigeben, damit parallele Aufrufe teilen
+        // Promise nach kurzem Tick freigeben, damit parallele In-Tab-Aufrufe teilen
         setTimeout(() => (refreshPromise = null), 0)
       })
   }
@@ -51,7 +89,7 @@ async function request<T>(
   }
   const res = await fetch(`${BASE}${path}`, opts)
 
-  if (res.status === 401 && !isRetry && !path.startsWith('/auth/')) {
+  if (res.status === 401 && !isRetry && !NO_AUTO_REFRESH.some((p) => path.startsWith(p))) {
     const ok = await tryRefresh()
     if (ok) return request<T>(method, path, body, true, raw)
     onAuthExpired.handler?.()
