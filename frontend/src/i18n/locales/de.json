@@ -610,6 +610,7 @@
     "buttonLabel": {
       "label": "Button-Beschriftung"
     },
+    "roleGroupsManagedByTeams": "Rollen werden pro Team auf der Kunden-Seite verwaltet.",
     "setup": {
       "heading": "In der App-Registrierung zusätzlich einrichten:",
       "step1a": "Plattform",

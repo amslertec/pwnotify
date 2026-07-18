@@ -61,6 +61,14 @@ export function resetGate(u: Pick<AdminUser, 'is_active' | 'is_sso' | 'email'>):
   return { disabled: false, hint: null }
 }
 
+/** Ob der "SSO-Benutzer"-Tab auf der Access-Seite angezeigt wird (Task 6). In Multi-Tenant-Modus
+ *  werden SSO-Mitglieder über die Teams auf der Kunden-Seite verwaltet -- der instanzweite
+ *  SSO-Tab wäre dort redundant/irreführend. Reine Funktion, damit sie ohne Rendering testbar ist
+ *  (Muster wie `isSwitcherVisible`). */
+export function showSsoTab(multiTenant: boolean): boolean {
+  return !multiTenant
+}
+
 export default function AccessPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -71,6 +79,7 @@ export default function AccessPage() {
   // impliziert bereits `role==='superadmin'`; ein Kunden-Kontext (oder jeder Nicht-Superadmin) blendet
   // den Tab aus, und der Server liefert dort ohnehin keinen `superadmins`-Schlüssel.
   const showSuperadmins = isDefaultContext(me)
+  const multiTenant = me?.multi_tenant_mode ?? false
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -110,9 +119,11 @@ export default function AccessPage() {
           <TabsTrigger value="local">
             <KeyRound className="size-4" /> {t('access.tabLocal')}
           </TabsTrigger>
-          <TabsTrigger value="sso">
-            <ShieldCheck className="size-4" /> {t('access.tabSso')}
-          </TabsTrigger>
+          {showSsoTab(multiTenant) && (
+            <TabsTrigger value="sso">
+              <ShieldCheck className="size-4" /> {t('access.tabSso')}
+            </TabsTrigger>
+          )}
           {showSuperadmins && (
             <TabsTrigger value="superadmins">
               <Crown className="size-4" /> {t('access.tabSuperadmins')}
@@ -154,47 +165,49 @@ export default function AccessPage() {
         </TabsContent>
 
         {/* SSO-Benutzer — je Rolle eine Tabelle */}
-        <TabsContent value="sso">
-          {isAdmin && (
-            <div className="mb-3 flex justify-end">
-              <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
-                <RefreshCw className="size-3.5" /> {t('access.syncEntra')}
-              </Button>
-            </div>
-          )}
-          {!isLoading && (data?.sso.length ?? 0) === 0 ? (
-            <Card className="overflow-hidden">
-              <p className="text-muted-foreground px-4 py-8 text-center text-sm">
-                {t('access.noSsoUsers')}
-              </p>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              <RoleSection
-                titleKey="access.roleAdmins"
-                users={byRole(data?.sso, 'admin')}
-                sso
-                isLoading={isLoading}
-                isAdmin={isAdmin}
-                meId={me?.id}
-                total={total}
-                adminCount={adminCount}
-                onDelete={(id) => del.mutate(id)}
-              />
-              <RoleSection
-                titleKey="access.roleAuditors"
-                users={byRole(data?.sso, 'auditor')}
-                sso
-                isLoading={isLoading}
-                isAdmin={isAdmin}
-                meId={me?.id}
-                total={total}
-                adminCount={adminCount}
-                onDelete={(id) => del.mutate(id)}
-              />
-            </div>
-          )}
-        </TabsContent>
+        {showSsoTab(multiTenant) && (
+          <TabsContent value="sso">
+            {isAdmin && (
+              <div className="mb-3 flex justify-end">
+                <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
+                  <RefreshCw className="size-3.5" /> {t('access.syncEntra')}
+                </Button>
+              </div>
+            )}
+            {!isLoading && (data?.sso.length ?? 0) === 0 ? (
+              <Card className="overflow-hidden">
+                <p className="text-muted-foreground px-4 py-8 text-center text-sm">
+                  {t('access.noSsoUsers')}
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                <RoleSection
+                  titleKey="access.roleAdmins"
+                  users={byRole(data?.sso, 'admin')}
+                  sso
+                  isLoading={isLoading}
+                  isAdmin={isAdmin}
+                  meId={me?.id}
+                  total={total}
+                  adminCount={adminCount}
+                  onDelete={(id) => del.mutate(id)}
+                />
+                <RoleSection
+                  titleKey="access.roleAuditors"
+                  users={byRole(data?.sso, 'auditor')}
+                  sso
+                  isLoading={isLoading}
+                  isAdmin={isAdmin}
+                  meId={me?.id}
+                  total={total}
+                  adminCount={adminCount}
+                  onDelete={(id) => del.mutate(id)}
+                />
+              </div>
+            )}
+          </TabsContent>
+        )}
 
         {showSuperadmins && (
           <TabsContent value="superadmins">

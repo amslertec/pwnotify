@@ -610,6 +610,7 @@
     "buttonLabel": {
       "label": "Button label"
     },
+    "roleGroupsManagedByTeams": "Roles are managed per Team on the Customers page.",
     "setup": {
       "heading": "Additionally configure in the app registration:",
       "step1a": "Platform",

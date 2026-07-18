@@ -8,9 +8,47 @@ import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
 import { hasAdminRights, useAuth } from '@/lib/auth'
 
+/** Ob die Rollen-Gruppen-Felder (Admin-/Auditor-Gruppen-Objekt-ID) angezeigt werden. In
+ *  Multi-Tenant-Modus werden Rollen pro Team auf der Kunden-Seite verwaltet -- diese
+ *  instanzweiten OIDC-Gruppen-Felder wären dort irreführend (Task 6). Reine Funktion, damit
+ *  sie ohne Rendering testbar ist (Muster wie `isSwitcherVisible`). */
+export function showRoleGroupFields(multiTenant: boolean): boolean {
+  return !multiTenant
+}
+
+/** Baut den Save-Payload für die SSO-Settings. Im Multi-Tenant-Modus dürfen die beiden
+ *  Gruppen-Keys NICHT mitgeschickt werden -- sonst würde ein Speichern anderer SSO-Werte
+ *  (z. B. Public-URL) die Kunden-relevanten Gruppen-IDs auf dem Server leeren, obwohl die
+ *  Felder in dieser Ansicht gar nicht sichtbar/editierbar waren. Reine Funktion, damit der
+ *  wichtige Korrektheitspunkt (welche Keys landen im Payload) ohne DOM testbar ist. */
+export function buildSsoSavePayload(
+  values: {
+    enabled: boolean
+    groupId: string
+    auditorGroupId: string
+    label: string
+    publicUrl: string
+  },
+  multiTenant: boolean,
+): Record<string, unknown> {
+  return {
+    'oidc.enabled': values.enabled,
+    ...(showRoleGroupFields(multiTenant)
+      ? {
+          'oidc.admin_group_id': values.groupId,
+          'oidc.auditor_group_id': values.auditorGroupId.trim(),
+        }
+      : {}),
+    'oidc.button_label': values.label,
+    'app.public_url': values.publicUrl.trim().replace(/\/+$/, ''),
+  }
+}
+
 export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
-  const isAdmin = hasAdminRights(useAuth().user?.role)
+  const { user } = useAuth()
+  const isAdmin = hasAdminRights(user?.role)
+  const multiTenant = user?.multi_tenant_mode ?? false
   const [lockSignal, setLockSignal] = useState(0)
   const [enabled, setEnabled] = useState(Boolean(settings['oidc.enabled'] ?? false))
   const [groupId, setGroupId] = useState(String(settings['oidc.admin_group_id'] ?? ''))
@@ -25,13 +63,9 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
   const redirectUri = `${base}/api/auth/oidc/callback`
 
   const onSave = async () => {
-    await save({
-      'oidc.enabled': enabled,
-      'oidc.admin_group_id': groupId,
-      'oidc.auditor_group_id': auditorGroupId.trim(),
-      'oidc.button_label': label,
-      'app.public_url': publicUrl.trim().replace(/\/+$/, ''),
-    })
+    await save(
+      buildSsoSavePayload({ enabled, groupId, auditorGroupId, label, publicUrl }, multiTenant),
+    )
     setLockSignal((n) => n + 1)
   }
 
@@ -68,36 +102,44 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
             canUnlock={isAdmin}
           />
         </Field>
-        <Field
-          label={t('ssoTab.adminGroup.label')}
-          hint={t('ssoTab.adminGroup.hint')}
-          className="sm:col-span-2"
-        >
-          <LockableInput
-            value={groupId}
-            onChange={setGroupId}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            className="font-mono"
-            hasSavedValue={!!settings['oidc.admin_group_id']}
-            lockSignal={lockSignal}
-            canUnlock={isAdmin}
-          />
-        </Field>
-        <Field
-          label={t('ssoTab.auditorGroup.label')}
-          hint={t('ssoTab.auditorGroup.hint')}
-          className="sm:col-span-2"
-        >
-          <LockableInput
-            value={auditorGroupId}
-            onChange={setAuditorGroupId}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            className="font-mono"
-            hasSavedValue={!!settings['oidc.auditor_group_id']}
-            lockSignal={lockSignal}
-            canUnlock={isAdmin}
-          />
-        </Field>
+        {showRoleGroupFields(multiTenant) ? (
+          <>
+            <Field
+              label={t('ssoTab.adminGroup.label')}
+              hint={t('ssoTab.adminGroup.hint')}
+              className="sm:col-span-2"
+            >
+              <LockableInput
+                value={groupId}
+                onChange={setGroupId}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono"
+                hasSavedValue={!!settings['oidc.admin_group_id']}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
+              />
+            </Field>
+            <Field
+              label={t('ssoTab.auditorGroup.label')}
+              hint={t('ssoTab.auditorGroup.hint')}
+              className="sm:col-span-2"
+            >
+              <LockableInput
+                value={auditorGroupId}
+                onChange={setAuditorGroupId}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono"
+                hasSavedValue={!!settings['oidc.auditor_group_id']}
+                lockSignal={lockSignal}
+                canUnlock={isAdmin}
+              />
+            </Field>
+          </>
+        ) : (
+          <p className="text-muted-foreground text-xs sm:col-span-2">
+            {t('ssoTab.roleGroupsManagedByTeams')}
+          </p>
+        )}
         <Field label={t('ssoTab.buttonLabel.label')} className="sm:col-span-2">
           <LockableInput
             value={label}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { adminAvatarSrc, resetGate } from './access'
+import { adminAvatarSrc, resetGate, showSsoTab } from './access'
 
 describe('resetGate', () => {
   it('sperrt ein pending-Konto (noch nicht aktiv) unabhaengig von der E-Mail', () => {
@@ -45,5 +45,15 @@ describe('adminAvatarSrc', () => {
 
   it('liefert undefined ohne has_avatar -- AvatarImage faellt dann auf Initialen zurueck', () => {
     expect(adminAvatarSrc({ id: 7, has_avatar: false, avatar_version: 0 })).toBeUndefined()
+  })
+})
+
+describe('showSsoTab', () => {
+  it('zeigt den SSO-Tab im Single-Tenant-Modus (wie bisher)', () => {
+    expect(showSsoTab(false)).toBe(true)
+  })
+
+  it('versteckt den SSO-Tab im Multi-Tenant-Modus -- SSO laeuft dort ueber Teams', () => {
+    expect(showSsoTab(true)).toBe(false)
   })
 })
