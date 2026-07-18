@@ -24,5 +24,10 @@ async def get_entra_avatar(
     svc: TenantSettingsDep,
     tenant_id: ActiveTenantClaim,
 ) -> Response:
+    # SICHERHEITS-INVARIANTE: `tenant_id` ist der ROHE `ActiveTenantClaim` und scoped den
+    # Cache-Pfad. Er ist NUR vertrauenswürdig, weil `TenantSettingsDep` (oben) denselben
+    # Claim über `tenant_repo.is_allowed` auflöst und einen unberechtigten Zugriff schon
+    # per 403 abweist, bevor dieser Handler läuft. `TenantSettingsDep` darf deshalb NIE aus
+    # der Signatur entfernt werden -- sonst würde der Cache-Key ungeprüft.
     settings = await svc.get_all()
     return await avatar_service.serve(entra_id, tenant_id, settings)
