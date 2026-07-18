@@ -283,7 +283,8 @@ async def test_role_drives_kind_provider_auditor_gets_auditor_grant(
     default = await tenant_repo.default_tenant(session)
     tenant_a = await _mk_tenant(session)
     assert tenant_a.id is not None
-    g1_id, g1 = await _mk_team(session, [tenant_a.id])
+    # AUDITOR team -> its customers land in auditor_tenant regardless of the account's home role.
+    g1_id, g1 = await _mk_team(session, [tenant_a.id], role="auditor")
 
     upn = f"provider-auditor-{uuid.uuid4().hex}@provider.example"
     auditor = await _mk_user(session, upn=upn, role="auditor", tenant_id=default.id)
@@ -292,7 +293,7 @@ async def test_role_drives_kind_provider_auditor_gets_auditor_grant(
     _patch_graph(monkeypatch, {g1: [_member(upn)]})
     await group_sync.sync_group(session, {}, g1_id)
 
-    # auditor_tenant(A, group), NEVER an admin_tenant row -- the role drives the kind.
+    # auditor_tenant(A, group), NEVER an admin_tenant row -- the TEAM's role drives the kind.
     assert {(r.tenant_id, r.source) for r in await _auditor_rows(session, auditor.id)} == {
         (tenant_a.id, "group")
     }

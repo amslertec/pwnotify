@@ -28,7 +28,7 @@ import pytest
 from app.db.tenant_context import tenant_scoped_session
 from app.models.tenant import AdminTenant, AuditorTenant
 from app.repositories import assignment_group_member_repo as member_repo
-from app.repositories import tenant_repo
+from app.repositories import assignment_group_repo, tenant_repo
 from app.services import group_sync
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -205,13 +205,14 @@ async def test_cell4_role_drives_kind_and_flip_clears_stale(
     default = await tenant_repo.default_tenant(session)
     a = await _mk_tenant(session)
     assert a.id is not None
-    g1_id, g1 = await _mk_team(session, [a.id])
+    # AUDITOR team: its customer A lands in auditor_tenant (the TEAM's role drives the kind).
+    g1_id, g1 = await _mk_team(session, [a.id], role="auditor")
 
     upn = _upn("provider-auditor")
     u = await _mk_user(session, upn=upn, role="auditor", tenant_id=default.id)
     assert u.id is not None
 
-    # As AUDITOR: auditor_tenant(A, group), NEVER an admin_tenant row.
+    # Auditor team -> auditor_tenant(A, group), NEVER an admin_tenant row.
     _patch_graph(monkeypatch, {g1: [_member(upn)]})
     await group_sync.sync_group(session, {}, g1_id)
     assert {(r.tenant_id, r.source) for r in await _auditor_rows(session, u.id)} == {
@@ -219,10 +220,12 @@ async def test_cell4_role_drives_kind_and_flip_clears_stale(
     }
     assert await _admin_rows(session, u.id) == []
 
-    # Flip role auditor -> admin, then re-sync. The reconcile must materialize the grant in the
-    # NEW target table AND clear the now-stale group row in the OTHER table.
-    u.role = "admin"
-    await session.flush()
+    # Flip the TEAM's role auditor -> admin, then re-sync. The per-table reconcile must
+    # materialize the grant in the NEW target table AND clear the now-stale group row in the
+    # OTHER table (this is the role-flip cleanup, proven through the SYNC path).
+    grp = await assignment_group_repo.get_by_entra_group_id(session, g1)
+    assert grp is not None and grp.id is not None
+    await assignment_group_repo.update(session, grp.id, name=grp.name, role="admin")
     await group_sync.sync_group(session, {}, g1_id)
     assert {(r.tenant_id, r.source) for r in await _admin_rows(session, u.id)} == {(a.id, "group")}
     # ZERO stale auditor_tenant(group) row remains -- proven through the sync path.

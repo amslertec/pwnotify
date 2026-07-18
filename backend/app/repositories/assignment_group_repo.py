@@ -152,6 +152,45 @@ async def tenant_ids_for_entra_groups(session: AsyncSession, entra_group_ids: se
     return set(res.scalars().all())
 
 
+async def tenant_role_map_for_entra_groups(
+    session: AsyncSession, entra_group_ids: set[str]
+) -> dict[int, str]:
+    """Abbildung Kunde -> Grant-KIND (`"admin"`/`"auditor"`), abgeleitet aus den ROLLEN der
+    Teams, die den Kunden abbilden -- die Kern-Neuerung dieses Inkrements: NICHT die globale
+    Rolle des einloggenden Kontos entscheidet über die Zieltabelle eines Kunden-Grants,
+    sondern die Rolle des TEAMS, das den Kunden mappt.
+
+    EIN Join-Query (`assignment_group_tenant` -> `assignment_group`, gefiltert auf die
+    übergebenen `entra_group_id`s), der `(tenant_id, AssignmentGroup.role)`-Paare liefert.
+    Gefaltet zu `tenant_id -> kind` mit **Admin gewinnt**: ein Kunde erhält `"admin"`, sobald
+    IRGENDEIN ihn abbildendes Team ein Admin-Team ist -- sonst (nur Auditor-Teams) `"auditor"`.
+    So kann ein Kunde nie gleichzeitig in beiden Wunschmengen landen.
+
+    Leere Eingabe oder unbekannte Entra-Ids liefern `{}`, kein Fehler -- ein Login ohne
+    (bekannte) Team-Mitgliedschaft ist kein Fehlerfall (spiegelt `tenant_ids_for_entra_groups`).
+    SUPERSEDES `tenant_ids_for_entra_groups` für den Reconcile, der die Rolle je Kunde braucht;
+    die flache Union-Variante bleibt bestehen (weiterhin von den Admin-Group-Tests genutzt)."""
+    if not entra_group_ids:
+        return {}
+    res = await session.execute(
+        select(AssignmentGroupTenant.tenant_id, AssignmentGroup.role)
+        .join(
+            AssignmentGroup,
+            AssignmentGroup.id == AssignmentGroupTenant.assignment_group_id,
+        )
+        .where(AssignmentGroup.entra_group_id.in_(entra_group_ids))
+    )
+    role_map: dict[int, str] = {}
+    for tid, role in res.all():
+        # Admin gewinnt: ein einziges Admin-Team hebt den Kunden auf `admin`; setdefault lässt
+        # ein bereits gesetztes `admin` durch ein späteres Auditor-Team NIE zurückfallen.
+        if _grant_kind(str(role)) == "admin":
+            role_map[int(tid)] = "admin"
+        else:
+            role_map.setdefault(int(tid), "auditor")
+    return role_map
+
+
 async def reconcile_group_grants(
     session: AsyncSession, user: AppUser, entra_group_ids: list[str] | None
 ) -> None:
@@ -166,32 +205,30 @@ async def reconcile_group_grants(
        nicht den Default-Tenant, und wird hier sofort no-op abgewiesen, selbst wenn sein
        `groups`-Claim auf fremde Teams zeigt.
     2. **Ein `source='manual'`-Grant wird NIE angefasst** (nicht konvertiert, nicht gelöscht).
-       Ein manueller Grant vom Superadmin gewinnt und bleibt `source='manual'`; deckt eine
-       Gruppe denselben Tenant ab, wird KEINE zweite Zeile angelegt (Composite-PK, außerdem
-       explizit aus der Add-Menge ausgeschlossen), und der Remove-Zweig entfernt nur
-       `source='group'`-Zeilen.
+       Ein manueller Grant vom Superadmin gewinnt und bleibt `source='manual'`; deckt ein Team
+       denselben Tenant ab, wird KEINE zweite Zeile angelegt (Composite-PK, außerdem explizit
+       aus der Add-Menge ausgeschlossen), und der Remove-Zweig entfernt nur `source='group'`-
+       Zeilen.
 
-    **Rollen-Flip-Sicherheit (Sicherheitsreview Task 4, "Important"-Finding):** Gruppen-Grants
-    werden IMMER NUR in der Zieltabelle der AKTUELLEN Rolle (`kind = _grant_kind(user.role)`)
-    materialisiert -- niemals in beiden. Flippt die Entra-Rolle eines Provider-Kontos zwischen
-    zwei Logins (admin->auditor oder umgekehrt), würde ein Reconcile, der nur `kind` anfasst,
-    eine ALTE `source='group'`-Zeile der VORHERIGEN Rolle dauerhaft verwaist zurücklassen (z.B.
-    bliebe `admin_tenant(A, group)` nach einer Demotion zu `auditor` bestehen -- der Auditor
-    behielte damit stillschweigend Schreibzugriff). Deshalb räumt dieser Reconcile bei JEDEM
-    Aufruf ZUSÄTZLICH die ANDERE Zieltabelle auf: jede `source='group'`-Zeile des Kontos in
-    `other_kind` (der Kind, der NICHT der aktuellen Rolle entspricht) wird entfernt. `source=
-    'manual'`-Zeilen in `other_kind` bleiben unangetastet (Invariante 2 gilt auch dort -- ein
-    manueller Grant der anderen Kapazität ist Sache der Zuweisungs-API/`set_role`, nicht dieses
-    Reconciles). Ergebnis-Garantie nach jedem Reconcile: das Konto hat Gruppen-Grants
-    AUSSCHLIESSLICH in der Zieltabelle der aktuellen Rolle, und ZERO Gruppen-Grants in der
-    anderen.
+    **WARUM dual-table/pro-Kunden-Rolle:** Nicht die globale Rolle des einloggenden Kontos
+    (`user.role`) entscheidet die Zieltabelle, sondern die Rolle des TEAMS, das den Kunden
+    abbildet -- ein Admin-Team materialisiert seine Kunden nach `admin_tenant` (Schreiben), ein
+    Auditor-Team nach `auditor_tenant` (nur lesen). `tenant_role_map_for_entra_groups` faltet
+    die Team-Rollen mit **Admin gewinnt** zu zwei DISJUNKTEN Wunschmengen (`desired_admin`,
+    `desired_auditor`). Danach wird JEDE Zieltabelle gegen ihre EIGENE Wunschmenge reconciled
+    -- und genau dieser per-Tabelle-Abgleich IST die vollständige Rollen-Flip-Bereinigung:
+    flippt ein Team von auditor auf admin, verschwindet sein Kunde aus `desired_auditor` -> die
+    verwaiste `auditor_tenant(…, group)`-Zeile wird im Auditor-Durchlauf entfernt, während der
+    Admin-Durchlauf `admin_tenant(…, group)` anlegt. Ein Kunde, der aus JEDEM Team fällt, fehlt
+    in BEIDEN Wunschmengen und wird aus BEIDEN Tabellen entfernt. `user.role` bleibt die
+    Heim-/Globalrolle (vom Callback gesetzt) und wählt hier KEINE Zieltabelle mehr.
 
-    `entra_group_ids` falsy (kein Team) -> leere Wunschmenge -> alle bestehenden
-    `source='group'`-Zeilen des Kontos (in `kind`) werden entfernt (ein Provider, der jedes Team
-    verlassen hat, behält nur seine manuellen Grants). Inaktive Ziel-Tenants werden beim Anlegen
-    still übersprungen (Verfügbarkeit, kein Sicherheitsproblem) -- eine bestehende Gruppen-Zeile
-    auf einen zwischenzeitlich deaktivierten Tenant bleibt hingegen, solange die Gruppe ihn noch
-    abbildet (kein Aktiv-Filter auf der Ist-Menge).
+    `entra_group_ids` falsy (kein Team) -> beide Wunschmengen leer -> alle bestehenden
+    `source='group'`-Zeilen des Kontos werden aus beiden Tabellen entfernt (ein Provider, der
+    jedes Team verlassen hat, behält nur seine manuellen Grants). Inaktive Ziel-Tenants werden
+    beim Anlegen still übersprungen (Verfügbarkeit, kein Sicherheitsproblem) -- eine bestehende
+    Gruppen-Zeile auf einen zwischenzeitlich deaktivierten Tenant bleibt hingegen, solange ein
+    Team ihn noch abbildet (kein Aktiv-Filter auf der Ist-Menge).
 
     Kein eigenes `commit`: die einzeln genutzten `add_grant`/`remove_grant` committen bereits
     (wie in `admin_assignments`); der Aufrufer (`oidc_callback`) committt die Login-Transaktion
@@ -201,30 +238,28 @@ async def reconcile_group_grants(
         return
     assert user.id is not None  # Provider-Konto hat tenant_id gesetzt => persistierte Zeile
 
-    desired = await tenant_ids_for_entra_groups(session, set(entra_group_ids or []))
-    kind = _grant_kind(user.role)
-    other_kind = "auditor" if kind == "admin" else "admin"
-    rows = await tenant_repo.list_grant_rows(session, user.id, kind)
-    group_now = {tid for tid, src in rows if src == "group"}
-    manual_now = {tid for tid, src in rows if src == "manual"}
+    # (2) Wunschmengen aus den TEAM-Rollen (Admin gewinnt -> disjunkt).
+    role_map = await tenant_role_map_for_entra_groups(session, set(entra_group_ids or []))
+    desired_admin = {tid for tid, r in role_map.items() if r == "admin"}
+    desired_auditor = {tid for tid, r in role_map.items() if r == "auditor"}
 
-    # (2) Add mit Manual-Vorrang: Tenants, die bereits eine MANUELLE Zeile haben, werden
-    # übersprungen -- die manuelle Zeile bleibt `source='manual'`, es entsteht keine Dublette.
-    for tid in desired - group_now - manual_now:
-        if await tenant_repo._is_active(session, tid):
-            await tenant_repo.add_grant(
-                session, user_id=user.id, tenant_id=tid, kind=kind, source="group"
-            )
+    # (3) JEDE Zieltabelle gegen IHRE eigene Wunschmenge abgleichen -- dieser per-Tabelle-
+    # Abgleich IST zugleich die Rollen-Flip-Bereinigung (ein Kunde, der aus der Wunschmenge
+    # DIESER Tabelle fällt, verliert hier seine verwaiste Gruppen-Zeile).
+    for kind, desired in (("admin", desired_admin), ("auditor", desired_auditor)):
+        rows = await tenant_repo.list_grant_rows(session, user.id, kind)
+        group_now = {tid for tid, src in rows if src == "group"}
+        manual_now = {tid for tid, src in rows if src == "manual"}
 
-    # Remove: nur `source='group'`-Zeilen, die kein Team mehr abbildet. `manual_now` ist nie
-    # in `group_now` (eine Zeile pro Paar), also werden manuelle Grants hier nie berührt.
-    for tid in group_now - desired:
-        await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=kind)
+        # Add mit Manual-Vorrang: Tenants mit bestehender MANUELLER Zeile werden übersprungen
+        # -- die manuelle Zeile bleibt `source='manual'`, es entsteht keine Dublette.
+        for tid in desired - group_now - manual_now:
+            if await tenant_repo._is_active(session, tid):
+                await tenant_repo.add_grant(
+                    session, user_id=user.id, tenant_id=tid, kind=kind, source="group"
+                )
 
-    # (3) ROLLEN-FLIP: verwaiste `source='group'`-Zeilen der ANDEREN Zieltabelle aufräumen.
-    # Nur `source='group'` -- eine manuelle Zeile in `other_kind` gehört nicht in dieses
-    # Reconcile und bleibt unangetastet.
-    other_rows = await tenant_repo.list_grant_rows(session, user.id, other_kind)
-    for tid, src in other_rows:
-        if src == "group":
-            await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=other_kind)
+        # Remove: nur `source='group'`-Zeilen, die diese Tabelle nicht mehr wünscht. `manual_now`
+        # ist nie in `group_now` (eine Zeile pro Paar), also werden manuelle Grants nie berührt.
+        for tid in group_now - desired:
+            await tenant_repo.remove_grant(session, user_id=user.id, tenant_id=tid, kind=kind)

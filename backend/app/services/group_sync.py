@@ -123,6 +123,9 @@ async def sync_group(
             continue  # Ungematcht -> nur Snapshot, kein Grant, keine Kontoanlage.
         # Team-Menge rein aus lokalen Snapshots (post-reconcile), 1:1 an das vetted Reconcile.
         team = await member_repo.groups_containing_upn(session, upn)
+        # Reconcile ist jetzt ROLLEN-BEWUSST: die Rolle jedes Teams entscheidet die Zieltabelle
+        # seiner Kunden (Admin-Team -> admin_tenant, Auditor-Team -> auditor_tenant, Admin
+        # gewinnt) -- der Sync erbt das unverändert, kein eigener Grant-Schreibpfad.
         await assignment_group_repo.reconcile_group_grants(session, account, list(team))
         # `materialized` zählt die effektiv wirksamen Provider-Matches -- der Gate-Entscheid
         # bleibt allein in `reconcile_group_grants`; diese Prüfung ist nur fürs Zählen.

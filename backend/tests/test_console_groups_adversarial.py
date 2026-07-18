@@ -278,16 +278,18 @@ async def test_provider_sso_admin_gets_exactly_its_teams_customers_role_drives_k
         (tenant_b.id, "group"),
     }
 
-    provider_sso_auditor = await _mk_user(
-        session, role="auditor", is_sso=True, tenant_id=default.id
+    # An AUDITOR team over the SAME customer A yields an auditor grant -- the TEAM's role, not
+    # the account's home role, drives the grant kind.
+    t3 = await _mk_team(session, [tenant_a.id], role="auditor")
+    provider_via_auditor_team = await _mk_user(
+        session, role="admin", is_sso=True, tenant_id=default.id
     )
-    assert provider_sso_auditor.id is not None
-    await assignment_group_repo.reconcile_group_grants(session, provider_sso_auditor, [t1])
-    aud_rows = await _auditor_rows(session, provider_sso_auditor.id)
+    assert provider_via_auditor_team.id is not None
+    await assignment_group_repo.reconcile_group_grants(session, provider_via_auditor_team, [t3])
+    aud_rows = await _auditor_rows(session, provider_via_auditor_team.id)
     assert {(r.tenant_id, r.source) for r in aud_rows} == {(tenant_a.id, "group")}
-    # Role drives kind -- NEVER an admin_tenant row for an auditor, even though it holds the
-    # SAME team membership as the admin above.
-    assert await _admin_rows(session, provider_sso_auditor.id) == []
+    # NEVER an admin_tenant row -- the auditor team confines A to read-only capacity.
+    assert await _admin_rows(session, provider_via_auditor_team.id) == []
 
 
 async def test_team_leave_revokes_group_grant_manual_grant_persists(session: AsyncSession) -> None:
@@ -321,13 +323,13 @@ async def test_team_leave_revokes_group_grant_manual_grant_persists(session: Asy
 async def test_role_flip_cleans_stale_other_kind_group_grant_at_matrix_level(
     session: AsyncSession,
 ) -> None:
-    """Non-vacuous against the pre-fix behaviour (Task 4 review): without the other-kind
-    cleanup, the demoted account would silently retain a stale admin_tenant(A, group) row
-    after Entra flips its role to auditor."""
+    """Non-vacuous against a broken per-table reconcile: when a TEAM is re-roled admin ->
+    auditor, without the per-table desired-set cleanup the account would silently retain a
+    stale admin_tenant(A, group) row after the team's customers move to read-only."""
     default = await tenant_repo.default_tenant(session)
     tenant_a = await _mk_tenant(session)
     assert tenant_a.id is not None
-    t1 = await _mk_team(session, [tenant_a.id])
+    t1 = await _mk_team(session, [tenant_a.id], role="admin")
 
     account = await _mk_user(session, role="admin", is_sso=True, tenant_id=default.id)
     assert account.id is not None
@@ -337,8 +339,10 @@ async def test_role_flip_cleans_stale_other_kind_group_grant_at_matrix_level(
         (tenant_a.id, "group")
     }
 
-    account.role = "auditor"
-    await session.flush()
+    # Superadmin demotes the TEAM admin -> auditor (no membership change).
+    grp = await assignment_group_repo.get_by_entra_group_id(session, t1)
+    assert grp is not None and grp.id is not None
+    await assignment_group_repo.update(session, grp.id, name=grp.name, role="auditor")
 
     await assignment_group_repo.reconcile_group_grants(session, account, [t1])
     assert await _admin_rows(session, account.id) == []
