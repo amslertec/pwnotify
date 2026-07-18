@@ -53,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.errors import GraphError, NotFoundError, PwNotifyError
 from ..models._base import utcnow
 from ..models.assignment_group import AssignmentGroup
+from ..models.user import AppUser
 from ..repositories import assignment_group_member_repo as member_repo
 from ..repositories import assignment_group_repo, tenant_repo, user_repo
 from . import audit
@@ -67,6 +68,48 @@ class GroupSyncError(PwNotifyError):
 
     status_code = 502
     code = "sync_failed"
+
+
+async def _is_fully_deprovisioned(session: AsyncSession, account: AppUser) -> bool:
+    """SICHERHEITSKRITISCH -- der Fail-Safe-Gate vor dem Löschen eines Kontos (`sync_group`).
+
+    Löschen ist der GEFÄHRLICHE Zweig; Default ist BEHALTEN. Gibt NUR dann True zurück, wenn
+    ALLE Bedingungen halten -- eine einzige nicht erfüllte Bedingung kurzschliesst auf False
+    (behalten). Reihenfolge: günstigste/entscheidendste zuerst, fail-closed.
+
+    1. `account.is_sso is True` -- ein lokales Konto wird NIE gelöscht.
+    2. `account.role != "superadmin"` -- ein Superadmin wird NIE gelöscht (ein Superadmin ist
+       `not is_sso and role=="superadmin"`, also bereits durch (1) ausgeschlossen; hier
+       zusätzlich explizit, Gürtel-und-Hosenträger).
+    3. `is_provider_account` -- Heim ist der Default-Tenant (schliesst auch `tenant_id is None`
+       aus -- ein kunden-homed oder heimatloses Konto ist kein Provider-Konto und darf hier
+       NICHT gelöscht werden).
+    4. `not groups_containing_upn` -- taucht in KEINEM Team-Snapshot mehr auf (leere Menge),
+       ausgewertet NACH dem Snapshot-Reconcile dieses Laufs.
+    5. Hält KEINE Grant-Zeile in EINER der beiden Grant-Tabellen. WICHTIG: direkt gegen die
+       Grant-TABELLEN (`list_grant_tenant_ids`) geprüft, NICHT gegen
+       `tenant_repo.admin_tenants`/`auditor_tenants` -- letztere falten den Heim-Tenant eines
+       SSO-Kontos in die Menge (`admin_tenants` addiert `user.tenant_id`, wenn `is_sso and
+       role=="admin"`), sodass ein auf dem Default-Tenant beheimatetes Provider-Konto IMMER
+       "berechtigt" aussähe und NIE gelöscht werden könnte. Die Heim-Tenant-Mitgliedschaft ist
+       dem Provider-Konto inhärent und darf NICHT als Grant zählen. Die Rohzeilen erfassen
+       sowohl `source='group'` (vom Reconcile bereits entzogen) als auch `source='manual'`
+       (muss BESTEHEN bleiben -> blockiert das Löschen).
+    """
+    if account.is_sso is not True:
+        return False
+    if account.role == "superadmin":
+        return False
+    if not await tenant_repo.is_provider_account(session, account):
+        return False
+    if await member_repo.groups_containing_upn(session, account.username):
+        return False
+    if account.id is None:
+        return False
+    return not (
+        await tenant_repo.list_grant_tenant_ids(session, account.id, "admin")
+        or await tenant_repo.list_grant_tenant_ids(session, account.id, "auditor")
+    )
 
 
 async def sync_group(
@@ -131,6 +174,36 @@ async def sync_group(
         # bleibt allein in `reconcile_group_grants`; diese Prüfung ist nur fürs Zählen.
         if await tenant_repo.is_provider_account(session, account):
             materialized += 1
+
+    # (4) DEPROVISION-CLEANUP -- SICHERHEITSKRITISCH, LÖSCHT `app_user`-Zeilen.
+    # Kandidaten sind AUSSCHLIESSLICH die Ex-Mitglieder DIESES Laufs (`old_upns - new_upns`):
+    # ein ausgetretenes Mitglied ist per Definition in OLD, aber nicht in NEW. Der Reconcile
+    # oben hat deren verwaisten `source='group'`-Grant bereits entzogen und den Snapshot
+    # aktualisiert, sodass Grant-Tabellen und `groups_containing_upn` den finalen Post-Sync-
+    # Stand widerspiegeln -- der Gate wertet also gegen die endgültige Wahrheit aus.
+    #
+    # BEWUSST KEINE Massen-/`removal_blocked`-Heuristik wie in `oidc.sync_sso_users`: dort wird
+    # ein Soll-Zustand für einen GANZEN Tenant berechnet und gegen einen Massen-Löschlauf
+    # abgesichert. Hier löschen wir höchstens die Handvoll Konten, die aus DIESER einen Gruppe
+    # in DIESEM Lauf ausgetreten sind -- jedes einzeln durch den vollen Fail-Safe-Gate
+    # (`_is_fully_deprovisioned`, Default-behalten) gesichert.
+    for upn in old_upns - new_upns:
+        account = await user_repo.get_by_username(session, upn)  # exakt/case-sensitive
+        if account is None:
+            continue  # Kein lokales Konto zu dieser UPN -> nichts zu löschen.
+        if not await _is_fully_deprovisioned(session, account):
+            continue  # Eine Bedingung nicht erfüllt -> Konto BEHALTEN (fail-closed).
+        assert account.id is not None
+        # `user_repo.delete` entfernt zuerst explizit die `UserSession`-Zeilen des Kontos
+        # (kein FK-Dangle) und committet je Aufruf -- gleiche Lösch-Semantik wie der SSO-Sync.
+        await user_repo.delete(session, account.id)
+        await audit.record(
+            session,
+            action=audit.USER_DELETED,
+            actor_type="system",
+            target=upn,
+            detail={"reason": "group_sync_deprovision", "group": group.name},
+        )
 
     result = {
         "member_count": recon["total"],
