@@ -4,6 +4,31 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-07-18
+
+### Fixed
+
+- **No more silent logout while working.** With several tabs open, each tab refreshed its session
+  independently and the server treated the second refresh as token reuse, revoking the whole
+  session and logging every tab out with no message. Token refresh is now serialized across tabs,
+  a page reload no longer discards a still-valid session, and a server-side idle logout now shows
+  the inactivity message.
+- **A sync no longer fails with a raw error when Microsoft Graph isn't configured.** An unconfigured
+  tenant's sync now skips cleanly and reports a short localized "Graph is not configured" note
+  instead of a doubled English library error.
+
+### Changed
+
+- **SSO is now provider-only in multi-tenant mode.** Every SSO login is authorized by Team
+  membership and homed on the provider (default) tenant; the per-customer SSO settings and the
+  access page's SSO tab are hidden for customers. Single-tenant mode and its SSO settings are
+  unchanged.
+- **Deprovisioning cleans up fully.** When a provider staff member is removed from every Team, the
+  next group sync removes their account entirely — no leftover row in the database or the UI —
+  under a strict guard that never touches an account still holding a Team or a manual assignment.
+- **The customer console's redundant "Settings" tab was removed** (instance settings live under
+  Settings).
+
 ## [0.2.2] — 2026-07-18
 
 ### Added
@@ -627,6 +652,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.3
 [0.2.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.2
 [0.2.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.1
 [0.2.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.0
