@@ -191,6 +191,26 @@ async def tenant_role_map_for_entra_groups(
     return role_map
 
 
+async def group_roles_for_entra_groups(
+    session: AsyncSession, entra_group_ids: set[str]
+) -> set[str]:
+    """Menge der DISTINKTEN Team-ROLLEN (`"admin"`/`"auditor"`), deren Team von IRGENDEINER
+    der übergebenen Entra-Gruppen-IDs abgebildet wird -- Task 4's Login-AUTORISIERUNG für
+    Provider-Personal (Default-Tenant) ruft das mit den `groups`-Claims eines SSO-Tokens auf.
+
+    EIN Query (`select(AssignmentGroup.role).where(entra_group_id.in_(...))`), gespiegelt am
+    Stil von `tenant_ids_for_entra_groups`/`tenant_role_map_for_entra_groups`. Leere Eingabe
+    (oder unbekannte Entra-Ids) liefert `set()`, kein Fehler -- ein Login ohne (bekannte)
+    Team-Mitgliedschaft ist kein Fehlerfall; der Aufrufer (`oidc.resolve_group_role`) deutet
+    die leere Menge fail-closed als NICHT autorisiert."""
+    if not entra_group_ids:
+        return set()
+    res = await session.execute(
+        select(AssignmentGroup.role).where(AssignmentGroup.entra_group_id.in_(entra_group_ids))
+    )
+    return {str(role) for role in res.scalars().all()}
+
+
 async def reconcile_group_grants(
     session: AsyncSession, user: AppUser, entra_group_ids: list[str] | None
 ) -> None:

@@ -23,7 +23,7 @@ from ..core.crypto import resolve_secret_key
 from ..core.errors import AuthError, PwNotifyError
 from ..core.logging import get_logger
 from ..core.security import hash_password
-from ..repositories import user_repo
+from ..repositories import assignment_group_repo, user_repo
 from .graph import GraphClient, GraphConfig
 
 log = get_logger("oidc")
@@ -144,6 +144,35 @@ def resolve_role(
     if auditor_group and auditor_group in groups:
         return "auditor", True, None
     return "admin", False, "Nicht Mitglied einer berechtigten Gruppe."
+
+
+async def resolve_group_role(session: AsyncSession, groups: list[str] | None) -> tuple[str, bool]:
+    """Rolle + Zugriff für PROVIDER-Personal im Multi-Tenant-Mode aus der TEAM-Mitgliedschaft.
+
+    WARUM es existiert: Läuft eine Instanz im Multi-Tenant-Mode und matcht ein SSO-Login auf
+    den DEFAULT-Tenant (Provider-Personal), entscheidet NICHT mehr die per-Kunde-Settings-
+    Rollen-Gruppe (`resolve_role`), sondern die Mitgliedschaft in einem Team (`AssignmentGroup`)
+    über Zulassung und Rolle -- das Provider-Personal wird über Teams verwaltet, nicht über die
+    `oidc.admin_group_id`/`oidc.auditor_group_id`-Settings des Default-Tenants. Diese Funktion
+    ist ausschliesslich hinter dem Callback-Gate erreichbar (`multi_tenant AND
+    tenant.is_default`); jeder andere Pfad (Single-Tenant ODER Kunden-Match) bleibt bei
+    `resolve_role`.
+
+    Fail-closed OHNE Settings-Fallback: kein Token-`groups`-Claim oder KEIN Claim, der auf
+    IRGENDEIN Team zeigt, heisst NICHT autorisiert (`("admin", False)`). Sonst gewinnt Admin --
+    matcht der Claim ein Admin-Team, wird die Rolle `"admin"`, andernfalls (nur Auditor-Teams)
+    `"auditor"`.
+
+    Gibt `(role, allowed)` zurück -- KEIN `reason` (der Callback liefert den festen Grund-String
+    bei Verweigerung selbst)."""
+    if not groups:
+        return "admin", False
+    roles = await assignment_group_repo.group_roles_for_entra_groups(session, set(groups))
+    if not roles:
+        return "admin", False
+    if "admin" in roles:
+        return "admin", True
+    return "auditor", True
 
 
 async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri: str) -> OidcResult:

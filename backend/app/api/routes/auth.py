@@ -929,17 +929,28 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
-    # Rolle AUTORITATIV aus den Settings DES gefundenen Kunden neu bestimmen (Sicherheitsfix,
-    # Phase 4c Task 4) -- NICHT `result.role`/`result.allowed`, die oben gegen die
-    # Owner-Session-Gemisch-Settings berechnet wurden. `tenant_scoped_session` liest über die
-    # App-Rolle + RLS-GUC, sieht also GARANTIERT nur die `oidc.*`-Zeilen dieses einen Kunden,
-    # egal wie viele weitere SSO-Kunden existieren. Im Single-Tenant-/Übergangsfall
-    # (Bootstrap oben) sind Kunden- und Owner-Settings identisch -- gleiches Ergebnis wie
-    # zuvor, keine Verhaltensänderung dort.
+    # Rolle + Zulassung AUTORITATIV bestimmen (Sicherheitsfix, Phase 4c Task 4) -- NICHT
+    # `result.role`/`result.allowed`, die oben gegen die Owner-Session-Gemisch-Settings
+    # berechnet wurden. Zwei disjunkte Pfade: Provider-Personal (Multi-Tenant-Mode + Match auf
+    # den Default-Tenant) autorisiert über TEAM-Mitgliedschaft; jeder andere Fall (Kunden-Match
+    # ODER Single-Tenant-Mode) bleibt byte-genau bei den per-Kunde-Rollen-Gruppen-Settings.
     assert tenant.id is not None  # persistierte Zeile aus der DB
-    async with tenant_scoped_session(tenant.id) as tsession:
-        tenant_settings = await SettingsService(tsession).get_all()
-    role, allowed, reason = oidc.resolve_role(result.groups, tenant_settings)
+    multi_tenant = await instance_settings.read_mode(session)
+    if multi_tenant and tenant.is_default:
+        # Provider-Personal (Match auf den Default-Tenant im Multi-Tenant-Mode): Zulassung +
+        # Rolle kommen aus der TEAM-Mitgliedschaft (`AssignmentGroup`), NICHT aus den
+        # Rollen-Gruppen-Settings des Default-Tenants -- fail-closed ohne Settings-Fallback.
+        role, allowed = await oidc.resolve_group_role(session, result.groups)
+        reason = None if allowed else "not_in_any_team"
+    else:
+        # UNVERÄNDERT: Kunden-gematchter Tenant ODER Single-Tenant-Mode -> per-Kunde-Settings-
+        # Rollen-Gruppen. `tenant_scoped_session` liest über die App-Rolle + RLS-GUC, sieht also
+        # GARANTIERT nur die `oidc.*`-Zeilen dieses einen Kunden, egal wie viele weitere
+        # SSO-Kunden existieren. Im Single-Tenant-/Übergangsfall (Bootstrap oben) sind Kunden-
+        # und Owner-Settings identisch -- gleiches Ergebnis wie zuvor, keine Verhaltensänderung.
+        async with tenant_scoped_session(tenant.id) as tsession:
+            tenant_settings = await SettingsService(tsession).get_all()
+        role, allowed, reason = oidc.resolve_role(result.groups, tenant_settings)
     if not allowed:
         # Der Benutzer ist zwar aus einem bekannten Entra-Tenant, aber in KEINER der
         # berechtigten Gruppen DIESES Kunden -- z. B. Mitglied von Kunde A's Admin-Gruppe,
