@@ -1176,6 +1176,12 @@
       "name": "Name",
       "entraGroupId": "Entra group ID",
       "entraGroupIdHint": "Free text — the ID of the Entra security group.",
+      "role": {
+        "label": "Role",
+        "placeholder": "Select role",
+        "admin": "Admin",
+        "auditor": "Auditor"
+      },
       "edit": "Rename",
       "editTitle": "Rename \"{{name}}\"",
       "updated": "Group updated",

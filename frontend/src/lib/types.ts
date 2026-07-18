@@ -119,6 +119,10 @@ export interface AssignmentGroup {
   member_count: number
   /** Zeitpunkt des letzten erfolgreichen Sync -- null, wenn noch nie synchronisiert. */
   last_synced_at: string | null
+  /** Rolle, die Mitglieder dieser Gruppe beim Login-Reconcile erhalten (Group-Roles-Phase,
+   *  Task 5) -- Backfill-Default ist `'admin'`. `POST`/`PUT` verlangen das Feld (422 bei
+   *  ungültigem Wert), s. Backend-Moduldoku `admin_groups.py`. */
+  role: 'admin' | 'auditor'
 }
 
 /** Einzelnes Gruppenmitglied (`GET /admin/groups/{id}/members`, Group-Member-Sync Task 4/5). */

@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createGroupBody,
   entraAvatarPath,
   groupMembersPath,
   groupMembersQueryKey,
+  groupRoleBadgeVariant,
   groupSyncPath,
   hasNeverSynced,
   isLastMembersPage,
   memberDisplayName,
   MEMBERS_PAGE_SIZE,
   syncToastParams,
+  updateGroupBody,
 } from './groups-tab'
 
 // Hinweis (siehe `accept-invitation.test.ts` / `lib/password.test.ts`): `vitest.config.ts`
@@ -108,5 +111,41 @@ describe('syncToastParams', () => {
     const params = syncToastParams({ member_count: 5, materialized: 5, added: 5, removed: 0 })
     expect(params).not.toHaveProperty('added')
     expect(params).not.toHaveProperty('removed')
+  })
+})
+
+describe('groupRoleBadgeVariant', () => {
+  it('admin bekommt die hervorgehobene Default-Variante', () => {
+    expect(groupRoleBadgeVariant('admin')).toBe('default')
+  })
+
+  it('auditor bekommt die dezentere secondary-Variante', () => {
+    expect(groupRoleBadgeVariant('auditor')).toBe('secondary')
+  })
+})
+
+describe('createGroupBody', () => {
+  it('nimmt role in den POST /admin/groups-Body auf (vom Backend erzwungen, sonst 422)', () => {
+    expect(createGroupBody('Team A', 'grp-123', 'admin')).toEqual({
+      name: 'Team A',
+      entra_group_id: 'grp-123',
+      role: 'admin',
+    })
+  })
+
+  it('funktioniert auch mit role=auditor', () => {
+    expect(createGroupBody('Team B', 'grp-456', 'auditor')).toEqual({
+      name: 'Team B',
+      entra_group_id: 'grp-456',
+      role: 'auditor',
+    })
+  })
+})
+
+describe('updateGroupBody', () => {
+  it('nimmt role in den PUT /admin/groups/{id}-Body auf, ohne entra_group_id (unveränderlich)', () => {
+    const body = updateGroupBody('Neuer Name', 'auditor')
+    expect(body).toEqual({ name: 'Neuer Name', role: 'auditor' })
+    expect(body).not.toHaveProperty('entra_group_id')
   })
 })

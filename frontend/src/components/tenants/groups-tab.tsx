@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { AvatarImage } from '@/components/avatar-image'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -25,6 +26,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
@@ -78,6 +86,33 @@ export function hasNeverSynced(lastSyncedAt: string | null): boolean {
 /** Mappt ein Sync-Ergebnis auf die Interpolationswerte des Erfolgs-Toasts. */
 export function syncToastParams(result: GroupSyncResult): { count: number; materialized: number } {
   return { count: result.member_count, materialized: result.materialized }
+}
+
+/** Badge-Variante je Gruppenrolle (Group-Roles-Phase, Task 5) -- Admin bekommt die
+ *  hervorgehobene Default-Variante, Auditor die dezentere `secondary`, damit sich die
+ *  Zeile beim schnellen Scannen der Tabelle unterscheidet. */
+export function groupRoleBadgeVariant(role: AssignmentGroup['role']): 'default' | 'secondary' {
+  return role === 'admin' ? 'default' : 'secondary'
+}
+
+/** Body für `POST /admin/groups` (Group-Roles-Phase, Task 5) -- als reine Funktion
+ *  exportiert, damit ohne DOM/jsdom testbar ist, dass `role` mitgeschickt wird (s.
+ *  Testkommentar in `groups-tab.test.ts`, gleiches Muster wie `groupMembersPath`). */
+export function createGroupBody(
+  name: string,
+  entraGroupId: string,
+  role: AssignmentGroup['role'],
+): { name: string; entra_group_id: string; role: AssignmentGroup['role'] } {
+  return { name, entra_group_id: entraGroupId, role }
+}
+
+/** Body für `PUT /admin/groups/{id}` (Group-Roles-Phase, Task 5) -- bewusst kein
+ *  `entra_group_id` (unveränderlich nach Anlage, s. `GroupUpdate` im Backend). */
+export function updateGroupBody(
+  name: string,
+  role: AssignmentGroup['role'],
+): { name: string; role: AssignmentGroup['role'] } {
+  return { name, role }
 }
 
 /** Gruppen-Tab ("Teams", Console+Groups+Invite-Phase Task 3/7): Entra-Security-Gruppen
@@ -229,7 +264,14 @@ function GroupRow({
             <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
           </Button>
         </td>
-        <td className="px-4 py-2.5 font-medium">{group.name}</td>
+        <td className="px-4 py-2.5 font-medium">
+          <div className="flex items-center gap-2">
+            <span>{group.name}</span>
+            <Badge variant={groupRoleBadgeVariant(group.role)}>
+              {t(`tenants.groups.role.${group.role}`)}
+            </Badge>
+          </div>
+        </td>
         <td className="text-muted-foreground px-4 py-2.5 font-mono text-xs">
           {group.entra_group_id}
         </td>
@@ -417,6 +459,34 @@ function GroupMembers({
   )
 }
 
+/** Rollen-Select für Team-Anlage/-Bearbeitung (Group-Roles-Phase, Task 5) -- gemeinsam von
+ *  `CreateGroupDialog`/`RenameGroupDialog` genutzt, damit Optionen/Labels an einer Stelle
+ *  gepflegt werden. Bestimmt serverseitig die beim Login-Reconcile vergebene Rolle. */
+function RoleSelect({
+  value,
+  onChange,
+}: {
+  value: AssignmentGroup['role']
+  onChange: (role: AssignmentGroup['role']) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-1.5">
+      <Label>{t('tenants.groups.role.label')}</Label>
+      <Select value={value} onValueChange={(v) => onChange(v as AssignmentGroup['role'])}>
+        <SelectTrigger>
+          <SelectValue placeholder={t('tenants.groups.role.placeholder')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="admin">{t('tenants.groups.role.admin')}</SelectItem>
+          <SelectItem value="auditor">{t('tenants.groups.role.auditor')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 function CreateGroupDialog({
   open,
   onOpenChange,
@@ -428,15 +498,19 @@ function CreateGroupDialog({
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [entraGroupId, setEntraGroupId] = useState('')
+  // Default `'admin'` spiegelt den Backfill-Default bestehender Gruppen (s. Backend-Moduldoku
+  // `admin_groups.py`) -- neu angelegte Gruppen starten mit derselben Rolle.
+  const [role, setRole] = useState<AssignmentGroup['role']>('admin')
 
   const create = useMutation({
     mutationFn: () =>
-      api.post<AssignmentGroup>('/admin/groups', { name, entra_group_id: entraGroupId }),
+      api.post<AssignmentGroup>('/admin/groups', createGroupBody(name, entraGroupId, role)),
     onSuccess: () => {
       toast.success(t('tenants.groups.created'))
       void qc.invalidateQueries({ queryKey: ['admin-groups'] })
       setName('')
       setEntraGroupId('')
+      setRole('admin')
       onOpenChange(false)
     },
     onError: (e) => toast.error(translateError(e)),
@@ -458,6 +532,7 @@ function CreateGroupDialog({
             <Input value={entraGroupId} onChange={(e) => setEntraGroupId(e.target.value)} />
             <p className="text-muted-foreground text-xs">{t('tenants.groups.entraGroupIdHint')}</p>
           </div>
+          <RoleSelect value={role} onChange={setRole} />
         </div>
         <DialogFooter>
           <Button
@@ -483,9 +558,10 @@ function RenameGroupDialog({
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [name, setName] = useState(group.name)
+  const [role, setRole] = useState<AssignmentGroup['role']>(group.role)
 
   const update = useMutation({
-    mutationFn: () => api.put<AssignmentGroup>(`/admin/groups/${group.id}`, { name }),
+    mutationFn: () => api.put<AssignmentGroup>(`/admin/groups/${group.id}`, updateGroupBody(name, role)),
     onSuccess: () => {
       toast.success(t('tenants.groups.updated'))
       void qc.invalidateQueries({ queryKey: ['admin-groups'] })
@@ -500,9 +576,12 @@ function RenameGroupDialog({
         <DialogHeader>
           <DialogTitle>{t('tenants.groups.editTitle', { name: group.name })}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-1.5">
-          <Label>{t('tenants.groups.name')}</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>{t('tenants.groups.name')}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <RoleSelect value={role} onChange={setRole} />
         </div>
         <DialogFooter>
           <Button
