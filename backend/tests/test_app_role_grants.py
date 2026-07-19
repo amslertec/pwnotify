@@ -13,6 +13,13 @@ from sqlalchemy import text
 
 INSTANCE_WIDE_TABLES = ("tenant", "app_user", "user_session", "auditor_tenant")
 
+INSTANCE_WIDE_NO_ACCESS = (
+    "user_token",
+    "assignment_group",
+    "assignment_group_tenant",
+    "assignment_group_member",
+)
+
 
 async def _priv(session, table: str, priv: str) -> bool:
     return (
@@ -43,6 +50,16 @@ async def test_select_still_allowed_on_tenant_and_auditor_tenant(session):
     # Bewusst behalten: keine Geheimnisse, ein künftiger Tenant-Switcher könnte lesen müssen.
     for tbl in ("tenant", "auditor_tenant"):
         assert await _priv(session, tbl, "SELECT"), f"{APP_ROLE} sollte {tbl} noch lesen dürfen"
+
+
+async def test_app_role_has_no_privileges_on_provider_tables(session):
+    # These four instance-wide tables are never touched by the tenant-scoped role; a
+    # compromised pwnotify_app path must not reach token hashes, member PII, or group config.
+    for tbl in INSTANCE_WIDE_NO_ACCESS:
+        for priv in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert not await _priv(session, tbl, priv), (
+                f"{APP_ROLE} still has {priv} on {tbl} -- least-privilege violated"
+            )
 
 
 async def test_rls_tables_keep_full_crud(session):
