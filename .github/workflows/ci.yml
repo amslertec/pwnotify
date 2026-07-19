@@ -87,20 +87,49 @@ jobs:
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Build (local, single-arch) for scanning
+      # The image below is later pushed as linux/amd64,linux/arm64 (see "Build & push
+      # multi-arch"). To make sure neither architecture ships unscanned, both are built
+      # locally and gated with Trivy BEFORE anything is pushed. arm64 runs under QEMU
+      # (via setup-qemu-action above) since this runner is amd64-only; `load: true` works
+      # for a single foreign platform because Trivy only inspects image layers, it never
+      # executes the container. This keeps the existing pre-push gate intact instead of
+      # moving the scan after the push (which would risk shipping an unscanned/vulnerable
+      # image before the gate could fail the job).
+      - name: Build (local, amd64) for scanning
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
+          platforms: linux/amd64
           load: true
           tags: ${{ env.IMAGE }}:scan
           build-args: |
             VERSION=${{ github.ref_name }}
             REVISION=${{ github.sha }}
 
-      - name: Trivy scan (fail on HIGH/CRITICAL)
+      - name: Trivy scan amd64 (fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:scan
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+          scanners: vuln
+
+      - name: Build (local, arm64) for scanning
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: ${{ env.IMAGE }}:scan-arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+
+      - name: Trivy scan arm64 (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:scan-arm64
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: false

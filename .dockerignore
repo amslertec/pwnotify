@@ -53,3 +53,8 @@ Thumbs.db
 # ---- Docker / Compose (nicht in Build-Context nötig) ----
 docker-compose*.yml
 Makefile
+
+# ---- Local-only working dirs (never in the build context) ----
+backups
+.superpowers
+sbom

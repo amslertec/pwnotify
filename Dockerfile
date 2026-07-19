@@ -56,7 +56,7 @@ LABEL org.opencontainers.image.title="PwNotify" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.base.name="cgr.dev/chainguard/python:latest" \
-      org.opencontainers.image.base.digest="sha256:4d908c6a44ba22460e34a2f6dd665b8fcb82bd3e6c887e749bd6fef243e10094"
+      org.opencontainers.image.base.digest="sha256:ce9aaca1f826f7f963cd031e98f8c19f993b1843096d395ea919b646e72cb8de"
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" \
