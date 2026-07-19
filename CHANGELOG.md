@@ -4,6 +4,30 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] — 2026-07-19
+
+### Security
+
+- **Two-factor enrolment can no longer be hijacked.** Someone who knew a password could use the
+  short-lived interim token from the first login step to overwrite an account's active
+  authenticator and take the account over. Re-enrolling two-factor now requires disabling it first
+  from an authenticated session.
+- **The setup connection-test endpoints are protected once an instance is configured.** The
+  database, Graph, and mail test endpoints were reachable without authentication after setup was
+  complete; they now require an administrator once the first account exists, and stay open only
+  during first-time setup. A failed database test no longer echoes raw connection details, and all
+  setup routes are rate-limited.
+- **A manual run stays within your own customer.** Triggering a run as a customer administrator
+  affected every customer on the instance and could return another customer's run. It is now scoped
+  to your own tenant; instance-wide runs remain available to the local superadmin.
+- **SSO user sync is scoped and no longer discloses other customers.** Syncing SSO users ran across
+  every customer and named foreign tenants in the result. It now covers only your own tenant
+  (instance-wide sync stays superadmin-only) and reports a blocked-tenant count instead of names.
+- **Single sign-on can no longer take over a local account.** An Entra sign-in whose username
+  matched an existing local account — including the superadmin — silently converted that account to
+  SSO and could lock the real owner out. Such a sign-in is now denied and the local account is left
+  untouched.
+
 ## [0.2.4] — 2026-07-18
 
 ### Fixed
@@ -661,6 +685,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.5
 [0.2.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.4
 [0.2.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.3
 [0.2.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.2
