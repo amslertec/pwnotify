@@ -31,7 +31,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from app.db.session import get_session_factory
+from app.db.tenant_context import open_active_session
 from app.services.scheduler import SchedulerService
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -143,7 +143,7 @@ async def test_trigger_now_creates_run_stamped_with_active_tenant_id(
     captured: dict[str, Any] = {}
     _patch_heavy_dependencies(monkeypatch, captured)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     run = await service.trigger_now(dry_run_override=True)
 
     try:
@@ -174,7 +174,7 @@ async def test_trigger_now_does_not_touch_inactive_tenant(
     captured: dict[str, Any] = {}
     _patch_heavy_dependencies(monkeypatch, captured)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     run = await service.trigger_now(dry_run_override=True)
 
     try:
@@ -218,7 +218,7 @@ async def test_run_reads_each_tenants_own_schedule(
 
     monkeypatch.setattr(SchedulerService, "_read_schedule", _spy_read_schedule)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     run = await service.trigger_now(dry_run_override=True)
 
     try:

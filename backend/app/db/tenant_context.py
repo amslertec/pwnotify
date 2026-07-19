@@ -11,10 +11,10 @@ from collections.abc import AsyncGenerator, Iterator
 from contextvars import ContextVar
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .rls import APP_ROLE, TENANT_GUC
-from .session import get_runtime_session_factory
+from .session import get_runtime_session_factory, get_session_factory
 
 # Aktiver Kunde für den laufenden Task/Request. None = instanzweit (Owner, kein Rollenwechsel).
 current_tenant_id: ContextVar[int | None] = ContextVar("current_tenant_id", default=None)
@@ -100,3 +100,22 @@ async def tenant_scoped_session(tenant_id: int) -> AsyncGenerator[AsyncSession]:
     with _bind_tenant(tenant_id):
         async with get_runtime_session_factory()() as session:
             yield session
+
+
+def get_active_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Runtime factory when a tenant is active in the ContextVar, else the owner factory.
+
+    Decided at CALL time: inside ``use_tenant(...)`` -> runtime (the begin-listener runs
+    ``SET LOCAL ROLE pwnotify_app``, RLS enforced, and ``audit.record`` stamps
+    ``tenant_id=tid`` so the RLS ``WITH CHECK`` passes). In owner context (no active tenant)
+    -> owner engine, so cross-tenant reads and NULL-tenant audit writes keep their reach and
+    RLS is (correctly) bypassed by ownership.
+    """
+    if current_tenant_id.get() is not None:
+        return get_runtime_session_factory()
+    return get_session_factory()
+
+
+def open_active_session() -> AsyncSession:
+    """Open a session on the context-appropriate engine (see ``get_active_session_factory``)."""
+    return get_active_session_factory()()

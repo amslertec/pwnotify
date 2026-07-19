@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from collections.abc import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging import get_logger
 from ..db.tenant_context import tenant_scoped_session, use_tenant
@@ -23,7 +24,7 @@ _JOB_ID = "pwnotify-run"
 
 
 class SchedulerService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], base_url: str):
+    def __init__(self, session_factory: Callable[[], AsyncSession], base_url: str):
         self.session_factory = session_factory
         self.base_url = base_url
         self._scheduler = AsyncIOScheduler()

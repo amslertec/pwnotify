@@ -32,7 +32,12 @@ from typing import Any, TypedDict
 import pytest
 import pytest_asyncio
 from app.db.session import get_session_factory
-from app.db.tenant_context import tenant_scoped_session, use_owner_context, use_tenant
+from app.db.tenant_context import (
+    open_active_session,
+    tenant_scoped_session,
+    use_owner_context,
+    use_tenant,
+)
 from app.repositories import run_repo, user_repo
 from app.services.scheduler import SchedulerService
 from sqlalchemy import text
@@ -299,7 +304,7 @@ async def test_scheduler_creates_one_run_per_active_tenant(
     a, b = two_active_tenants["a"], two_active_tenants["b"]
     _patch_heavy_run_dependencies(monkeypatch)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     before = dt.datetime.now(dt.UTC)
     await service.trigger_now(dry_run_override=True)
 

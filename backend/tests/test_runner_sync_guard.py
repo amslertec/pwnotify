@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from app.db.session import get_session_factory
+from app.db.tenant_context import open_active_session
 from app.services.graph import sync as graph_sync
 from app.services.graph.sync import is_graph_configured, sync_users
 from app.services.scheduler import SchedulerService
@@ -187,7 +187,7 @@ async def test_execute_run_skips_sync_cleanly_when_graph_unconfigured(
     monkeypatch.setattr(graph_sync, "GraphClient", _boom_if_constructed)
     _patch_everything_but_sync(monkeypatch)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     run = await service.trigger_now(dry_run_override=True)
 
     try:

@@ -40,7 +40,7 @@ from collections.abc import AsyncGenerator
 import pytest
 import pytest_asyncio
 from app.db.session import get_session_factory
-from app.db.tenant_context import tenant_scoped_session
+from app.db.tenant_context import open_active_session, tenant_scoped_session
 from app.models.audit import AuditLog
 from app.models.tenant import AdminTenant, AuditorTenant
 from app.models.user import AppUser, UserSession
@@ -529,7 +529,7 @@ async def test_cell5_sync_guard_makes_no_msal_call(
     monkeypatch.setattr(graph_sync, "GraphClient", _boom_if_constructed)
     _patch_everything_but_sync(monkeypatch)
 
-    service = SchedulerService(get_session_factory(), base_url="http://test.local")
+    service = SchedulerService(open_active_session, base_url="http://test.local")
     run = await service.trigger_now(dry_run_override=True)
 
     try:

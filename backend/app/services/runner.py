@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging import get_logger
 from ..db.tenant_context import current_tenant_or_none, use_owner_context
@@ -135,7 +136,7 @@ async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[s
 
 
 async def execute_run(
-    session_factory: async_sessionmaker[Any],
+    session_factory: Callable[[], AsyncSession],
     *,
     trigger: str = "schedule",
     dry_run_override: bool | None = None,

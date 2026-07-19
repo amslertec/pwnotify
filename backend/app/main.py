@@ -52,6 +52,7 @@ from .core.security_headers import (
 )
 from .db.migrate import run_migrations
 from .db.session import dispose_engine, get_session_factory
+from .db.tenant_context import open_active_session
 from .repositories import run_repo
 from .seed import run_seed
 from .services.scheduler import SchedulerService, set_scheduler
@@ -97,8 +98,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stale = await run_repo.mark_stale_as_error(session)
         if stale:
             log.warning("stale_runs_cleaned", count=stale)
-    # 3) Scheduler starten
-    scheduler = SchedulerService(factory, base_url=settings.base_url)
+    # 3) Scheduler starten -- Tenant-Writes laufen über die context-abhängige Factory
+    # (Runtime-Rolle bei aktivem Tenant, Owner sonst); `mark_stale_as_error` oben bleibt
+    # bewusst auf der Owner-Factory (kein Tenant-Kontext, Cross-Tenant-Op).
+    scheduler = SchedulerService(open_active_session, base_url=settings.base_url)
     set_scheduler(scheduler)
     await scheduler.start()
     log.info("startup_complete", version=__version__)

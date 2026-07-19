@@ -23,6 +23,7 @@ from app.api.deps import ACCESS_COOKIE
 from app.api.routes.runs import TriggerRequest, trigger
 from app.core.security import issue_token_pair
 from app.db.session import get_session_factory
+from app.db.tenant_context import open_active_session
 from app.repositories import tenant_repo, user_repo
 from app.services.scheduler import SchedulerService, set_scheduler
 from sqlalchemy import text
@@ -111,7 +112,7 @@ async def test_tenant_admin_trigger_is_scoped_to_own_tenant(
 ) -> None:
     cid, admin_id, default_id = customer_and_admin
     _patch_heavy(monkeypatch)
-    set_scheduler(SchedulerService(get_session_factory(), base_url="http://test.local"))
+    set_scheduler(SchedulerService(open_active_session, base_url="http://test.local"))
 
     factory = get_session_factory()
 
@@ -164,7 +165,7 @@ async def test_superadmin_trigger_still_fans_out(
 ) -> None:
     cid, _admin_id, default_id = customer_and_admin
     _patch_heavy(monkeypatch)
-    set_scheduler(SchedulerService(get_session_factory(), base_url="http://test.local"))
+    set_scheduler(SchedulerService(open_active_session, base_url="http://test.local"))
 
     factory = get_session_factory()
     superadmin = None

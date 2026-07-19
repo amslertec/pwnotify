@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .core.config import get_settings
 from .core.logging import get_logger
 from .core.security import hash_password
-from .db.tenant_context import use_tenant
+from .db.tenant_context import open_active_session, use_tenant
 from .repositories import user_repo
 from .services.settings_service import SettingsService
 
@@ -69,8 +69,12 @@ async def run_seed(session_factory: async_sessionmaker[AsyncSession]) -> None:
             ).scalar_one_or_none()
             values = _env_to_settings(settings)
             if values and default_tenant_id is not None:
-                async with use_tenant(default_tenant_id):
-                    await svc.set_many(values)
+                # Own session on the context-aware engine (runtime role, RLS enforced) --
+                # NOT the outer owner `session` -- this is the one tenant write in this
+                # module. `set_many` commits internally (settings_service.py), so the nested
+                # runtime session persists the `setting` rows itself.
+                async with use_tenant(default_tenant_id), open_active_session() as tsession:
+                    await SettingsService(tsession).set_many(values)
                 log.info("settings_seeded", keys=len(values))
 
         # 2) Admin aus ENV anlegen, falls konfiguriert und noch keiner existiert.
