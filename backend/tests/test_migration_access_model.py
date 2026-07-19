@@ -206,9 +206,17 @@ async def test_promote_oldest_admin_grant_others_seed_flag_and_cascade(
             assert row.tenant_id == default_tenant_id
             assert row.value is False
 
+        # `SettingsService.get_all()` (Task 1/M2 fix) resolves the default tenant via
+        # `tenant_repo.default_tenant()`, which reads `tenant.is_default` -- a column only
+        # added by the NEXT migration (4035552093e2). Bracket this one read with a
+        # temporary hop to head and back to THIS_REVISION so the service sees a schema it
+        # actually supports, without disturbing the rest of this test's intermediate state
+        # (the hop is symmetric: `4035552093e2.downgrade()` fully reverts its own backfill).
+        await _upgrade("head")
         async with async_sessionmaker(bind=migrated_engine, expire_on_commit=False)() as s:
             effective = await SettingsService(s).get_all()
             assert effective["instance.multi_tenant_mode"] is False
+        await _downgrade(THIS_REVISION)
 
         # ---- Cascade: User löschen räumt seine admin_tenant-Zeile ab ----
         async with migrated_engine.begin() as conn:

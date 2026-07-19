@@ -14,6 +14,7 @@ from ..core.logging import get_logger
 from ..db.tenant_context import current_tenant_or_none
 from ..models._base import utcnow
 from ..models.setting import Setting
+from ..repositories import tenant_repo
 from .settings_schema import MASK, SECRET_KEYS, SETTINGS, default_settings
 
 log = get_logger("settings")
@@ -31,9 +32,27 @@ class SettingsService:
         self.session = session
 
     async def get_all(self) -> dict[str, Any]:
-        """Effektive Konfiguration: Defaults überlagert von DB-Werten (Secrets entschlüsselt)."""
+        """Effektive Konfiguration: Defaults überlagert von DB-Werten (Secrets entschlüsselt).
+
+        Explicitly scoped to a single tenant -- the active one if the caller runs inside
+        `tenant_scoped_session`/`use_tenant`, otherwise the default tenant (owner session
+        with no context, e.g. `version.py`, `setup.py`, `auth.auth_config`). Without this
+        filter an owner-session read of `select(Setting)` sees every tenant's rows (RLS is
+        bypassed by ownership) and folds them into one dict, last-wins on the shared `key`
+        -- and decrypts every tenant's secrets along the way.
+        """
         result = default_settings()
-        rows = (await self.session.execute(select(Setting))).scalars().all()
+        tid = current_tenant_or_none()
+        if tid is None:
+            # Owner session without an active tenant: only the owner role reads `tenant`
+            # here (a runtime/tenant-scoped session always has `current_tenant_or_none()`
+            # set by `tenant_scoped_session`, so this branch never runs there).
+            tid = (await tenant_repo.default_tenant(self.session)).id
+        rows = (
+            (await self.session.execute(select(Setting).where(Setting.tenant_id == tid)))
+            .scalars()
+            .all()
+        )
         for row in rows:
             if row.key not in SETTINGS:
                 continue
