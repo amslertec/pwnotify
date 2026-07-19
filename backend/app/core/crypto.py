@@ -41,26 +41,26 @@ def resolve_secret_keys() -> list[bytes]:
     if key_path.exists():
         return [key_path.read_bytes().strip()]
 
-    # Auto-Generierung beim allerersten Start. Verzeichnis und Datei restriktiv
-    # anlegen, damit es kein Zeitfenster gibt, in dem der Schlüssel für andere
-    # lokale Prozesse/Nutzer lesbar wäre (vorher: write_bytes() mit umask-Default,
-    # erst danach chmod -- kurzes 0644-Fenster).
+    # Auto-generation on the very first start. Create the directory and file
+    # restrictively so there is no window in which the key would be readable by
+    # other local processes/users (previously: write_bytes() with the default
+    # umask, chmod only afterwards -- a brief 0644 window).
     key = Fernet.generate_key()
     key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        # os.open() setzt den Modus bereits bei der Erzeugung (abzüglich umask), und
-        # O_EXCL verhindert das Überschreiben eines parallel entstandenen Keys.
+        # os.open() sets the mode right at creation time (minus umask), and
+        # O_EXCL prevents overwriting a key created concurrently by another process.
         fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
     except FileExistsError:
-        # Ein paralleler erster Start hat das Rennen gewonnen -- dessen Key übernehmen.
+        # A concurrent first start won the race -- adopt its key.
         return [key_path.read_bytes().strip()]
     try:
         os.write(fd, key)
     finally:
         os.close(fd)
-    # os.open()'s Modus wird von der Prozess-umask maskiert (mode & ~umask); ein
-    # permissiver umask (z. B. 0022) würde sonst 0644 statt 0600 ergeben. Der
-    # explizite chmod verengt nur noch, öffnet nie ein Fenster.
+    # os.open()'s mode gets masked by the process umask (mode & ~umask); a
+    # permissive umask (e.g. 0022) would otherwise yield 0644 instead of 0600.
+    # The explicit chmod only ever narrows permissions, it never opens a window.
     os.chmod(key_path, 0o600)
     return [key]
 

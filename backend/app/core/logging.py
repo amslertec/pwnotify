@@ -33,13 +33,12 @@ _REDACT_KEYS = {
     "private_key",
 }
 
-# Zusätzlich zum exakten Match: Schlüssel, die eines dieser Suffixe/Substrings
-# enthalten, gelten ebenfalls als geheim (z. B. "graph_client_secret",
-# "smtp_password", "new_password" -- ohne jedes Präfix einzeln aufzählen zu
-# müssen). Bewusst getrennt von `_PII_KEYS` gehalten: Redaction (löschen) und
-# PII-Maskierung (kürzen) sind unterschiedliche Behandlungen; der Redact-Check
-# läuft zuerst.
-_REDACT_KEY_SUBSTRINGS = ("password", "secret", "token", "recovery_codes")
+# In addition to the exact match: keys containing one of these suffixes/substrings
+# are also considered secret (e.g. "graph_client_secret", "smtp_password",
+# "new_password" -- without having to enumerate every prefix individually).
+# Deliberately kept separate from `_PII_KEYS`: redaction (deletion) and PII
+# masking (truncation) are different treatments; the redact check runs first.
+_REDACT_KEY_SUBSTRINGS = ("password", "secret", "token")
 
 
 def _is_secret_key(key: str) -> bool:
