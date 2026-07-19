@@ -75,6 +75,18 @@ def test_number_range_exclusive_min_rejects_boundary() -> None:
         validate(0)
 
 
+def test_number_range_rejects_nan() -> None:
+    validate = number_range(min_value=0, max_value=1.0)
+    with pytest.raises(ValidationError):
+        validate(float("nan"))
+
+
+def test_number_range_rejects_inf() -> None:
+    validate = number_range(min_value=0)  # no max_value -> inf would otherwise pass
+    with pytest.raises(ValidationError):
+        validate(float("inf"))
+
+
 # --- set_many wiring ------------------------------------------------------------ #
 async def test_set_many_rejects_invalid_value(
     temp_tenant: int, monkeypatch: pytest.MonkeyPatch

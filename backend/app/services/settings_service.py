@@ -70,11 +70,10 @@ class SettingsService:
         return data
 
     async def set_many(self, values: dict[str, Any]) -> None:
-        """Setzt mehrere Keys. Für Secrets: MASK/None -> unverändert lassen.
+        """Persist multiple keys. Secrets: MASK/None/"" means "leave unchanged".
 
-        Alle Werte werden vorab validiert: ein einzelner ungültiger Wert bricht den
-        gesamten Batch mit einem ValidationError (HTTP 400) ab, BEVOR irgendetwas
-        geschrieben wird (Two-Pass: erst validieren, dann schreiben).
+        All values are validated up front: a single invalid value aborts the whole batch
+        with a ValidationError (HTTP 400) before anything is written.
         """
         prepared: list[tuple[str, Any, bool]] = []
         for key, value in values.items():

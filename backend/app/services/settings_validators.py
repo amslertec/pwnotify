@@ -8,6 +8,7 @@ validator keep their previous free-form behaviour (backwards compatible).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -43,6 +44,8 @@ def number_range(
             num = float(value)
         except (TypeError, ValueError) as exc:
             raise ValidationError(message or f"Expected a number, got {value!r}.") from exc
+        if not math.isfinite(num):
+            raise ValidationError(message or f"Expected a finite number, got {value!r}.")
         if integer_only and not float(num).is_integer():
             raise ValidationError(message or f"Expected a whole number, got {value!r}.")
         if min_value is not None:
