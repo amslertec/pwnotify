@@ -110,10 +110,13 @@ curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/docker-comp
 curl -fsSL https://raw.githubusercontent.com/amslertec/pwnotify/main/example.env -o .env
 
 # edit .env — at minimum:
-#   POSTGRES_PASSWORD   strong password
-#   PWNOTIFY_BASE_URL   how you reach the app (see below)
-#   PWNOTIFY_BIND       127.0.0.1:8080 behind a proxy, or 0.0.0.0:8080 for direct LAN
-#   PWNOTIFY_COOKIE_SECURE  true behind HTTPS, false for plain HTTP
+#   POSTGRES_PASSWORD             strong password
+#   PWNOTIFY_RUNTIME_DB_PASSWORD  strong password for the non-superuser DB role the app
+#                                 uses for tenant queries (e.g. `openssl rand -base64 24`);
+#                                 startup fails fast if this is unset
+#   PWNOTIFY_BASE_URL             how you reach the app (see below)
+#   PWNOTIFY_BIND                 127.0.0.1:8080 behind a proxy, or 0.0.0.0:8080 for direct LAN
+#   PWNOTIFY_COOKIE_SECURE        true behind HTTPS, false for plain HTTP
 
 docker compose pull
 docker compose up -d
@@ -155,6 +158,50 @@ docker compose -f docker-compose-prod.yml up -d
 
 The image is self-contained: the frontend is built inside the Dockerfile, so Node and
 pnpm are not needed on your machine.
+
+---
+
+## Upgrading an existing deployment
+
+The standard upgrade is always:
+
+```bash
+docker compose -f docker-compose-prod.yml pull
+docker compose -f docker-compose-prod.yml up -d
+```
+
+(or plain `docker compose pull && docker compose up -d` if you renamed the file to
+`docker-compose.yml`, as in the installation steps above). Migrations run automatically on
+container start.
+
+### 0.2.6 → 0.2.7: dedicated runtime DB role
+
+Starting with 0.2.7, the app no longer connects with the Postgres owner/superuser role for
+tenant-scoped queries. It now uses a second, dedicated non-superuser login role,
+**`pwnotify_runtime`**, as defence in depth for row-level security (RLS): even if a tenant
+route were somehow compromised, that connection cannot bypass RLS by table ownership.
+Migrations and other DDL are unaffected — they still run as `POSTGRES_USER`.
+
+To upgrade:
+
+1. Add `PWNOTIFY_RUNTIME_DB_PASSWORD=<strong value>` to your `.env` (e.g.
+   `openssl rand -base64 24`).
+2. `docker compose -f docker-compose-prod.yml pull`
+3. `docker compose -f docker-compose-prod.yml up -d`
+
+On start, the migration provisions the role automatically
+(`CREATE ROLE pwnotify_runtime LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD …` and
+`GRANT pwnotify_app TO pwnotify_runtime`), and the app connects with it for tenant work.
+**No manual SQL, no `pg_hba.conf` change, and no change to `POSTGRES_USER` or
+`PWNOTIFY_DATABASE_URL`** are required.
+
+If `PWNOTIFY_RUNTIME_DB_PASSWORD` is unset, startup fails fast with a clear error instead of
+silently falling back to the superuser connection — this is deliberate. Set the variable and
+restart.
+
+The provisioning step is idempotent: re-running it on every redeploy re-applies the current
+password (`ALTER ROLE … PASSWORD …`), so it is safe to run on every `up -d`. Keep the value
+stable across redeploys; if you do rotate it, just update `.env` and run `up -d` again.
 
 ---
 
