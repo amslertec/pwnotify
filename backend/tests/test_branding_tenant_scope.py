@@ -27,6 +27,7 @@ from __future__ import annotations
 import io
 import os
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -137,6 +138,9 @@ async def test_bare_owner_session_write_raises_integrity_error() -> None:
     Fallback, kein überraschendes HTTP 500 ohne erklärenden Fehler."""
     async for session in db_session.get_session():
         svc = SettingsService(session)
+        valid_inside = str(
+            Path(get_settings().data_dir) / "branding" / "should-not-be-persisted.png"
+        )
         with pytest.raises(IntegrityError):
-            await svc.set("branding.logo_path", "/tmp/should-not-be-persisted.png")
+            await svc.set("branding.logo_path", valid_inside)
         await session.rollback()

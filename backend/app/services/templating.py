@@ -11,6 +11,7 @@ from jinja2.exceptions import TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 
 from ..core.errors import PwNotifyError
+from .settings_validators import branding_dir, contained_path
 
 # Eingebettetes Logo (CID). InlineImage = (content_id, bytes, mime).
 LOGO_CID = "pwnotify-logo"
@@ -58,9 +59,13 @@ def build_logo_attachments(
     custom = settings.get("branding.logo_path")
 
     path: str | None = None
-    if custom and os.path.exists(custom) and os.path.splitext(custom)[1].lower() != ".svg":
-        path = custom
-    elif os.path.exists(default_png):
+    if custom:
+        safe = contained_path(branding_dir(), custom)
+        # SVG uploads fall back to the default PNG wordmark (SVG does not render in mail
+        # clients). An escaped path is ignored entirely.
+        if safe is not None and safe.is_file() and safe.suffix.lower() != ".svg":
+            path = str(safe)
+    if path is None and os.path.exists(default_png):
         path = default_png
 
     if not path:

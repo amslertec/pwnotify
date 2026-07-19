@@ -30,6 +30,7 @@ from .default_templates import (
     DEFAULT_TEXT_RESET_DE,
     DEFAULT_TEXT_RESET_EN,
 )
+from .settings_validators import branding_path
 
 
 @dataclass(frozen=True)
@@ -133,8 +134,8 @@ SETTINGS: dict[str, SettingSpec] = {
     "branding.app_name": SettingSpec("PwNotify"),
     "branding.company_name": SettingSpec(""),
     "branding.primary_color": SettingSpec("#4F46E5"),
-    "branding.logo_path": SettingSpec(None),
-    "branding.favicon_path": SettingSpec(None),
+    "branding.logo_path": SettingSpec(None, validate=branding_path),
+    "branding.favicon_path": SettingSpec(None, validate=branding_path),
     "branding.reset_url": SettingSpec(
         "https://account.activedirectory.windowsazure.com/ChangePassword.aspx"
     ),

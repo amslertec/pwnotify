@@ -14,6 +14,7 @@ from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...schemas.common import Message
+from ...services.settings_validators import contained_path
 from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep
 
 router = APIRouter(prefix="/branding", tags=["branding"])
@@ -66,6 +67,16 @@ def _branding_dir() -> Path:
     d = Path(get_settings().data_dir) / "branding"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _safe_branding_file(path: str | None) -> Path | None:
+    """Resolved branding file if it exists inside the branding dir, else None."""
+    if not path:
+        return None
+    real = contained_path(_branding_dir().resolve(), path)
+    if real is None or not real.is_file():
+        return None
+    return real
 
 
 @router.get("")
@@ -193,15 +204,15 @@ async def delete_favicon(_: AdminUser, svc: TenantSettingsDep) -> Message:
 
 @router.get("/logo")
 async def get_logo(svc: PublicTenantSettingsDep) -> Response:
-    path = await svc.get("branding.logo_path")
-    if not path or not Path(path).exists():
+    real = _safe_branding_file(await svc.get("branding.logo_path"))
+    if real is None:
         raise NotFoundError("Kein Logo gesetzt.", code="no_logo")
-    return FileResponse(path, headers=_ASSET_HEADERS)
+    return FileResponse(real, headers=_ASSET_HEADERS)
 
 
 @router.get("/favicon")
 async def get_favicon(svc: PublicTenantSettingsDep) -> Response:
-    path = await svc.get("branding.favicon_path")
-    if not path or not Path(path).exists():
+    real = _safe_branding_file(await svc.get("branding.favicon_path"))
+    if real is None:
         raise NotFoundError("Kein Favicon gesetzt.", code="no_favicon")
-    return FileResponse(path, headers=_ASSET_HEADERS)
+    return FileResponse(real, headers=_ASSET_HEADERS)

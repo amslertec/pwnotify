@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from ..core.config import get_settings
 from ..core.errors import ValidationError
 
 
@@ -58,3 +60,32 @@ def number_range(
         return value
 
     return _validate
+
+
+def branding_dir() -> Path:
+    """Resolved directory that legitimately holds uploaded branding assets."""
+    return (Path(get_settings().data_dir) / "branding").resolve()
+
+
+def contained_path(base: Path, candidate: str | Path) -> Path | None:
+    """Resolve ``candidate`` and return it only if it lies within ``base`` (already resolved),
+    else None. Non-strict resolution normalises ``..`` even for a not-yet-existing file — the
+    guard against path traversal.
+    """
+    try:
+        resolved = Path(candidate).resolve()
+        resolved.relative_to(base)
+    except ValueError, OSError, RuntimeError:
+        return None
+    return resolved
+
+
+def branding_path(value: Any) -> Any:
+    """Validator for branding.*_path: allow clearing (None/"") or a path inside branding_dir()."""
+    if value in (None, ""):
+        return value
+    if not isinstance(value, str):
+        raise ValidationError("Branding path must be a string.")
+    if contained_path(branding_dir(), value) is None:
+        raise ValidationError("Branding path escapes the branding directory.")
+    return value
