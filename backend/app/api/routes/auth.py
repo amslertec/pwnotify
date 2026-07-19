@@ -6,6 +6,7 @@ import contextlib
 import datetime as dt
 import io
 import json
+import secrets
 import uuid
 from pathlib import Path
 
@@ -86,6 +87,12 @@ log = get_logger("auth")
 
 _AVATAR_ALLOWED = {"image/png", "image/jpeg", "image/webp"}
 _AVATAR_MAX_BYTES = 5 * 1024 * 1024
+
+# A valid Argon2id hash of a random, never-used secret. `login` verifies against this when
+# no user matches the submitted username, so the Argon2 cost is paid on every attempt --
+# without it, an unknown username short-circuits the password check and answers measurably
+# faster than a known one, letting an attacker enumerate accounts (M7).
+_DUMMY_HASH = hash_password(secrets.token_hex(16))
 
 
 # --------------------------------------------------------------------------- #
@@ -258,22 +265,15 @@ async def login(
     user = await user_repo.get_by_username(session, body.username)
     now = utcnow()
 
-    if user and user.locked_until and user.locked_until > now:
-        await audit.record(
-            session,
-            action=audit.LOGIN_BLOCKED,
-            actor=user,
-            outcome="failure",
-            request=request,
-            detail={"reason": "account_locked", "locked_until": user.locked_until.isoformat()},
-        )
-        await session.commit()
-        raise AuthError(
-            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
-        )
+    # Always run an Argon2 verification, win or lose -- against the real hash for a known
+    # user, against `_DUMMY_HASH` for an unknown one. This costs the same either way, so an
+    # unknown username can no longer be told apart from a known one by response time (M7).
+    password_ok = verify_password(
+        body.password, user.password_hash if user is not None else _DUMMY_HASH
+    )
 
-    if user is None or not verify_password(body.password, user.password_hash):
-        if user is not None:
+    if user is None or not password_ok:
+        if user is not None and not (user.locked_until and user.locked_until > now):
             locked = register_failed_attempt(
                 user,
                 now=now,
@@ -303,7 +303,22 @@ async def login(
         await session.commit()
         raise AuthError("Ungültiger Benutzername oder Passwort.", code="invalid_credentials")
 
-    # Passwort ok
+    # Passwort ok -- ERST jetzt darf die Sperre offengelegt werden, denn nur wer das
+    # Passwort bereits kennt, kann daraus etwas lernen (kein Enumerationsvektor mehr).
+    if user.locked_until and user.locked_until > now:
+        await audit.record(
+            session,
+            action=audit.LOGIN_BLOCKED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "account_locked", "locked_until": user.locked_until.isoformat()},
+        )
+        await session.commit()
+        raise AuthError(
+            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
+        )
+
     reset_failed_attempts(user)
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
