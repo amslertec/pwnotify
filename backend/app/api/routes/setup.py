@@ -78,6 +78,12 @@ async def _require_setup_open_or_admin(request: Request, session: SessionDep) ->
 
 SetupGuard = Annotated[None, Depends(_require_setup_open_or_admin)]
 
+# Serialize the unauthenticated first-setup path so two racing requests cannot both pass the
+# count==0 guard and create a second superadmin. Transaction-scoped: released when
+# user_repo.create commits the INSERT below (or on rollback). A fixed arbitrary key namespaces
+# this lock; it does NOT block later authenticated create_superadmin calls (different path).
+_SETUP_ADMIN_LOCK_KEY = 0x50_57_4E_01  # "PWN\x01" -- arbitrary, stable
+
 
 @router.get("/status", response_model=SetupStatus)
 @limiter.limit(_settings.setup_rate_limit)
@@ -137,6 +143,7 @@ async def database_migrate(request: Request, session: SessionDep) -> DatabaseSta
 async def create_admin(
     body: AdminCreate, response: Response, request: Request, session: SessionDep
 ) -> UserOut:
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _SETUP_ADMIN_LOCK_KEY})
     if await _admin_count(session) > 0:
         raise ConflictError("Es existiert bereits ein Administrator.", code="admin_exists")
     # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
