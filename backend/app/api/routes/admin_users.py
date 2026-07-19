@@ -401,6 +401,7 @@ async def set_role(
     # runs BEFORE the final `session.commit()` below so no double-commit races the pending
     # `target.role` write -- both converge into the same already-committed state.
     if not target.is_sso and vorher != body.role and {vorher, body.role} <= {"admin", "auditor"}:
+        assert target.id is not None  # persisted account: id is always set here
         old_kind = "admin" if vorher == "admin" else "auditor"
         new_kind = "admin" if body.role == "admin" else "auditor"
         for tid in await tenant_repo.list_grant_tenant_ids(session, target.id, old_kind):
