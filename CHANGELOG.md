@@ -4,6 +4,20 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] — 2026-07-19
+
+### Security
+
+- **Single sign-on is now protected against login CSRF and code interception.** The OIDC login
+  flow now uses PKCE, a nonce, and a browser-bound state cookie, so a sign-in can only be completed
+  in the same browser that started it and an intercepted authorization code cannot be redeemed.
+- **Access tokens can now be revoked immediately.** Signing out, changing your password, "log out
+  other devices", and the automatic response to a detected stolen refresh token now invalidate the
+  short-lived access token right away, instead of leaving it usable until it expired. Your own
+  current session stays signed in where appropriate.
+- **The two-factor setup code can no longer be reused.** The code entered to finish enrolling
+  two-factor is now consumed, closing a short window in which it could be replayed.
+
 ## [0.2.7] — 2026-07-19
 
 ### Security
@@ -738,6 +752,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.8
 [0.2.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.7
 [0.2.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.6
 [0.2.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.5
