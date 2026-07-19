@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from ...core.errors import NotFoundError
@@ -10,7 +10,14 @@ from ...repositories import run_repo
 from ...schemas.common import Page
 from ...schemas.entities import RunDetail, RunOut
 from ...services.scheduler import get_scheduler
-from ..deps import AdminUser, CurrentUser, TenantSessionDep
+from ..deps import (
+    AdminUser,
+    CurrentUser,
+    SessionDep,
+    TenantSessionDep,
+    _resolve_authorized_tenant,
+    is_superadmin,
+)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -44,6 +51,16 @@ async def get_run(_: CurrentUser, run_id: int, session: TenantSessionDep) -> Run
 
 
 @router.post("/trigger", response_model=RunDetail)
-async def trigger(_: AdminUser, body: TriggerRequest) -> RunDetail:
-    run = await get_scheduler().trigger_now(dry_run_override=body.dry_run)
+async def trigger(
+    request: Request, body: TriggerRequest, user: AdminUser, session: SessionDep
+) -> RunDetail:
+    if is_superadmin(user):
+        # Instance-wide fan-out stays superadmin-exclusive.
+        run = await get_scheduler().trigger_now(dry_run_override=body.dry_run)
+    else:
+        # Every other admin triggers only their own authorized active tenant.
+        tid = await _resolve_authorized_tenant(request, user, session)
+        run = await get_scheduler().trigger_now(
+            dry_run_override=body.dry_run, tenant_ids=[tid]
+        )
     return RunDetail.model_validate(run, from_attributes=True)

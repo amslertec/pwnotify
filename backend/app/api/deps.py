@@ -252,6 +252,12 @@ async def require_admin(user: CurrentUser) -> AppUser:
 AdminUser = Annotated[AppUser, Depends(require_admin)]
 
 
+def is_superadmin(user: AppUser) -> bool:
+    """A local superadmin -- instance-wide authority (not SSO, role == "superadmin").
+    Shared predicate for routes that keep instance-wide behaviour superadmin-exclusive."""
+    return not user.is_sso and user.role == "superadmin"
+
+
 async def require_local_admin(user: CurrentUser) -> AppUser:
     """Lokale (nicht-SSO) Administration -- Admin ODER Superadmin, aber kein SSO-Konto.
 

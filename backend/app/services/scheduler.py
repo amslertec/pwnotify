@@ -89,8 +89,12 @@ class SchedulerService:
     async def _job(self) -> None:
         await self._run(trigger="schedule")
 
-    async def trigger_now(self, dry_run_override: bool | None = None) -> Run:
-        return await self._run(trigger="manual", dry_run_override=dry_run_override)
+    async def trigger_now(
+        self, dry_run_override: bool | None = None, *, tenant_ids: list[int] | None = None
+    ) -> Run:
+        return await self._run(
+            trigger="manual", dry_run_override=dry_run_override, tenant_ids=tenant_ids
+        )
 
     async def _active_tenant_ids(self) -> list[int]:
         """Aktive Kunden auf einer Owner-Session lesen (kein Tenant-Kontext aktiv).
@@ -105,18 +109,26 @@ class SchedulerService:
             rows = res.scalars().all()
         return [int(tid) for tid in rows]
 
-    async def _run(self, *, trigger: str, dry_run_override: bool | None = None) -> Run:
+    async def _run(
+        self,
+        *,
+        trigger: str,
+        dry_run_override: bool | None = None,
+        tenant_ids: list[int] | None = None,
+    ) -> Run:
         async with self._lock:  # verhindert Überlappung manuell/geplant
             self._running = True
             try:
-                tenant_ids = await self._active_tenant_ids()
-                if not tenant_ids:
+                # None -> all active tenants (scheduled fan-out); an explicit list -> exactly
+                # those (a scoped manual trigger passes its single authorized tenant).
+                ids = tenant_ids if tenant_ids is not None else await self._active_tenant_ids()
+                if not ids:
                     raise RuntimeError(
                         "Kein aktiver Kunde vorhanden -- der Lauf hat keinen Tenant zum "
                         "Ausführen gefunden."
                     )
                 last_run: Run | None = None
-                for tenant_id in tenant_ids:
+                for tenant_id in ids:
                     # Jeder Kunde läuft isoliert unter seinem eigenen Tenant-Kontext --
                     # die im Runner geöffnete Session wird dadurch automatisch
                     # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
