@@ -4,6 +4,38 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] — 2026-07-19
+
+### Security
+
+- **The full password policy is enforced everywhere a password is set.** First-setup admin,
+  password change, and admin-created accounts now require the same strength rules already applied
+  to invite and reset links, instead of only a minimum length.
+- **Login no longer reveals whether an account exists or is locked.** A wrong password looks and
+  behaves the same whether the account is unknown, wrong-password, or locked, closing a
+  user-enumeration and lock-status oracle.
+- **Recovery codes are stronger.** New two-factor recovery codes use more entropy and are stored
+  with the same strong hashing as passwords; existing codes keep working until you re-enrol.
+- **Customer settings and files are strictly separated per customer.** Reading a tenant's settings
+  no longer folds other tenants' values together, and uploaded logos/favicons are stored in a
+  per-customer location so one customer can never overwrite another's branding.
+- **Profile photos are scoped to the caller's customers.** An administrator can no longer fetch the
+  avatar of a user outside their own customers, and the endpoint no longer reveals whether an
+  arbitrary account exists.
+- **Uploaded images are capped before decoding**, preventing a small crafted file from exhausting
+  memory (decompression-bomb protection) on branding and avatar uploads.
+- **More security-relevant actions are written to the audit log** — manual notifications and
+  exclusions, run triggers, notification retries, branding changes, SSO sync, setup, and
+  two-factor enrolment — and customer-attributable events now appear in the right customer's audit
+  view instead of only for the provider.
+
+### Changed
+
+- Setting a too-weak password on `/setup/admin`, `/auth/password`, or the admin create-user
+  endpoints now returns HTTP 403 `code="password_policy"` (previously only invite/reset did).
+- Uploading or deleting branding now requires write access to the customer (an auditor-only account
+  can no longer change branding).
+
 ## [0.2.8] — 2026-07-19
 
 ### Security
@@ -752,6 +784,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.9
 [0.2.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.8
 [0.2.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.7
 [0.2.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.6

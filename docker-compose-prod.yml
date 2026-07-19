@@ -43,8 +43,8 @@ services:
 
   app:
     # From Docker Hub. Pin by digest for immutable deployments, e.g.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.2.8@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.2.8}
+    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.2.9@sha256:<digest>
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.2.9}
     pull_policy: always
     depends_on:
       db:
