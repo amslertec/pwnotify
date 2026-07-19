@@ -64,15 +64,15 @@ class SchedulerService:
         """Treibt den EINEN globalen APScheduler-Job (`start`/`reschedule`) -- deterministisch
         über den Default-Tenant gescoped statt blind über alle Tenants hinweg.
 
-        `reschedule()` kann aus einer Request-Route heraus laufen, die selbst bereits unter
-        einem aktiven (Nicht-Default-)Tenant steht (`tenant_scoped_session`, siehe
-        `api/routes/settings.py`). `self.session_factory` ist `open_active_session` -- ohne
-        expliziten `use_owner_context()`-Block würde der Lookup unten dann auf der
-        Runtime-Engine (Rolle `pwnotify_app`, GUC = der AKTIVE Fremdtenant) laufen statt auf
-        dem Owner. `tenant` ist zwar nicht RLS-gescoped und `pwnotify_app` behält aktuell
-        SELECT darauf (siehe Migration `f7a8b9c0d1e2`), das Ergebnis wäre also heute
-        identisch -- aber das ist eine versteckte Abhängigkeit von genau diesem Grant, keine
-        bewusste Entscheidung. Der Owner-Kontext macht den Lookup unabhängig davon."""
+        `reschedule()` can run from a request route that is itself already under an active
+        (non-default) tenant (`tenant_scoped_session`, see `api/routes/settings.py`).
+        `self.session_factory` is `open_active_session` -- without an explicit
+        `use_owner_context()` block, the lookup below would then run on the runtime engine
+        (role `pwnotify_app`, GUC = the ACTIVE foreign tenant) instead of on the owner.
+        `tenant` isn't RLS-scoped and `pwnotify_app` currently still has SELECT on it (see
+        migration `f7a8b9c0d1e2`), so the result would be identical today -- but that's a
+        hidden dependency on exactly that grant, not a deliberate decision. The owner context
+        makes the lookup independent of it."""
         with use_owner_context():
             async with self.session_factory() as owner:
                 tenant = await tenant_repo.default_tenant(owner)
@@ -116,9 +116,10 @@ class SchedulerService:
         Echte Mehrmandanten-Läufe (gestaffelte Startzeiten, Concurrency-Limit) sind
         Design §8 und ein eigener Folge-Task.
         """
-        async with self.session_factory() as session:
-            res = await session.execute(text("SELECT id FROM tenant WHERE is_active"))
-            rows = res.scalars().all()
+        with use_owner_context():
+            async with self.session_factory() as session:
+                res = await session.execute(text("SELECT id FROM tenant WHERE is_active"))
+                rows = res.scalars().all()
         return [int(tid) for tid in rows]
 
     async def _run(

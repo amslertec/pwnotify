@@ -92,10 +92,10 @@ def apply_tenant_on_begin(dbapi_connection: Any, connection_record: object) -> N
 async def tenant_scoped_session(tenant_id: int) -> AsyncGenerator[AsyncSession]:
     """Session, deren Transaktionen automatisch tenant-scoped sind (App-Rolle + GUC).
 
-    Läuft über die Runtime-Engine (Login-Rolle `pwnotify_runtime`, NOSUPERUSER/NOBYPASSRLS,
-    Mitglied von `pwnotify_app`) statt über die Owner-Engine: selbst ein `RESET ROLE` aus
-    dieser Session heraus landet auf `pwnotify_runtime`, nicht auf dem Owner/Superuser -- RLS
-    bleibt in jedem Fall wirksam (siehe `app/db/session.py::get_runtime_session_factory`).
+    Runs on the runtime engine (login role `pwnotify_runtime`, NOSUPERUSER/NOBYPASSRLS,
+    member of `pwnotify_app`) instead of the owner engine: even a `RESET ROLE` issued from
+    this session lands on `pwnotify_runtime`, not on the owner/superuser -- RLS stays
+    enforced no matter what (see `app/db/session.py::get_runtime_session_factory`).
     """
     with _bind_tenant(tenant_id):
         async with get_runtime_session_factory()() as session:

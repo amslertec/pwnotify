@@ -42,7 +42,7 @@ from app.services import audit
 from app.services.audit import LOGIN_FAILED
 from app.services.scheduler import SchedulerService
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
 async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
@@ -240,6 +240,46 @@ async def test_read_default_schedule_looks_up_tenant_on_owner_role_under_foreign
     dtid = await _real_default_tenant_id(migrated_engine)
     assert dtid != a
     assert isinstance(cron, str) and isinstance(tz, str)
+
+
+async def test_active_tenant_ids_reads_on_owner_role_under_foreign_tenant(
+    migrated_engine: AsyncEngine,
+    two_active_tenants: tuple[int, int],
+) -> None:
+    """`_active_tenant_ids` reads the instance-wide `tenant` table -- like
+    `_read_default_schedule`, this lookup must run on the OWNER `session_user`, independent of
+    whichever tenant happens to be active in the caller's context (`use_tenant`). Without an
+    explicit `use_owner_context()` around it, `self.session_factory` (`open_active_session`)
+    would route it onto the `pwnotify_runtime` engine under the active FOREIGN tenant's
+    role/GUC instead."""
+    a, b = two_active_tenants
+    captured: dict[str, tuple[str, str]] = {}
+
+    def _capturing_factory() -> AsyncSession:
+        session = open_active_session()
+        real_execute = session.execute
+
+        async def _execute(*args: Any, **kwargs: Any) -> Any:
+            result = await real_execute(*args, **kwargs)
+            if "pair" not in captured:
+                row = (await real_execute(text("SELECT session_user, current_user"))).one()
+                captured["pair"] = (row[0], row[1])
+            return result
+
+        session.execute = _execute  # type: ignore[method-assign]
+        return session
+
+    service = SchedulerService(_capturing_factory, base_url="http://test.local")
+    async with use_tenant(a):
+        ids = await service._active_tenant_ids()
+
+    assert "pair" in captured, "tenant lookup was never executed"
+    su, cu = captured["pair"]
+    assert (su, cu) == ("pwnotify", "pwnotify"), (
+        f"active-tenant lookup leaked onto the active foreign tenant's role/GUC: {su}/{cu}"
+    )
+    # Sanity: still resolves the real active tenants, not just tenant `a`.
+    assert a in ids and b in ids
 
 
 # ---- 3. Owner-context counter-checks: the audit trail / cross-tenant paths stay owner ----- #
