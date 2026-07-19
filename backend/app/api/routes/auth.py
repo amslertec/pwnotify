@@ -1010,6 +1010,21 @@ async def oidc_callback(
             role=role,
             is_sso=True,
         )
+    elif not user.is_sso:
+        # A local (non-SSO) account already owns this username. Never flip it to SSO: doing so
+        # would let an Entra identity take over a local admin/superadmin and lock the real owner
+        # out (`require_superadmin` needs `not is_sso`). Fail-safe: deny the login, change nothing.
+        log.warning("oidc_local_account_conflict", username=result.username, role=user.role)
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_username=result.username,
+            outcome="failure",
+            request=request,
+            detail={"sso": True, "reason": "local_account_exists"},
+        )
+        await session.commit()
+        return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
     else:
         user.is_sso = True
         user.display_name = result.display_name

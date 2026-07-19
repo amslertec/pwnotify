@@ -343,6 +343,11 @@ async def sync_sso_users(
                 is_sso=True,
                 tenant_id=tenant_id,
             )
+        elif not user.is_sso:
+            # A local (non-SSO) account owns this UPN. Never adopt it into SSO (would silently
+            # let group membership take over a local admin/superadmin). Skip it entirely.
+            log.warning("sso_sync_local_account_conflict", username=upn, role=user.role)
+            continue
         else:
             user.is_sso = True
             user.display_name = name
