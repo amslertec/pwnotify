@@ -139,13 +139,13 @@ async def _resolve_authorized_tenant(
     Claim (z. B. ein zwischenzeitlich deaktivierter eigener Tenant, oder ein fremder Tenant
     in einem manipulierten Token) NIE stillschweigend mit 0 Zeilen, sondern immer explizit.
 
-    `write` (Task 4, H8) reicht das Gate an `tenant_repo.is_allowed` durch: `write=True`
-    verlangt Mitgliedschaft in `admin_tenants(user)` (Schreib-Kapazität), `write=False`
-    (Default) nur in `allowed_tenant_ids(user)` (Admin- ODER Auditor-Kapazität, reines
-    Lesen). Ohne diese Unterscheidung autorisierte JEDE tenant-gescopte Route -- auch
-    schreibende -- bislang mit dem Lese-Gate, sodass ein Konto mit nur einem
-    `auditor_tenant`-Grant (z. B. eine veraltete Zuweisungszeile nach einer
-    auditor->admin-Rollenänderung) Schreib-/Aktionsrouten erreichen konnte.
+    `write` (Task 4, H8) passes the gate through to `tenant_repo.is_allowed`: `write=True`
+    requires membership in `admin_tenants(user)` (write capability), `write=False`
+    (default) only in `allowed_tenant_ids(user)` (admin OR auditor capability, read-only).
+    Without this distinction, EVERY tenant-scoped route -- including write routes -- was
+    previously authorized with the read gate, so an account with only an
+    `auditor_tenant` grant (e.g. a stale assignment row left over from an
+    auditor->admin role change) could reach write/action routes.
 
     Kein Claim (älteres Token, oder noch nie gesetzt): der Tenant wird wie beim Login neu
     aufgelöst (`resolve_initial_tenant`) und ebenso über `is_allowed` gegengeprüft. Liefert
@@ -224,14 +224,14 @@ TenantSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_servi
 async def get_tenant_session_write(
     request: Request, user: CurrentUser, session: SessionDep
 ) -> AsyncGenerator[AsyncSession]:
-    """Wie `get_tenant_session`, aber mit dem SCHREIB-Gate (Task 4, H8): autorisiert über
-    `_resolve_authorized_tenant(..., write=True)`, verlangt also Mitgliedschaft in
-    `admin_tenants(user)` (oder Superadmin) statt der blossen Lese-Zuweisung.
+    """Like `get_tenant_session`, but with the WRITE gate (Task 4, H8): authorized via
+    `_resolve_authorized_tenant(..., write=True)`, requiring membership in
+    `admin_tenants(user)` (or superadmin) instead of the mere read assignment.
 
-    Für die tenant-gescopten SCHREIB-/Aktionsrouten (Settings ändern, Exclusions, Retry,
-    Sofort-Reminder, Bulk-Aktionen, `/runs/trigger`) -- ein Konto mit nur einem
-    `auditor_tenant`-Grant darf hierüber NICHTS erreichen, auch wenn es (z. B. durch eine
-    veraltete Zuweisungszeile) den `AdminUser`-Rollen-Gate besteht."""
+    For the tenant-scoped WRITE/action routes (settings changes, exclusions, retry,
+    immediate reminder, bulk actions, `/runs/trigger`) -- an account with only an
+    `auditor_tenant` grant must reach NOTHING through this, even if it passes the
+    `AdminUser` role gate (e.g. due to a stale assignment row)."""
     tid = await _resolve_authorized_tenant(request, user, session, write=True)
     async with tenant_scoped_session(tid) as scoped:
         yield scoped
