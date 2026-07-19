@@ -11,6 +11,8 @@ import time
 import pyotp
 import qrcode
 
+from .security import hash_password, verify_password
+
 _ISSUER = "PwNotify"
 
 
@@ -61,18 +63,35 @@ def qr_png_data_uri(uri: str) -> str:
 
 
 def _hash_code(code: str) -> str:
+    """Legacy-Hash (unsalted SHA-256) — nur noch zur Verifikation alter Codes, nicht mehr
+    zum Erzeugen neuer (siehe `generate_recovery_codes`)."""
     return hashlib.sha256(code.encode()).hexdigest()
 
 
 def generate_recovery_codes(n: int = 10) -> tuple[list[str], list[str]]:
-    """Gibt (Klartext-Codes zum einmaligen Anzeigen, SHA-256-Hashes zum Speichern) zurück."""
-    codes = [
-        f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(n)
-    ]
-    return codes, [_hash_code(c) for c in codes]
+    """Gibt (Klartext-Codes zum einmaligen Anzeigen, Argon2id-Hashes zum Speichern) zurück.
+
+    5 Gruppen à `token_hex(2)` = 80 bit Entropie (vorher 3 Gruppen = 48 bit). Speicher-Hash
+    via Argon2id (`hash_password`), konsistent mit Passwort-Hashing im Rest der App.
+    """
+    codes = ["-".join(secrets.token_hex(2) for _ in range(5)) for _ in range(n)]
+    return codes, [hash_password(c) for c in codes]
 
 
 def match_recovery_code(code: str, hashes: list[str]) -> str | None:
-    """Prüft einen eingegebenen Recovery-Code gegen die Hash-Liste; gibt den Treffer-Hash zurück."""
-    h = _hash_code((code or "").strip().lower())
-    return h if h in hashes else None
+    """Prüft einen eingegebenen Recovery-Code gegen die Hash-Liste; gibt den Treffer-Hash zurück.
+
+    Format-koexistent: erkennt sowohl neue Argon2id-Hashes (selbstbeschreibend via
+    `$argon2` -Präfix) als auch bestehende Legacy-SHA-256-Hashes (64 Hex-Zeichen). Nötig,
+    weil Recovery-Codes sich nicht neu ableiten lassen — bestehende SHA-256-Codes müssen
+    verifizierbar bleiben, bis der Nutzer 2FA neu einrichtet.
+    """
+    normalized = (code or "").strip().lower()
+    legacy_hash = _hash_code(normalized)
+    for h in hashes:
+        if h.startswith("$argon2"):
+            if verify_password(normalized, h):
+                return h
+        elif secrets.compare_digest(legacy_hash, h):
+            return h
+    return None
