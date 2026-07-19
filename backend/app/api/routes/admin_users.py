@@ -718,21 +718,40 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
 
 
 @router.get("/{user_id}/avatar")
-async def get_user_avatar(_: AdminUser, user_id: int) -> FileResponse:
-    """Profilbild EINES Kontos für die Access-Seite (Task B) -- Pendant zu `auth.py`s
-    `GET /auth/me/avatar`, aber admin-facing (beliebiges `user_id`, nicht nur der
-    Aufrufer selbst). Gate ist bewusst `AdminUser` (jeder Admin/Superadmin) statt einer
-    tenant-gescopten Prüfung: die Access-Seite selbst scopt bereits, wer welche Konten
-    überhaupt zu sehen bekommt (`list_users` oben); ein rein lesendes Bild-Serving ohne
-    jede weitere Kontodaten-Preisgabe rechtfertigt keine zusätzliche Tenant-Prüfung hier.
-    Kein Graph-Abgleich -- die Datei liegt bereits lokal gecacht (SSO-Login-Cache bzw.
-    Selbst-Upload), diese Route liest nur.
+async def get_user_avatar(
+    request: Request, admin: AdminUser, user_id: int, session: SessionDep
+) -> FileResponse:
+    """Profile photo of ONE account for the Access page (Task B) -- counterpart to
+    `auth.py`'s `GET /auth/me/avatar`, but admin-facing (arbitrary `user_id`, not just the
+    caller). Gate is `AdminUser` (any admin/superadmin) PLUS the same subset-scope rule
+    `set_role`/`delete_user`/`send_reset` already use (Task 6, M6 fix -- previously this
+    route trusted `AdminUser` alone and served ANY account's cached photo, letting an admin
+    of tenant A read a foreign account's picture, `user_id`s being sequential and
+    enumerable). A local superadmin bypasses the check (full instance-wide access, same as
+    the other routes); every other caller needs the target's ENTIRE tenant membership to be
+    a subset of the caller's own managed tenants.
 
-    `Cache-Control: max-age=3600`: anders als `auth.py`s `/me/avatar` (dort `no-cache`,
-    weil ein Selbst-Upload sofort sichtbar sein soll) trägt die URL hier IMMER
-    `avatar_version` als Cache-Buster-Query (`?v=...`, s. `access.tsx`) -- eine neue
-    Version bekommt automatisch eine neue URL, ein langes Caching der alten URL ist also
-    gefahrlos und entlastet die Access-Seite bei vielen Konten."""
+    Out-of-scope and non-existent both raise the SAME `NotFoundError("no_avatar")` --
+    deliberately `NotFoundError`, not `ForbiddenError`, unlike the mutation routes above: a
+    403-vs-404 split (or a 200-vs-404 split) here would itself be an existence oracle for
+    `user_id`, and this route has no mutation to guard, only leakage to avoid.
+
+    No Graph round-trip -- the file is already cached locally (SSO login cache or a
+    self-upload), this route only reads.
+
+    `Cache-Control: max-age=3600`: unlike `auth.py`'s `/me/avatar` (`no-cache` there, since a
+    self-upload must be visible immediately) the URL here always carries `avatar_version` as
+    a cache-busting query (`?v=...`, see `access.tsx`) -- a new version gets a new URL, so
+    long caching of the old URL is safe and reduces load on the Access page for large
+    account lists."""
+    target = await user_repo.get(session, user_id)
+    if target is None:
+        raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
+    if admin.is_sso or admin.role != "superadmin":
+        target_scope = await tenant_repo.allowed_tenant_ids(session, target)
+        caller_admin_tenants = await tenant_repo.admin_tenants(session, admin)
+        if not target_scope or not target_scope <= caller_admin_tenants:
+            raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
     if _avatar_mtime(user_id) is None:
         raise NotFoundError("Kein Profilbild vorhanden.", code="no_avatar")
     return FileResponse(
