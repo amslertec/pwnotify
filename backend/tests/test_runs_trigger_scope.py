@@ -116,6 +116,17 @@ async def test_tenant_admin_trigger_is_scoped_to_own_tenant(
     set_scheduler(SchedulerService(get_session_factory(), base_url="http://test.local"))
 
     factory = get_session_factory()
+
+    # Baseline: highest default-tenant run id BEFORE the scoped trigger runs, read on its own
+    # short-lived session so it cannot see any run the trigger call below is about to create.
+    async with factory() as session:
+        baseline_default_run_id = (
+            await session.execute(
+                text("SELECT COALESCE(MAX(id), 0) FROM run WHERE tenant_id = :d"),
+                {"d": default_id},
+            )
+        ).scalar_one()
+
     async with factory() as session:
         admin = await user_repo.get(session, admin_id)
         assert admin is not None
@@ -132,15 +143,14 @@ async def test_tenant_admin_trigger_is_scoped_to_own_tenant(
         ).scalar_one()
     assert run_tenant_id == cid, f"scoped trigger returned a foreign run: {run_tenant_id}"
 
-    # No run was created for the default tenant by this scoped call.
+    # No new run was created for the default tenant by this scoped call. Compared against the
+    # baseline run id (not a time window) so this is deterministic regardless of what sibling
+    # tests in this module do concurrently or within the same clock second.
     async with factory() as session:
         default_runs_for_this = (
             await session.execute(
-                text(
-                    "SELECT count(*) FROM run WHERE tenant_id = :d AND trigger = 'manual' "
-                    "AND started_at >= now() - interval '1 minute'"
-                ),
-                {"d": default_id},
+                text("SELECT count(*) FROM run WHERE tenant_id = :d AND id > :baseline"),
+                {"d": default_id, "baseline": baseline_default_run_id},
             )
         ).scalar_one()
     assert default_runs_for_this == 0, "scoped trigger must not run the default tenant"
