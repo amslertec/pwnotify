@@ -91,6 +91,28 @@ async def test_get_logo_refuses_escaped_stored_path(
         await gen.aclose()
 
 
+# --- (b') _file_version containment (public, unauthenticated) ------------------ #
+async def test_file_version_refuses_escaped_stored_path(
+    tmp_data_dir: Path, cleanup_branding_settings: None
+) -> None:
+    # A secret file OUTSIDE the branding dir (mirrors /data/secret.key). Without the
+    # containment guard, `_file_version` would return its mtime — an existence/mtime
+    # oracle for arbitrary paths, reachable unauthenticated via GET /branding.
+    secret = tmp_data_dir / "secret.key"
+    secret.write_bytes(b"FERNET-KEY-BYTES")
+
+    assert branding._file_version(str(secret)) == 0
+
+
+def test_file_version_returns_mtime_for_contained_path(tmp_data_dir: Path) -> None:
+    bdir = branding_dir()
+    bdir.mkdir(parents=True, exist_ok=True)
+    logo = bdir / "logo.png"
+    logo.write_bytes(b"PNGDATA")
+
+    assert branding._file_version(str(logo)) > 0
+
+
 # --- (c) mail attachment containment -------------------------------------------- #
 def test_mail_attachment_ignores_escaped_path(tmp_data_dir: Path) -> None:
     secret = tmp_data_dir / "secret.key"

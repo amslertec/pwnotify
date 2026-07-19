@@ -98,9 +98,14 @@ async def public_branding(svc: PublicTenantSettingsDep, response: Response) -> d
 
 
 def _file_version(path: str | None) -> int:
-    if path and Path(path).exists():
-        return int(Path(path).stat().st_mtime)
-    return 0
+    """Cache-buster derived from mtime — must go through the same containment guard as
+    get_logo/get_favicon. Without it, this (unauthenticated) helper would leak an
+    existence/mtime oracle for arbitrary paths stored in branding.*_path.
+    """
+    real = _safe_branding_file(path)
+    if real is None:
+        return 0
+    return int(real.stat().st_mtime)
 
 
 # Zielhöhe für gespeicherte Raster-Logos. Anzeige max. ~56px (Login) -> bei 3x-HiDPI
