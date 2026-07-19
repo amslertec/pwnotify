@@ -4,6 +4,36 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] — 2026-07-19
+
+### Security
+
+- **Tenant queries now run as a dedicated non-superuser database role.** Previously the app
+  connected to Postgres as the owning superuser for all work, so a compromised tenant route could
+  in principle bypass row-level security by table ownership. Tenant-scoped queries — from both
+  request handling and background jobs — now use a separate `pwnotify_runtime` login role
+  (`NOSUPERUSER`, `NOBYPASSRLS`), so row-level security can no longer be escaped. Migrations and
+  owner-context work are unchanged.
+- **Least privilege on provider tables.** The tenant role's access to four instance-wide tables
+  (invite/reset tokens, group configuration and membership snapshots) has been revoked entirely —
+  they are only ever used in owner context, so the tenant surface should never reach them.
+- **Write actions require write permission, not just read access.** Mutating tenant routes
+  (triggering a run, changing settings, retrying or excluding, bulk actions) now authorize against
+  write access. An account with only read (auditor) access to a customer can no longer perform
+  them, and a role change now migrates the account's access grants so capability never lags behind
+  the role.
+- **A guard-coverage test now fails the build if any API route is added without an explicit access
+  decision**, closing the class of "accidentally unauthenticated endpoint" at CI time.
+
+### Upgrading
+
+- This release adds a **required** environment variable `PWNOTIFY_RUNTIME_DB_PASSWORD`. Set it to a
+  strong value (e.g. `openssl rand -base64 24`) in your `.env` before upgrading — the app fails
+  fast on start if it is unset rather than silently falling back to the superuser connection. The
+  runtime role is provisioned automatically by the startup migration; no manual SQL, no
+  `pg_hba.conf` change, and no change to `POSTGRES_USER`/`PWNOTIFY_DATABASE_URL` is needed. See the
+  "Upgrading an existing deployment" section in the README.
+
 ## [0.2.6] — 2026-07-19
 
 ### Security
@@ -708,6 +738,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.7
 [0.2.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.6
 [0.2.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.5
 [0.2.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.4
