@@ -97,9 +97,7 @@ async def status(request: Request, session: SessionDep) -> SetupStatus:
 
 @router.post("/database/test", response_model=DatabaseStatus)
 @limiter.limit(_settings.setup_rate_limit)
-async def database_test(
-    request: Request, session: SessionDep, _: SetupGuard
-) -> DatabaseStatus:
+async def database_test(request: Request, session: SessionDep, _: SetupGuard) -> DatabaseStatus:
     try:
         await session.execute(text("SELECT 1"))
     except Exception:

@@ -60,7 +60,5 @@ async def trigger(
     else:
         # Every other admin triggers only their own authorized active tenant.
         tid = await _resolve_authorized_tenant(request, user, session)
-        run = await get_scheduler().trigger_now(
-            dry_run_override=body.dry_run, tenant_ids=[tid]
-        )
+        run = await get_scheduler().trigger_now(dry_run_override=body.dry_run, tenant_ids=[tid])
     return RunDetail.model_validate(run, from_attributes=True)

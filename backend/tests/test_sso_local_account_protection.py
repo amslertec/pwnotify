@@ -46,7 +46,11 @@ async def _call_callback(session: AsyncSession, result: oidc.OidcResult) -> Redi
     state = oidc.sign_state()
     with patch("app.services.oidc.exchange_and_verify", new=AsyncMock(return_value=result)):
         resp = await oidc_callback(
-            request, session, code="fake-code", state=state, error=None  # type: ignore[arg-type]
+            request,
+            session,
+            code="fake-code",
+            state=state,
+            error=None,  # type: ignore[arg-type]
         )
     assert isinstance(resp, RedirectResponse)
     return resp

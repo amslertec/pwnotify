@@ -100,9 +100,7 @@ async def customer_and_admin(
         async with migrated_engine.connect() as conn:
             await conn.execute(text("DELETE FROM run WHERE tenant_id = :c"), {"c": cid})
             await conn.execute(text("DELETE FROM admin_tenant WHERE tenant_id = :c"), {"c": cid})
-            await conn.execute(
-                text("DELETE FROM user_session WHERE user_id = :u"), {"u": admin.id}
-            )
+            await conn.execute(text("DELETE FROM user_session WHERE user_id = :u"), {"u": admin.id})
             await conn.execute(text("DELETE FROM app_user WHERE id = :u"), {"u": admin.id})
             await conn.execute(text("DELETE FROM tenant WHERE id = :c"), {"c": cid})
             await conn.commit()
@@ -181,7 +179,10 @@ async def test_superadmin_trigger_still_fans_out(
             )
             request = _FakeRequest()  # superadmin path ignores the claim
             await trigger(
-                request, TriggerRequest(dry_run=True), superadmin, session  # type: ignore[arg-type]
+                request,
+                TriggerRequest(dry_run=True),
+                superadmin,
+                session,  # type: ignore[arg-type]
             )
 
         async with factory() as session:
