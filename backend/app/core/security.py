@@ -160,8 +160,16 @@ def create_2fa_token(subject: str) -> str:
     return jwt.encode(payload, _signing_key(), algorithm=_ALG)
 
 
-def issue_token_pair(subject: str, *, active_tenant: int | None = None) -> TokenPair:
-    extra = {"active_tenant": active_tenant} if active_tenant is not None else None
+def issue_token_pair(
+    subject: str, *, active_tenant: int | None = None, generation: int = 0
+) -> TokenPair:
+    """Issues a fresh access/refresh pair. `generation` is stamped into the ACCESS token as
+    a `gen` claim (see `AppUser.token_generation`) so `get_current_user` can revoke it by
+    bumping the user's generation -- kept off the refresh token, which is already
+    stateful/revocable via its `user_session` row."""
+    extra: dict[str, Any] = {"gen": generation}
+    if active_tenant is not None:
+        extra["active_tenant"] = active_tenant
     access, a_exp = create_access_token(subject, extra=extra)
     refresh, jti, r_exp = create_refresh_token(subject)
     return TokenPair(access, refresh, jti, a_exp, r_exp)

@@ -229,7 +229,7 @@ async def _complete_login(
     if tid is not None and not await tenant_repo.is_allowed(session, user, tid):
         tid = None
 
-    pair = issue_token_pair(str(user.id), active_tenant=tid)
+    pair = issue_token_pair(str(user.id), active_tenant=tid, generation=user.token_generation)
     await user_repo.create_session(
         session,
         user_id=user.id,  # type: ignore[arg-type]
@@ -499,7 +499,9 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
     # den Claim bei JEDEM Refresh (alle `access_token_ttl_min`), und `get_tenant_session`
     # würde den Tenant über `resolve_initial_tenant` neu auflösen statt den zuvor über
     # `/auth/switch-tenant` gewählten aktiven Tenant beizubehalten.
-    pair = issue_token_pair(str(user.id), active_tenant=us.active_tenant_id)
+    pair = issue_token_pair(
+        str(user.id), active_tenant=us.active_tenant_id, generation=user.token_generation
+    )
     us.refresh_jti = pair.refresh_jti
     us.token_hash = hash_token(pair.refresh_token)
     us.expires_at = pair.refresh_expires
@@ -521,6 +523,11 @@ async def logout(request: Request, response: Response, session: SessionDep) -> M
             # in der Sitzungsliste noch als Datensatz zurückbleiben.
             await user_repo.delete_session_by_jti(session, payload["jti"])
             actor = await user_repo.get(session, int(payload["sub"]))
+            if actor is not None and actor.id is not None:
+                # Kills the caller's current access token immediately (its `gen` claim is
+                # now stale) instead of leaving it valid for up to `access_token_ttl_min`
+                # after logout -- the session row is already gone above.
+                await user_repo.bump_token_generation(session, actor.id)
             await audit.record(session, action=audit.LOGOUT, actor=actor, request=request)
             await session.commit()
         except jwt.PyJWTError:
@@ -579,7 +586,9 @@ async def switch_tenant(
             code="session_idle_timeout",
         )
 
-    pair = issue_token_pair(str(user.id), active_tenant=body.tenant_id)
+    pair = issue_token_pair(
+        str(user.id), active_tenant=body.tenant_id, generation=user.token_generation
+    )
     us.refresh_jti = pair.refresh_jti
     us.token_hash = hash_token(pair.refresh_token)
     us.expires_at = pair.refresh_expires
@@ -725,7 +734,11 @@ async def revoke_other_sessions(
 
 @router.post("/password", response_model=Message)
 async def change_password(
-    request: Request, body: PasswordChangeRequest, user: CurrentUser, session: SessionDep
+    request: Request,
+    body: PasswordChangeRequest,
+    user: CurrentUser,
+    session: SessionDep,
+    response: Response,
 ) -> Message:
     if not verify_password(body.current_password, user.password_hash):
         raise AuthError("Aktuelles Passwort ist falsch.", code="wrong_current_password")
@@ -742,6 +755,24 @@ async def change_password(
         with contextlib.suppress(jwt.PyJWTError):
             current_jti = decode_token(token, expected_type="refresh").get("jti")
     revoked = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
+
+    # Task 2 (L1): invalidate ALL of the user's access tokens -- including the caller's own,
+    # currently held one -- then immediately re-issue a fresh pair for THIS device/session so
+    # the caller stays logged in with a gen-N token instead of being locked out by their own
+    # password change. `session.refresh` picks up the value the UPDATE just wrote.
+    await user_repo.bump_token_generation(session, user.id)  # type: ignore[arg-type]
+    await session.refresh(user)
+    if current_jti is not None:
+        us = await user_repo.get_session_by_jti(session, current_jti)
+        if us is not None:
+            pair = issue_token_pair(
+                str(user.id), active_tenant=us.active_tenant_id, generation=user.token_generation
+            )
+            us.refresh_jti = pair.refresh_jti
+            us.token_hash = hash_token(pair.refresh_token)
+            us.expires_at = pair.refresh_expires
+            us.last_used_at = utcnow()
+            set_auth_cookies(response, pair)
 
     await audit.record(
         session,
@@ -1063,7 +1094,9 @@ async def oidc_callback(
     # `active_tenant` schliesst den Task-3-Defer: die SSO-Sitzung trägt den Tenant-Claim
     # direkt ab dem Login, statt ihn bei jedem Request über `resolve_initial_tenant` neu
     # aufzulösen.
-    pair = issue_token_pair(str(user.id), active_tenant=home_tenant_id)
+    pair = issue_token_pair(
+        str(user.id), active_tenant=home_tenant_id, generation=user.token_generation
+    )
     await user_repo.create_session(
         session,
         user_id=user.id,  # type: ignore[arg-type]

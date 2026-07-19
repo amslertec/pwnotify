@@ -92,6 +92,12 @@ async def get_current_user(request: Request, session: SessionDep) -> AppUser:
     user = await user_repo.get(session, int(payload["sub"]))
     if user is None or not user.is_active:
         raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
+    # Revocation check (Task 2, L1): the user row is already loaded above, so this is a
+    # plain field access -- zero extra DB roundtrips. A missing `gen` claim (token issued
+    # before this feature shipped) defaults to 0, matching the default-0 column, so
+    # existing tokens in the wild stay valid until they naturally expire.
+    if payload.get("gen", 0) != user.token_generation:
+        raise AuthError("Sitzung ungültig.", code="token_revoked")
     return user
 
 

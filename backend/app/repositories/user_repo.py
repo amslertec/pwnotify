@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.tenant import AdminTenant, AuditorTenant
@@ -291,7 +291,17 @@ async def revoke_session(session: AsyncSession, jti: str) -> None:
         await session.commit()
 
 
+async def bump_token_generation(session: AsyncSession, user_id: int) -> None:
+    """Invalidate all access tokens issued so far for this user (see AppUser.token_generation)."""
+    await session.execute(
+        update(AppUser)
+        .where(AppUser.id == user_id)
+        .values(token_generation=AppUser.token_generation + 1)
+    )
+
+
 async def revoke_all(session: AsyncSession, user_id: int) -> None:
     for us in await list_sessions(session, user_id):
         us.revoked = True
+    await bump_token_generation(session, user_id)
     await session.commit()

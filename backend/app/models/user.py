@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlmodel import Field, SQLModel
 
 from ._base import utcnow
@@ -43,6 +43,13 @@ class AppUser(SQLModel, table=True):
     # bleibt rund 90 s gültig (valid_window=1) und wäre ohne diese Sperre in der Zeit
     # mehrfach einsetzbar — wer ihn abfängt, käme damit ein zweites Mal hinein.
     totp_last_step: int | None = Field(default=None)
+
+    # Access-token generation. Bumped on logout, revoke-all, and password change to make
+    # every access token issued before the bump fail `get_current_user` (they carry the old
+    # `gen` claim). Refresh tokens are already revocable via `user_session`.
+    token_generation: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
 
     failed_login_count: int = Field(default=0)
     locked_until: dt.datetime | None = Field(
