@@ -30,7 +30,7 @@ from .default_templates import (
     DEFAULT_TEXT_RESET_DE,
     DEFAULT_TEXT_RESET_EN,
 )
-from .settings_validators import branding_path
+from .settings_validators import branding_path, number_range
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ SETTINGS: dict[str, SettingSpec] = {
     # Compliance ist eine lückenlose Historie meist erwünscht. Wer eine Löschfrist
     # braucht (Datenschutz), setzt hier z. B. 365; ältere Einträge werden nach jedem
     # geplanten Lauf entfernt.
-    "audit.retention_days": SettingSpec(0),
+    "audit.retention_days": SettingSpec(0, validate=number_range(min_value=0, integer_only=True)),
     # ---- Aufbewahrung personenbezogener Daten (alle 0 = unbegrenzt) ----
     # Entra-Konten, die seit so vielen Tagen nicht mehr im Sync auftauchen, gelten als
     # ausgeschieden und werden entfernt. Ohne Frist bleiben Name, UPN und Mailadressen

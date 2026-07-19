@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.audit import AuditLog
+from ..services.retention import purge_blocked_reason
 
 
 def build(
@@ -76,16 +77,25 @@ async def distinct_actions(session: AsyncSession) -> list[str]:
 
 
 async def purge_older_than(session: AsyncSession, *, days: int) -> int:
-    """Einträge älter als ``days`` entfernen. 0 = unbegrenzt aufbewahren."""
+    """Delete entries older than ``days``. 0 = keep forever.
+
+    A safety brake mirrors the privacy-retention guard: if the purge would remove more than
+    half of all audit rows it is almost certainly a misconfiguration (e.g. a tiny retention
+    window wiping the trail) — nothing is deleted.
+    """
     if days <= 0:
         return 0
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
-    count = (
+    to_delete = (
         await session.execute(
             select(func.count()).select_from(AuditLog).where(AuditLog.at < cutoff)
         )
     ).scalar_one()
-    if count:
-        await session.execute(sa_delete(AuditLog).where(AuditLog.at < cutoff))
-        await session.commit()
-    return int(count)
+    if not to_delete:
+        return 0
+    total = (await session.execute(select(func.count()).select_from(AuditLog))).scalar_one()
+    if purge_blocked_reason(to_delete=int(to_delete), total=int(total)) is not None:
+        return 0
+    await session.execute(sa_delete(AuditLog).where(AuditLog.at < cutoff))
+    await session.commit()
+    return int(to_delete)
