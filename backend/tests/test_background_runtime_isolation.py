@@ -37,7 +37,7 @@ import pytest_asyncio
 from app.api.deps import get_audit_session
 from app.db.session import get_session_factory
 from app.db.tenant_context import open_active_session, tenant_scoped_session, use_tenant
-from app.repositories import run_repo
+from app.repositories import run_repo, tenant_repo
 from app.services import audit
 from app.services.audit import LOGIN_FAILED
 from app.services.scheduler import SchedulerService
@@ -193,6 +193,53 @@ async def test_scheduler_run_uses_runtime_role_and_stays_isolated(
                 text("DELETE FROM run WHERE id = ANY(:ids)"), {"ids": [int(r.id) for r in rows]}
             )
             await conn.commit()
+
+
+async def test_read_default_schedule_looks_up_tenant_on_owner_role_under_foreign_tenant(
+    migrated_engine: AsyncEngine,
+    two_active_tenants: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_read_default_schedule`'s tenant lookup (`tenant_repo.default_tenant`) must run on the
+    OWNER `session_user`, even when called from inside an already-active NON-default tenant
+    context -- e.g. `reschedule()` triggered from the tenant settings route under
+    `tenant_scoped_session` (see `api/routes/settings.py`, `contextlib.suppress(RuntimeError)`
+    around `get_scheduler().reschedule()`).
+
+    Callsite review finding (Task 3 follow-up): `self.session_factory` is `open_active_session`,
+    which re-reads the active-tenant ContextVar at call time. Without an explicit
+    `use_owner_context()` around the lookup, it would route onto the `pwnotify_runtime` engine
+    (role `pwnotify_app`, GUC = whichever FOREIGN tenant happens to be active) instead of the
+    owner engine. `tenant` happens to be exempt from RLS and `pwnotify_app` still has SELECT on
+    it (migration `f7a8b9c0d1e2`), so the returned row is correct either way today -- but that
+    correctness is a hidden dependency on those grants, not a deliberate scope. This test proves
+    the lookup itself runs on the owner role, independent of any such grant."""
+    a, _b = two_active_tenants
+    captured: dict[str, tuple[str, str]] = {}
+    real_default_tenant = tenant_repo.default_tenant
+
+    async def _capturing_default_tenant(session: Any) -> Any:
+        row = (await session.execute(text("SELECT session_user, current_user"))).one()
+        captured["pair"] = (row[0], row[1])
+        return await real_default_tenant(session)
+
+    monkeypatch.setattr(
+        "app.services.scheduler.tenant_repo.default_tenant", _capturing_default_tenant
+    )
+
+    service = SchedulerService(open_active_session, base_url="http://test.local")
+    async with use_tenant(a):
+        cron, tz = await service._read_default_schedule()
+
+    assert "pair" in captured, "tenant_repo.default_tenant was not called"
+    su, cu = captured["pair"]
+    assert (su, cu) == ("pwnotify", "pwnotify"), (
+        f"tenant lookup leaked onto the active foreign tenant's role/GUC: {su}/{cu}"
+    )
+    # Sanity: still resolves the real default tenant's schedule, not tenant `a`'s.
+    dtid = await _real_default_tenant_id(migrated_engine)
+    assert dtid != a
+    assert isinstance(cron, str) and isinstance(tz, str)
 
 
 # ---- 3. Owner-context counter-checks: the audit trail / cross-tenant paths stay owner ----- #

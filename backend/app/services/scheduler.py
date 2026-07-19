@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging import get_logger
-from ..db.tenant_context import tenant_scoped_session, use_tenant
+from ..db.tenant_context import tenant_scoped_session, use_owner_context, use_tenant
 from ..models.run import Run
 from ..repositories import tenant_repo
 from .runner import execute_run
@@ -62,9 +62,20 @@ class SchedulerService:
 
     async def _read_default_schedule(self) -> tuple[str, str]:
         """Treibt den EINEN globalen APScheduler-Job (`start`/`reschedule`) -- deterministisch
-        über den Default-Tenant gescoped statt blind über alle Tenants hinweg."""
-        async with self.session_factory() as owner:
-            tenant = await tenant_repo.default_tenant(owner)
+        über den Default-Tenant gescoped statt blind über alle Tenants hinweg.
+
+        `reschedule()` kann aus einer Request-Route heraus laufen, die selbst bereits unter
+        einem aktiven (Nicht-Default-)Tenant steht (`tenant_scoped_session`, siehe
+        `api/routes/settings.py`). `self.session_factory` ist `open_active_session` -- ohne
+        expliziten `use_owner_context()`-Block würde der Lookup unten dann auf der
+        Runtime-Engine (Rolle `pwnotify_app`, GUC = der AKTIVE Fremdtenant) laufen statt auf
+        dem Owner. `tenant` ist zwar nicht RLS-gescoped und `pwnotify_app` behält aktuell
+        SELECT darauf (siehe Migration `f7a8b9c0d1e2`), das Ergebnis wäre also heute
+        identisch -- aber das ist eine versteckte Abhängigkeit von genau diesem Grant, keine
+        bewusste Entscheidung. Der Owner-Kontext macht den Lookup unabhängig davon."""
+        with use_owner_context():
+            async with self.session_factory() as owner:
+                tenant = await tenant_repo.default_tenant(owner)
         assert tenant.id is not None  # persistierte Zeile aus der DB
         async with tenant_scoped_session(tenant.id) as session:
             return await self._read_schedule(session)

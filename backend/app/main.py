@@ -98,9 +98,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stale = await run_repo.mark_stale_as_error(session)
         if stale:
             log.warning("stale_runs_cleaned", count=stale)
-    # 3) Scheduler starten -- Tenant-Writes laufen über die context-abhängige Factory
-    # (Runtime-Rolle bei aktivem Tenant, Owner sonst); `mark_stale_as_error` oben bleibt
-    # bewusst auf der Owner-Factory (kein Tenant-Kontext, Cross-Tenant-Op).
+    # 3) Start scheduler -- tenant writes go through the context-aware factory
+    # (runtime role when a tenant is active, owner otherwise); `mark_stale_as_error` above
+    # deliberately stays on the owner factory (no tenant context, cross-tenant op).
     scheduler = SchedulerService(open_active_session, base_url=settings.base_url)
     set_scheduler(scheduler)
     await scheduler.start()
