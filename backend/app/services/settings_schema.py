@@ -118,8 +118,18 @@ SETTINGS: dict[str, SettingSpec] = {
     # Sicherung gegen Massenversand: Würde ein Lauf mehr als diesen Anteil aller
     # geprüften Benutzer benachrichtigen, ist das fast immer eine Fehlkonfiguration
     # (z. B. falsche Gültigkeitsdauer) und nicht ein realer Stichtag. Der Lauf bricht
-    # dann ab, statt tausende Mails zu verschicken. 0 = Sicherung aus.
-    "schedule.max_notify_ratio": SettingSpec(0.5),
+    # dann ab, statt tausende Mails zu verschicken. Bereich (0, 1] — 0 ist gesperrt,
+    # die Bremse lässt sich nicht mehr abschalten (siehe schedule.max_notify_count
+    # für die zweite, absolute Bremse).
+    "schedule.max_notify_ratio": SettingSpec(
+        0.5, validate=number_range(min_value=0, exclusive_min=True, max_value=1.0)
+    ),
+    # Absolute, non-disable-able ceiling: even if the ratio brake would pass (e.g. a huge
+    # tenant), never send more than this many notifications in one run without an admin
+    # deliberately raising it. Second line of defence behind max_notify_ratio.
+    "schedule.max_notify_count": SettingSpec(
+        500, validate=number_range(min_value=1, integer_only=True)
+    ),
     # ---- Password Policy ----
     "policy.auto_detect": SettingSpec(True),
     "policy.validity_days_override": SettingSpec(None),

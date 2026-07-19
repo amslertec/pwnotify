@@ -36,19 +36,32 @@ log = get_logger("runner")
 _MASS_SEND_MIN_COUNT = 20
 
 
-def mass_send_blocked_reason(*, due: int, checked: int, max_ratio: float) -> str | None:
+def mass_send_blocked_reason(
+    *, due: int, checked: int, max_ratio: float, max_count: int | None = None
+) -> str | None:
     """Prüft, ob ein Lauf verdächtig viele Benachrichtigungen verschicken würde.
 
     Ein einzelner Konfigurationsfehler — etwa eine falsche Gültigkeitsdauer — lässt
-    schlagartig alle Konten als fällig erscheinen. Ohne Bremse gingen dann tausende
-    Mails an echte Empfänger; das ist nicht rückholbar und beim Kunden ein Vertrauens-
-    schaden. Gibt den Grund zurück, wenn abgebrochen werden soll, sonst ``None``.
+    schlagartig alle Konten als fällig erscheinen. Ohne Bremse gingen dann tausende Mails an
+    echte Empfänger; das ist nicht rückholbar und beim Kunden ein Vertrauensschaden. Gibt den
+    Grund zurück, wenn abgebrochen werden soll, sonst ``None``.
+
+    Zwei Bremsen: der absolute Cap (``max_count``) lässt sich NICHT über das Verhältnis
+    abschalten und greift auch bei sehr grossen Beständen; die Verhältnis-Bremse
+    (``max_ratio``) fängt den „plötzlich alle fällig"-Fall bei kleineren Beständen.
     """
-    if max_ratio <= 0 or due == 0 or checked == 0:
+    if due == 0 or checked == 0:
         return None
-    if due < _MASS_SEND_MIN_COUNT:
-        return None
-    if due > checked * max_ratio:
+    # Absolute ceiling — a second brake that cannot be switched off via the ratio.
+    if max_count is not None and max_count > 0 and due > max_count:
+        return (
+            f"Der Lauf würde {due} Benutzer benachrichtigen — mehr als das absolute Limit "
+            f"von {max_count}. Das deutet auf eine Fehlkonfiguration hin (z. B. Gültigkeits-"
+            "dauer oder Sync-Gruppe). Es wurde nichts versendet. Einstellungen prüfen oder "
+            "einen Testlauf (Dry-Run) starten."
+        )
+    # Verhältnis-Bremse (kleine Bestände unterhalb des Floors werden nie blockiert).
+    if max_ratio > 0 and due >= _MASS_SEND_MIN_COUNT and due > checked * max_ratio:
         return (
             f"Der Lauf würde {due} von {checked} Benutzern benachrichtigen "
             f"({due / checked:.0%}, erlaubt sind {max_ratio:.0%}). Das deutet auf eine "
@@ -248,6 +261,7 @@ async def execute_run(
                 due=due_estimate,
                 checked=checked,
                 max_ratio=float(settings.get("schedule.max_notify_ratio") or 0),
+                max_count=int(settings.get("schedule.max_notify_count") or 0),
             )
             if mass_block and not dry_run:
                 status = "partial"
