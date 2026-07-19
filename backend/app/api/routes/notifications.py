@@ -15,7 +15,13 @@ from ...schemas.entities import NotificationOut
 from ...services.mail import build_sender
 from ...services.settings_service import effective_base_url
 from ...services.templating import build_context, email_logo, render
-from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
+from ..deps import (
+    AdminUser,
+    CurrentUser,
+    TenantSessionDep,
+    TenantWriteSessionDep,
+    TenantWriteSettingsDep,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -68,7 +74,7 @@ async def list_notifications(
 
 @router.post("/{log_id}/retry", response_model=Message)
 async def retry(
-    _: AdminUser, log_id: int, session: TenantSessionDep, svc: TenantSettingsDep
+    _: AdminUser, log_id: int, session: TenantWriteSessionDep, svc: TenantWriteSettingsDep
 ) -> Message:
     log_entry = await notification_repo.get(session, log_id)
     if log_entry is None:

@@ -391,6 +391,21 @@ async def set_role(
         )
     vorher = target.role
     target.role = body.role
+    # Grant migration (Task 4, H8): keep the target's tenant grant rows in sync with its new
+    # role so capability (read vs. write) never lags behind the role change. Without this, a
+    # stale `auditor_tenant` grant from before an auditor->admin promotion (or a stale
+    # `admin_tenant` grant after an admin->auditor demotion) would let the write gate
+    # (`_resolve_authorized_tenant(..., write=True)`) mislabel the account (Minor-1, closed
+    # here). SSO targets are excluded -- their grants are group-driven and reconciled on
+    # login, not managed by this route. `add_grant`/`remove_grant` commit internally; this
+    # runs BEFORE the final `session.commit()` below so no double-commit races the pending
+    # `target.role` write -- both converge into the same already-committed state.
+    if not target.is_sso and vorher != body.role and {vorher, body.role} <= {"admin", "auditor"}:
+        old_kind = "admin" if vorher == "admin" else "auditor"
+        new_kind = "admin" if body.role == "admin" else "auditor"
+        for tid in await tenant_repo.list_grant_tenant_ids(session, target.id, old_kind):
+            await tenant_repo.add_grant(session, user_id=target.id, tenant_id=tid, kind=new_kind)
+            await tenant_repo.remove_grant(session, user_id=target.id, tenant_id=tid, kind=old_kind)
     await audit.record(
         session,
         action=audit.USER_ROLE_CHANGED,

@@ -58,7 +58,8 @@ async def trigger(
         # Instance-wide fan-out stays superadmin-exclusive.
         run = await get_scheduler().trigger_now(dry_run_override=body.dry_run)
     else:
-        # Every other admin triggers only their own authorized active tenant.
-        tid = await _resolve_authorized_tenant(request, user, session)
+        # Every other admin triggers only their own authorized active tenant -- WRITE gate
+        # (Task 4, H8/Minor-1): a mere read (auditor) grant must not be enough to trigger a run.
+        tid = await _resolve_authorized_tenant(request, user, session, write=True)
         run = await get_scheduler().trigger_now(dry_run_override=body.dry_run, tenant_ids=[tid])
     return RunDetail.model_validate(run, from_attributes=True)

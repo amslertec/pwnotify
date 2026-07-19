@@ -27,7 +27,14 @@ from ...services.scheduler import compute_next_runs, get_scheduler
 from ...services.settings_schema import MASK, SETTINGS
 from ...services.settings_service import effective_base_url
 from ...services.templating import render, sample_context
-from ..deps import AdminUser, CurrentUser, TenantSessionDep, TenantSettingsDep
+from ..deps import (
+    AdminUser,
+    CurrentUser,
+    TenantSessionDep,
+    TenantSettingsDep,
+    TenantWriteSessionDep,
+    TenantWriteSettingsDep,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -54,8 +61,8 @@ async def update(
     request: Request,
     admin: AdminUser,
     body: SettingsUpdate,
-    svc: TenantSettingsDep,
-    session: TenantSessionDep,
+    svc: TenantWriteSettingsDep,
+    session: TenantWriteSessionDep,
 ) -> dict[str, Any]:
     forbidden = sorted(k for k in body.values if k.startswith(_INSTANCE_PREFIX))
     if forbidden:
@@ -101,7 +108,7 @@ async def update(
 
 @router.post("/graph/test", response_model=GraphTestResult)
 async def graph_test(
-    _: AdminUser, body: GraphTestRequest, svc: TenantSettingsDep
+    _: AdminUser, body: GraphTestRequest, svc: TenantWriteSettingsDep
 ) -> GraphTestResult:
     settings = await svc.get_all()
     result = await test_graph(
@@ -115,7 +122,7 @@ async def graph_test(
 
 
 @router.post("/mail/test", response_model=Message)
-async def mail_test(_: AdminUser, body: MailTestRequest, svc: TenantSettingsDep) -> Message:
+async def mail_test(_: AdminUser, body: MailTestRequest, svc: TenantWriteSettingsDep) -> Message:
     settings = await svc.get_all()
     await send_test_mail(
         settings, to=body.to, locale=body.locale, base_url=effective_base_url(settings)
@@ -146,7 +153,7 @@ async def template_preview(
 
 
 @router.post("/template/reset", response_model=dict)
-async def template_reset(_: AdminUser, svc: TenantSettingsDep) -> dict[str, Any]:
+async def template_reset(_: AdminUser, svc: TenantWriteSettingsDep) -> dict[str, Any]:
     defaults = {k: spec.default for k, spec in SETTINGS.items() if k.startswith("template.")}
     await svc.set_many(defaults)
     return await svc.get_public()
@@ -161,7 +168,7 @@ async def list_exclusions(_: CurrentUser, session: TenantSessionDep) -> list[Exc
 
 @router.post("/exclusions", response_model=ExclusionOut)
 async def add_exclusion(
-    _: AdminUser, body: dict[str, str], session: TenantSessionDep
+    _: AdminUser, body: dict[str, str], session: TenantWriteSessionDep
 ) -> ExclusionOut:
     exc = await exclusion_repo.add(
         session,
@@ -173,6 +180,8 @@ async def add_exclusion(
 
 
 @router.delete("/exclusions/{exclusion_id}", response_model=Message)
-async def delete_exclusion(_: AdminUser, exclusion_id: int, session: TenantSessionDep) -> Message:
+async def delete_exclusion(
+    _: AdminUser, exclusion_id: int, session: TenantWriteSessionDep
+) -> Message:
     await exclusion_repo.delete(session, exclusion_id)
     return Message(message="Ausschluss entfernt.")

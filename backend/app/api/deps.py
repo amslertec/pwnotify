@@ -125,16 +125,27 @@ ActiveTenantClaim = Annotated[int | None, Depends(_claimed_active_tenant)]
 `get_tenant_session`/`TenantSessionDep`, die zusätzlich über `tenant_repo.is_allowed` gated)."""
 
 
-async def _resolve_authorized_tenant(request: Request, user: AppUser, session: AsyncSession) -> int:
+async def _resolve_authorized_tenant(
+    request: Request, user: AppUser, session: AsyncSession, *, write: bool = False
+) -> int:
     """Löst den aktiven Mandanten auf und autorisiert ihn -- geteilte Logik zwischen
-    `get_tenant_session` (Kundendaten) und `get_audit_session` (Audit-Protokoll für
-    mandantengebundene Konten), damit beide exakt denselben autorisierten Tenant ermitteln.
+    `get_tenant_session`/`get_tenant_session_write` (Kundendaten) und `get_audit_session`
+    (Audit-Protokoll für mandantengebundene Konten), damit alle exakt denselben autorisierten
+    Tenant ermitteln.
 
     Liest den `active_tenant`-Claim des Access-Tokens und autorisiert ihn IMMER über
     `tenant_repo.is_allowed` -- auch wenn RLS einen fremden Tenant ohnehin leer liefern
     würde, wird hier schon verweigert (403). Damit scheitert ein gefälschter/veralteter
     Claim (z. B. ein zwischenzeitlich deaktivierter eigener Tenant, oder ein fremder Tenant
     in einem manipulierten Token) NIE stillschweigend mit 0 Zeilen, sondern immer explizit.
+
+    `write` (Task 4, H8) reicht das Gate an `tenant_repo.is_allowed` durch: `write=True`
+    verlangt Mitgliedschaft in `admin_tenants(user)` (Schreib-Kapazität), `write=False`
+    (Default) nur in `allowed_tenant_ids(user)` (Admin- ODER Auditor-Kapazität, reines
+    Lesen). Ohne diese Unterscheidung autorisierte JEDE tenant-gescopte Route -- auch
+    schreibende -- bislang mit dem Lese-Gate, sodass ein Konto mit nur einem
+    `auditor_tenant`-Grant (z. B. eine veraltete Zuweisungszeile nach einer
+    auditor->admin-Rollenänderung) Schreib-/Aktionsrouten erreichen konnte.
 
     Kein Claim (älteres Token, oder noch nie gesetzt): der Tenant wird wie beim Login neu
     aufgelöst (`resolve_initial_tenant`) und ebenso über `is_allowed` gegengeprüft. Liefert
@@ -147,12 +158,12 @@ async def _resolve_authorized_tenant(request: Request, user: AppUser, session: A
     """
     claim_tid = await _claimed_active_tenant(request)
     if claim_tid is not None:
-        if not await tenant_repo.is_allowed(session, user, claim_tid):
+        if not await tenant_repo.is_allowed(session, user, claim_tid, write=write):
             raise ForbiddenError("Kein Zugriff auf diesen Mandanten.", code="tenant_forbidden")
         return claim_tid
 
     resolved = await tenant_repo.resolve_initial_tenant(session, user)
-    if resolved is None or not await tenant_repo.is_allowed(session, user, resolved):
+    if resolved is None or not await tenant_repo.is_allowed(session, user, resolved, write=write):
         raise ForbiddenError("Diesem Konto ist kein Mandant zugeordnet.", code="tenant_forbidden")
     return resolved
 
@@ -208,6 +219,32 @@ async def get_tenant_settings_service(session: TenantSessionDep) -> SettingsServ
 
 
 TenantSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_service)]
+
+
+async def get_tenant_session_write(
+    request: Request, user: CurrentUser, session: SessionDep
+) -> AsyncGenerator[AsyncSession]:
+    """Wie `get_tenant_session`, aber mit dem SCHREIB-Gate (Task 4, H8): autorisiert über
+    `_resolve_authorized_tenant(..., write=True)`, verlangt also Mitgliedschaft in
+    `admin_tenants(user)` (oder Superadmin) statt der blossen Lese-Zuweisung.
+
+    Für die tenant-gescopten SCHREIB-/Aktionsrouten (Settings ändern, Exclusions, Retry,
+    Sofort-Reminder, Bulk-Aktionen, `/runs/trigger`) -- ein Konto mit nur einem
+    `auditor_tenant`-Grant darf hierüber NICHTS erreichen, auch wenn es (z. B. durch eine
+    veraltete Zuweisungszeile) den `AdminUser`-Rollen-Gate besteht."""
+    tid = await _resolve_authorized_tenant(request, user, session, write=True)
+    async with tenant_scoped_session(tid) as scoped:
+        yield scoped
+
+
+TenantWriteSessionDep = Annotated[AsyncSession, Depends(get_tenant_session_write)]
+
+
+async def get_tenant_settings_service_write(session: TenantWriteSessionDep) -> SettingsService:
+    return SettingsService(session)
+
+
+TenantWriteSettingsDep = Annotated[SettingsService, Depends(get_tenant_settings_service_write)]
 
 
 async def get_enrolling_user(request: Request, session: SessionDep) -> AppUser:
