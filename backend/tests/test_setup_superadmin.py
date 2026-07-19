@@ -12,12 +12,25 @@ Request/Response-Paar."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
+from app.api.deps import limiter
 from app.api.routes.setup import AdminCreate, create_admin
 from app.core.errors import ConflictError
 from app.repositories import tenant_repo
 from app.services import instance_settings
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter() -> Iterator[None]:
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = prev
 
 
 class _FakeRequest:

@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     login_rate_limit: str = "10/minute"
     login_max_failures: int = 5
     login_lockout_min: int = 15
+    setup_rate_limit: str = "30/minute"
 
     # ---- Erst-Seed (nur beim allerersten Start ausgewertet) ----
     admin_username: str | None = None

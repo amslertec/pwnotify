@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from ...core.config import get_settings
 from ...core.errors import ConflictError
 from ...core.security import hash_password, hash_token, issue_token_pair
 from ...db.migrate import run_migrations
@@ -16,7 +18,15 @@ from ...schemas.auth import UserOut
 from ...schemas.common import Message
 from ...schemas.settings import GraphTestRequest, GraphTestResult, MailTestRequest
 from ...services.connectivity import send_test_mail, test_graph
-from ..deps import SessionDep, set_auth_cookies
+from ..deps import (
+    SessionDep,
+    get_current_user,
+    limiter,
+    require_admin,
+    set_auth_cookies,
+)
+
+_settings = get_settings()
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -48,8 +58,23 @@ async def _admin_count(session: SessionDep) -> int:
     return await user_repo.count(session)
 
 
+async def _require_setup_open_or_admin(request: Request, session: SessionDep) -> None:
+    """Gate for the setup TEST endpoints (database/graph/mail): open while first-time setup is
+    still running (no admin yet), otherwise restricted to an authenticated admin. Sealing a
+    provisioned instance -- these endpoints probe Graph, send real mail, and touch the DB, so
+    they must not stay world-reachable after setup completes."""
+    if await _admin_count(session) == 0:
+        return
+    user = await get_current_user(request, session)
+    await require_admin(user)
+
+
+SetupGuard = Annotated[None, Depends(_require_setup_open_or_admin)]
+
+
 @router.get("/status", response_model=SetupStatus)
-async def status(session: SessionDep) -> SetupStatus:
+@limiter.limit(_settings.setup_rate_limit)
+async def status(request: Request, session: SessionDep) -> SetupStatus:
     from ...services.settings_service import SettingsService
 
     has_admin = (await user_repo.count(session)) > 0
@@ -71,11 +96,16 @@ async def status(session: SessionDep) -> SetupStatus:
 
 
 @router.post("/database/test", response_model=DatabaseStatus)
-async def database_test(session: SessionDep) -> DatabaseStatus:
+@limiter.limit(_settings.setup_rate_limit)
+async def database_test(
+    request: Request, session: SessionDep, _: SetupGuard
+) -> DatabaseStatus:
     try:
         await session.execute(text("SELECT 1"))
-    except Exception as exc:
-        return DatabaseStatus(connected=False, migrated=False, error=str(exc))
+    except Exception:
+        return DatabaseStatus(
+            connected=False, migrated=False, error="Datenbankverbindung fehlgeschlagen."
+        )
     migrated = True
     try:
         await session.execute(text("SELECT 1 FROM alembic_version"))
@@ -85,7 +115,8 @@ async def database_test(session: SessionDep) -> DatabaseStatus:
 
 
 @router.post("/database/migrate", response_model=DatabaseStatus)
-async def database_migrate(session: SessionDep) -> DatabaseStatus:
+@limiter.limit(_settings.setup_rate_limit)
+async def database_migrate(request: Request, session: SessionDep) -> DatabaseStatus:
     # Nur während des Setups (kein Admin) frei; danach laufen Migrationen beim Start.
     if await _admin_count(session) > 0:
         raise ConflictError("Setup bereits abgeschlossen.", code="setup_done")
@@ -97,6 +128,7 @@ async def database_migrate(session: SessionDep) -> DatabaseStatus:
 
 
 @router.post("/admin", response_model=UserOut)
+@limiter.limit(_settings.setup_rate_limit)
 async def create_admin(
     body: AdminCreate, response: Response, request: Request, session: SessionDep
 ) -> UserOut:
@@ -136,7 +168,10 @@ async def create_admin(
 
 
 @router.post("/graph/test", response_model=GraphTestResult)
-async def graph_test(body: GraphTestRequest, session: SessionDep) -> GraphTestResult:
+@limiter.limit(_settings.setup_rate_limit)
+async def graph_test(
+    request: Request, body: GraphTestRequest, session: SessionDep, _: SetupGuard
+) -> GraphTestResult:
     from ...services.settings_service import SettingsService
 
     settings = await SettingsService(session).get_all()
@@ -151,7 +186,10 @@ async def graph_test(body: GraphTestRequest, session: SessionDep) -> GraphTestRe
 
 
 @router.post("/mail/test", response_model=Message)
-async def mail_test(body: MailTestRequest, session: SessionDep) -> Message:
+@limiter.limit(_settings.setup_rate_limit)
+async def mail_test(
+    request: Request, body: MailTestRequest, session: SessionDep, _: SetupGuard
+) -> Message:
     from ...services.settings_service import SettingsService, effective_base_url
 
     settings = await SettingsService(session).get_all()
