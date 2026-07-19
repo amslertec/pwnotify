@@ -231,25 +231,32 @@ async def _complete_login(
     request: Request, response: Response, session: SessionDep, user: AppUser
 ) -> LoginResponse:
     """Volltoken ausstellen + Sitzung anlegen (nach Passwort bzw. 2FA-Code)."""
-    await audit.record(
-        session,
-        action=audit.LOGIN_SUCCESS,
-        actor=user,
-        request=request,
-        detail={"sso": user.is_sso, "two_factor": user.totp_enabled},
-    )
-    user.last_login_at = utcnow()
-    await user_repo.prune_sessions(session, user.id)  # type: ignore[arg-type]
-
     # Aktiven Tenant fürs Login bestimmen -- IMMER gegen `is_allowed` gegenprüfen, nicht
     # `resolve_initial_tenant` blind übernehmen: die Auflösung dort gated NICHT auf
     # is_active (siehe deren Docstring), sonst käme z. B. ein inzwischen deaktivierter,
     # eigener SSO-Tenant als aktiver Claim ins Token/`active_tenant_id` -- eine
     # Verfügbarkeitslücke, kein Cross-Tenant-Leck, aber trotzdem falsch. Uniform für alle
     # Kontoarten, kein Sonderfall.
+    #
+    # Resolved BEFORE the audit record below (Task 7/M11) so `LOGIN_SUCCESS` can be
+    # tenant-attributed with the SAME `tid` the session actually logs into -- moved up from
+    # its original position after the audit call, no other change to this resolution.
     tid = await tenant_repo.resolve_initial_tenant(session, user)
     if tid is not None and not await tenant_repo.is_allowed(session, user, tid):
         tid = None
+
+    await audit.record(
+        session,
+        action=audit.LOGIN_SUCCESS,
+        actor=user,
+        request=request,
+        detail={"sso": user.is_sso, "two_factor": user.totp_enabled},
+        # Owner-session route (Task 7/M11): attribute to the tenant this login actually
+        # resolved into -- NULL stays NULL when no tenant is resolvable (`tid is None`).
+        tenant_id=tid,
+    )
+    user.last_login_at = utcnow()
+    await user_repo.prune_sessions(session, user.id)  # type: ignore[arg-type]
 
     pair = issue_token_pair(str(user.id), active_tenant=tid, generation=user.token_generation)
     await user_repo.create_session(
@@ -1151,6 +1158,9 @@ async def oidc_callback(
         actor=user,
         request=request,
         detail={"sso": True, "role": user.role},
+        # Owner-session route (Task 7/M11): `home_tenant_id` is fixed above -- always a
+        # real tenant here (never NULL), unlike the SSO-DENY paths above, which stay NULL.
+        tenant_id=home_tenant_id,
     )
     user.last_login_at = utcnow()
     # `active_tenant` schliesst den Task-3-Defer: die SSO-Sitzung trägt den Tenant-Claim

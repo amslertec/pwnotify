@@ -278,6 +278,9 @@ async def create_local(
         target=username,
         request=request,
         detail=detail,
+        # Owner-session route (Task 7/M11): `home_tenant_id` is the new account's own home,
+        # already resolved above -- always a real tenant here, never NULL.
+        tenant_id=home_tenant_id,
     )
     await session.commit()
 
@@ -340,6 +343,9 @@ async def send_reset(
         target=target.username,
         request=request,
         detail={"target_user_id": user_id},
+        # Owner-session route (Task 7/M11): attribute to the target's own home tenant, the
+        # unambiguous anchor -- NULL stays NULL for a homeless (provider) target.
+        tenant_id=target.tenant_id,
     )
     await session.commit()
     return Message(message="Link zum Zurücksetzen des Passworts wurde versendet.")
@@ -419,6 +425,8 @@ async def set_role(
         target=target.username,
         request=request,
         detail={"from": vorher, "to": body.role, "sso": target.is_sso},
+        # Owner-session route (Task 7/M11): attribute to the target's own home tenant.
+        tenant_id=target.tenant_id,
     )
     await session.commit()
     await session.refresh(target)
@@ -658,6 +666,8 @@ async def delete_user(
         target=target.username,
         request=request,
         detail={"role": target.role, "sso": target.is_sso},
+        # Owner-session route (Task 7/M11): attribute to the target's own home tenant.
+        tenant_id=target.tenant_id,
     )
     await session.commit()
     # Carry-forward-Fix aus Task 1: `user_token.created_by` hat KEIN `ON DELETE` (ein

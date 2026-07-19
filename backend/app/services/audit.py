@@ -77,11 +77,24 @@ async def record(
     outcome: str = "success",
     request: Request | None = None,
     detail: dict[str, Any] | None = None,
+    tenant_id: int | None = None,
 ) -> None:
     """Einen Eintrag vormerken. Committet NICHT — das übernimmt der Aufrufer.
 
     ``actor_username`` erlaubt das Protokollieren fehlgeschlagener Anmeldungen, bei denen
     kein Benutzerobjekt existiert (etwa ein durchprobierter, unbekannter Name).
+
+    ``tenant_id`` (Security Phase 5, Task 7/M11): explicit tenant attribution for
+    OWNER-SESSION callers, where `AuditLog.tenant_id`'s `default_factory` (the active
+    tenant `ContextVar`) has nothing to stamp. Pass it only when the action is clearly
+    attributable to ONE customer -- e.g. the admin-user-management routes attribute to the
+    target account's home tenant, and `LOGIN_SUCCESS` attributes to the tenant the session
+    actually logged into. Deliberately NOT set for: provider-level actions (superadmin
+    management, tenant/instance CRUD -- no single customer), login FAILURES (the account,
+    and therefore its tenant, may not be reliably known), and self-service auth actions
+    (`password_changed`, `2fa_*`, `logout`) -- left `None` (NULL) unless a future task
+    decides otherwise. On a tenant-scoped session this is normally left unset -- the
+    `default_factory` already stamps correctly there.
     """
     try:
         entry = audit_repo.build(
@@ -94,6 +107,8 @@ async def record(
             ip_address=(request.client.host if request and request.client else None),
             user_agent=(request.headers.get("user-agent") if request else None),
             detail=_clean(detail),
+            tenant_id=tenant_id,
+            stamp_tenant=tenant_id is not None,
         )
         session.add(entry)
     except Exception as exc:  # pragma: no cover — Protokoll darf nie die Aktion kippen

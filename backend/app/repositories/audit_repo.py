@@ -24,7 +24,37 @@ def build(
     ip_address: str | None,
     user_agent: str | None,
     detail: dict[str, Any],
+    tenant_id: int | None = None,
+    stamp_tenant: bool = False,
 ) -> AuditLog:
+    """Build (but do not add/commit) an `AuditLog` row.
+
+    Tenant attribution (Security Phase 5, Task 7/M11): `AuditLog.tenant_id` normally comes
+    from its ORM `default_factory` (`current_tenant_or_none`), which stamps the active
+    tenant on tenant-scoped sessions. Owner-session callers (no active tenant `ContextVar`)
+    can still explicitly attribute an entry to one customer via `tenant_id` + `stamp_tenant`.
+
+    `stamp_tenant` (rather than a `tenant_id is not None` check) is the deliberate signal
+    that the caller passed a real override -- it separates "explicitly attribute this entry
+    (possibly to `None`)" from "no override given, let the ORM default run". A plain
+    `int | None` default of `None` could not tell those two cases apart without a sentinel;
+    this keeps `build` fully mypy-clean with no `Any`/`cast` typing tricks. When
+    `stamp_tenant` is `False`, `tenant_id` is ignored and the column's `default_factory`
+    decides (as before this task).
+    """
+    if stamp_tenant:
+        return AuditLog(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_username=actor_username,
+            actor_type=actor_type,
+            action=action,
+            target=target,
+            outcome=outcome,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            detail=detail,
+        )
     return AuditLog(
         actor_id=actor_id,
         actor_username=actor_username,
