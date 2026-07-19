@@ -4,6 +4,34 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-07-19
+
+This release completes a six-part security-hardening series (0.2.5–0.3.0) that worked through an
+external security audit end to end. It adds the final low-severity and hardening fixes.
+
+### Security
+
+- **The signing key file is created with locked-down permissions atomically**, removing a brief
+  window in which it could have been world-readable.
+- **Application logs redact secrets more thoroughly** — nested fields and additional secret-bearing
+  keys (recovery codes, TOTP secrets, tokens) are now masked.
+- **`/health` no longer exposes the application version** to unauthenticated callers; the version is
+  available from the authenticated `/api/version` endpoint.
+- **Bulk inputs and external pagination are bounded**, preventing an oversized request or an
+  unbounded upstream response from consuming excessive resources.
+- **Password change, token refresh, and the activity ping are now rate-limited.**
+- **First-time-setup admin creation is serialized**, so a race can no longer create two initial
+  administrators.
+- **The container's build metadata and CI image scanning were tightened** — the base-image digest
+  label is correct and both published architectures (amd64 and arm64) are vulnerability-scanned
+  before publish.
+
+### Changed
+
+- `GET /health` now returns only `{"status": "ok"}` (no `version` field).
+- `POST /auth/password`, `POST /auth/refresh`, and `POST /auth/activity` may now return HTTP 429
+  when their rate limits are exceeded.
+
 ## [0.2.9] — 2026-07-19
 
 ### Security
@@ -784,6 +812,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.0
 [0.2.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.9
 [0.2.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.8
 [0.2.7]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.7
