@@ -24,6 +24,10 @@ class Settings(BaseSettings):
 
     # ---- Infrastruktur ----
     database_url: str = "postgresql+asyncpg://pwnotify:pwnotify@localhost:5432/pwnotify"
+    # Password for the non-superuser `pwnotify_runtime` login role (tenant-scoped sessions
+    # only; see `app/db/session.py::get_runtime_engine`). No default -- `runtime_database_url`
+    # fails fast rather than silently falling back to the owner/superuser DSN.
+    runtime_db_password: str | None = None
     secret_key: str | None = None  # leer -> auto-generiert in {data_dir}/secret.key
     data_dir: str = "/data"
     static_dir: str = "/app/static"
@@ -99,6 +103,21 @@ class Settings(BaseSettings):
     def sync_database_url(self) -> str:
         """Alembic/psycopg-artige, synchrone URL (asyncpg -> psycopg-Treiber weg)."""
         return self.database_url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+
+    @property
+    def runtime_database_url(self) -> str:
+        """DSN for the non-superuser tenant-data engine (`pwnotify_runtime`). Derived from the
+        owner DSN with the username/password swapped -- host/db/query preserved."""
+        from sqlalchemy.engine import make_url
+
+        if not self.runtime_db_password:
+            raise RuntimeError(
+                "PWNOTIFY_RUNTIME_DB_PASSWORD is required (no silent fallback to the superuser DSN)"
+            )
+        url = make_url(self.database_url).set(
+            username="pwnotify_runtime", password=self.runtime_db_password
+        )
+        return url.render_as_string(hide_password=False)
 
 
 @lru_cache

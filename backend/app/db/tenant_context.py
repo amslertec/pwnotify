@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .rls import APP_ROLE, TENANT_GUC
-from .session import get_session_factory
+from .session import get_runtime_session_factory
 
 # Aktiver Kunde für den laufenden Task/Request. None = instanzweit (Owner, kein Rollenwechsel).
 current_tenant_id: ContextVar[int | None] = ContextVar("current_tenant_id", default=None)
@@ -90,7 +90,13 @@ def apply_tenant_on_begin(dbapi_connection: Any, connection_record: object) -> N
 
 @contextlib.asynccontextmanager
 async def tenant_scoped_session(tenant_id: int) -> AsyncGenerator[AsyncSession]:
-    """Session, deren Transaktionen automatisch tenant-scoped sind (App-Rolle + GUC)."""
+    """Session, deren Transaktionen automatisch tenant-scoped sind (App-Rolle + GUC).
+
+    Läuft über die Runtime-Engine (Login-Rolle `pwnotify_runtime`, NOSUPERUSER/NOBYPASSRLS,
+    Mitglied von `pwnotify_app`) statt über die Owner-Engine: selbst ein `RESET ROLE` aus
+    dieser Session heraus landet auf `pwnotify_runtime`, nicht auf dem Owner/Superuser -- RLS
+    bleibt in jedem Fall wirksam (siehe `app/db/session.py::get_runtime_session_factory`).
+    """
     with _bind_tenant(tenant_id):
-        async with get_session_factory()() as session:
+        async with get_runtime_session_factory()() as session:
             yield session

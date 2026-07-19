@@ -23,6 +23,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 os.environ.setdefault("PWNOTIFY_DATA_DIR", tempfile.mkdtemp(prefix="pwnotify-test-data-"))
 os.environ.setdefault("PWNOTIFY_SECRET_KEY", "ZLh5EzxtulsRYjWpEqW8Ax1lL2P40JugKp2DjUpGsUU=")
 
+# Password for the `pwnotify_runtime` login role (see `app/db/session.py::get_runtime_engine`).
+# `setdefault`: an externally set value (CI) wins. Must be stable across runs -- the role's
+# password is re-set idempotently by the provisioning migration every time migrations run
+# against the test DB, so the runtime engine (derived from this same env var) always matches.
+os.environ.setdefault("PWNOTIFY_RUNTIME_DB_PASSWORD", "runtime-test-pw")
+
 TEST_DB_URL = os.environ.get(
     "PWNOTIFY_TEST_DATABASE_URL",
     # Lokaler Default: dedizierter Test-Container auf Host-Port 5433 (siehe Step 4).
