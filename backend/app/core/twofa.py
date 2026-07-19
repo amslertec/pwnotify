@@ -63,28 +63,29 @@ def qr_png_data_uri(uri: str) -> str:
 
 
 def _hash_code(code: str) -> str:
-    """Legacy-Hash (unsalted SHA-256) — nur noch zur Verifikation alter Codes, nicht mehr
-    zum Erzeugen neuer (siehe `generate_recovery_codes`)."""
+    """Legacy hash (unsalted SHA-256) — kept only to verify old codes, no longer used
+    to generate new ones (see `generate_recovery_codes`)."""
     return hashlib.sha256(code.encode()).hexdigest()
 
 
 def generate_recovery_codes(n: int = 10) -> tuple[list[str], list[str]]:
-    """Gibt (Klartext-Codes zum einmaligen Anzeigen, Argon2id-Hashes zum Speichern) zurück.
+    """Returns (plaintext codes for one-time display, Argon2id hashes for storage).
 
-    5 Gruppen à `token_hex(2)` = 80 bit Entropie (vorher 3 Gruppen = 48 bit). Speicher-Hash
-    via Argon2id (`hash_password`), konsistent mit Passwort-Hashing im Rest der App.
+    5 groups of `token_hex(2)` = 80 bits of entropy (previously 3 groups = 48 bits).
+    Stored as an Argon2id hash (`hash_password`), consistent with password hashing
+    elsewhere in the app.
     """
     codes = ["-".join(secrets.token_hex(2) for _ in range(5)) for _ in range(n)]
     return codes, [hash_password(c) for c in codes]
 
 
 def match_recovery_code(code: str, hashes: list[str]) -> str | None:
-    """Prüft einen eingegebenen Recovery-Code gegen die Hash-Liste; gibt den Treffer-Hash zurück.
+    """Checks an entered recovery code against the hash list; returns the matching hash.
 
-    Format-koexistent: erkennt sowohl neue Argon2id-Hashes (selbstbeschreibend via
-    `$argon2` -Präfix) als auch bestehende Legacy-SHA-256-Hashes (64 Hex-Zeichen). Nötig,
-    weil Recovery-Codes sich nicht neu ableiten lassen — bestehende SHA-256-Codes müssen
-    verifizierbar bleiben, bis der Nutzer 2FA neu einrichtet.
+    Format-coexistent: recognizes both new Argon2id hashes (self-describing via the
+    `$argon2` prefix) and existing legacy SHA-256 hashes (64 hex chars). Necessary
+    because recovery codes can't be re-derived — existing SHA-256 codes must stay
+    verifiable until the user re-enrolls in 2FA.
     """
     normalized = (code or "").strip().lower()
     legacy_hash = _hash_code(normalized)

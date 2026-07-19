@@ -1,10 +1,11 @@
-"""Recovery-Codes: höhere Entropie (80 bit) + Argon2id-Speicher-Hash, Legacy-koexistent.
+"""Recovery codes: higher entropy (80 bit) + Argon2id storage hash, legacy-coexistent.
 
-Vorher: `generate_recovery_codes` erzeugte nur 48 bit Entropie (3 Gruppen `token_hex(2)`)
-und speicherte unsalted SHA-256 (`sha256(code).hexdigest()`), obwohl alles andere
-(Passwörter, 2FA-Secret-Crypto) Argon2id/Fernet nutzt. Recovery-Codes lassen sich nicht neu
-ableiten, daher müssen bestehende SHA-256-Hashes weiter verifizierbar bleiben, bis der
-Nutzer 2FA neu einrichtet — `match_recovery_code` muss also BEIDE Formate erkennen.
+Before: `generate_recovery_codes` only produced 48 bits of entropy (3 groups of
+`token_hex(2)`) and stored an unsalted SHA-256 hash (`sha256(code).hexdigest()`),
+even though everything else (passwords, 2FA secret crypto) uses Argon2id/Fernet.
+Recovery codes can't be re-derived, so existing SHA-256 hashes must stay verifiable
+until the user re-enrolls in 2FA — `match_recovery_code` therefore has to recognize
+BOTH formats.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from app.core.twofa import generate_recovery_codes, match_recovery_code
 
 
 def test_generated_codes_have_five_groups_of_four_hex_chars() -> None:
-    """80-bit-Format: 5 Gruppen à token_hex(2) (4 Hex-Zeichen), statt vorher 3 Gruppen."""
+    """80-bit format: 5 groups of token_hex(2) (4 hex chars each), instead of 3 groups before."""
     codes, _hashes = generate_recovery_codes()
     assert len(codes) == 10
     for code in codes:
@@ -23,11 +24,11 @@ def test_generated_codes_have_five_groups_of_four_hex_chars() -> None:
         assert len(groups) == 5
         for g in groups:
             assert len(g) == 4
-            int(g, 16)  # muss gültiges Hex sein
+            int(g, 16)  # must be valid hex
 
 
 def test_stored_hashes_are_argon2id() -> None:
-    """Speicher-Hashes müssen Argon2id sein, keine unsalted-SHA-256-Hex-Strings mehr."""
+    """Stored hashes must be Argon2id, no longer unsalted SHA-256 hex strings."""
     _codes, hashes = generate_recovery_codes()
     assert len(hashes) == 10
     for h in hashes:
@@ -44,13 +45,13 @@ def test_generated_code_matches_its_own_hash() -> None:
 def test_wrong_code_does_not_match() -> None:
     codes, hashes = generate_recovery_codes()
     assert match_recovery_code("ffff-ffff-ffff-ffff-ffff", [hashes[0]]) is None
-    # Ein fremder gültiger Code darf nicht gegen einen anderen Hash matchen.
+    # A different valid code must not match against another hash.
     assert match_recovery_code(codes[1], [hashes[0]]) is None
 
 
 def test_legacy_sha256_hash_still_verifies() -> None:
-    """Kernstück: bestehende SHA-256-Recovery-Codes (vor diesem Fix erzeugt) dürfen nicht
-    ungültig werden — eine reine Argon2-Implementierung könnte das NICHT leisten."""
+    """Core case: existing SHA-256 recovery codes (generated before this fix) must not
+    become invalid — a pure Argon2 implementation could NOT achieve this."""
     legacy_plain = "aa-bb-cc"
     legacy_hash = hashlib.sha256(legacy_plain.encode()).hexdigest()
     matched = match_recovery_code(legacy_plain, [legacy_hash])
@@ -58,8 +59,8 @@ def test_legacy_sha256_hash_still_verifies() -> None:
 
 
 def test_legacy_and_new_format_coexist_in_same_list() -> None:
-    """Ein Nutzer mit gemischter Liste (alte SHA-256- + neue Argon2-Codes) muss beide
-    einlösen können."""
+    """A user with a mixed list (old SHA-256 + new Argon2 codes) must be able to
+    redeem both."""
     legacy_plain = "dd-ee-ff"
     legacy_hash = hashlib.sha256(legacy_plain.encode()).hexdigest()
     new_codes, new_hashes = generate_recovery_codes(n=1)
