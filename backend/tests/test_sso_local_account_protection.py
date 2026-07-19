@@ -156,8 +156,11 @@ async def test_oidc_callback_does_not_adopt_local_admin(tenant_bound_to_entra: i
         assert user.is_sso is False
 
 
-async def test_sync_sso_users_skips_local_account() -> None:
-    """`sync_sso_users` must skip a same-UPN local account (not flip, not count)."""
+async def test_sync_sso_users_skips_local_account(tenant_bound_to_entra: int) -> None:
+    """`sync_sso_users` must skip a same-UPN local account (not flip, not count).
+
+    Requests `tenant_bound_to_entra` solely so its `finally` cleanup (LIKE '%@h3lockout.test')
+    removes the local account seeded via `_seed_local` below -- this test has no other cleanup."""
     username = await _seed_local("admin")
     settings: dict[str, Any] = {
         "oidc.enabled": True,

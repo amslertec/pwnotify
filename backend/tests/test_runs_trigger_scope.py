@@ -159,20 +159,21 @@ async def test_superadmin_trigger_still_fans_out(
     set_scheduler(SchedulerService(get_session_factory(), base_url="http://test.local"))
 
     factory = get_session_factory()
-    async with factory() as session:
-        superadmin = await user_repo.create(
-            session,
-            username=f"h1-super-{uuid.uuid4().hex[:8]}",
-            password_hash="x",
-            role="superadmin",
-            is_sso=False,
-        )
-        request = _FakeRequest()  # superadmin path ignores the claim
-        await trigger(
-            request, TriggerRequest(dry_run=True), superadmin, session  # type: ignore[arg-type]
-        )
-
+    superadmin = None
     try:
+        async with factory() as session:
+            superadmin = await user_repo.create(
+                session,
+                username=f"h1-super-{uuid.uuid4().hex[:8]}",
+                password_hash="x",
+                role="superadmin",
+                is_sso=False,
+            )
+            request = _FakeRequest()  # superadmin path ignores the claim
+            await trigger(
+                request, TriggerRequest(dry_run=True), superadmin, session  # type: ignore[arg-type]
+            )
+
         async with factory() as session:
             for tid in (default_id, cid):
                 cnt = (
@@ -193,7 +194,8 @@ async def test_superadmin_trigger_still_fans_out(
                     "AND started_at >= now() - interval '2 minutes'"
                 )
             )
-            await session.execute(
-                text("DELETE FROM app_user WHERE id = :u"), {"u": superadmin.id}
-            )
+            if superadmin is not None:
+                await session.execute(
+                    text("DELETE FROM app_user WHERE id = :u"), {"u": superadmin.id}
+                )
             await session.commit()
