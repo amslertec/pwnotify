@@ -11,13 +11,13 @@ Drei Ebenen, wie im Rest der Suite üblich:
   (Muster aus `test_public_tokens_ratelimit.py`) -- NUR so lässt sich das `AdminUser`-Gate
   (403 für einen Nicht-Admin-Aufrufer) tatsächlich beweisen; ein direkter Funktionsaufruf
   würde die FastAPI-Dependency-Injection (und damit das Gate) umgehen.
-- `test_get_user_avatar_scope_*` (Task 6, M6): beweist die Subset-Scope-Regel der Route
-  (`set_role`/`delete_user`/`send_reset`-Muster). Treiber wie `test_audit_tenant_scope.py`s
-  `_audit_session_for` -- echtes Access-Token + `get_current_user`, dann die Routenfunktion
-  DIREKT (nicht über die ASGI-App) aufgerufen; das Gate selbst (`AdminUser`-Rollencheck) ist
-  bereits von `test_get_user_avatar_http_*` bewiesen, hier geht es um den Tenant-Scope
-  DANACH, den nur ein echt committeter Multi-Tenant-Seed (RLS-freie Superuser-Connection,
-  s. `test_audit_tenant_scope.py`) glaubwürdig zeigt.
+- `test_get_user_avatar_scope_*` (Task 6, M6): proves the route's subset-scope rule
+  (`set_role`/`delete_user`/`send_reset` pattern). Driven like `test_audit_tenant_scope.py`'s
+  `_audit_session_for` -- a real access token + `get_current_user`, then the route function
+  called DIRECTLY (not via the ASGI app); the gate itself (`AdminUser` role check) is
+  already proven by `test_get_user_avatar_http_*`, here it's about the tenant scope
+  AFTER that, which only a genuinely committed multi-tenant seed (RLS-free superuser
+  connection, see `test_audit_tenant_scope.py`) can credibly demonstrate.
 
 `PWNOTIFY_DATA_DIR` wird für die Dauer aller Testarten auf ein Wegwerfverzeichnis umgebogen
 (Muster aus `test_branding_tenant_scope.py`s `tmp_data_dir`) -- sonst würde unter dem
@@ -111,9 +111,9 @@ async def avatar_route_users(migrated_engine: AsyncEngine) -> AsyncGenerator[dic
     """Echte, committete Konten (kein savepoint-isoliertes `session`-Fixture -- die
     ASGI-App unten öffnet ihre eigenen DB-Sessions, sieht die savepoint-Fixture also nicht):
     ein Admin-Aufrufer, ein Auditor-Aufrufer (Nicht-Admin, für den 403-Beweis) und ein
-    beliebiges Ziel-Konto, dessen Avatar geholt wird. `admin` und `target` teilen sich EINEN
-    Tenant (Task 6, M6: die Route ist jetzt subset-scoped -- ohne einen gemeinsamen
-    `admin_tenant`-Grant würde der 200er-Fall unten selbst zum Scope-Verstoss)."""
+    beliebiges Ziel-Konto, dessen Avatar geholt wird. `admin` and `target` share ONE
+    tenant (Task 6, M6: the route is now subset-scoped -- without a shared
+    `admin_tenant` grant, the 200 case below would itself become a scope violation)."""
     ids: dict[str, int] = {}
     async with migrated_engine.connect() as conn:
         tenant_id = int(
