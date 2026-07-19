@@ -344,8 +344,11 @@ async def send_reset(
         request=request,
         detail={"target_user_id": user_id},
         # Owner-session route (Task 7/M11): attribute to the target's own home tenant, the
-        # unambiguous anchor -- NULL stays NULL for a homeless (provider) target.
-        tenant_id=target.tenant_id,
+        # unambiguous anchor -- NULL stays NULL for a homeless (provider) target. A superadmin
+        # target's `tenant_id` is only a branding anchor from its invite (Default-Tenant),
+        # never a real home -- stamping it would leak a provider-level event into that
+        # tenant's audit view (Review-Fix, Task 7/M11).
+        tenant_id=(target.tenant_id if target.role != "superadmin" else None),
     )
     await session.commit()
     return Message(message="Link zum Zurücksetzen des Passworts wurde versendet.")
@@ -666,8 +669,11 @@ async def delete_user(
         target=target.username,
         request=request,
         detail={"role": target.role, "sso": target.is_sso},
-        # Owner-session route (Task 7/M11): attribute to the target's own home tenant.
-        tenant_id=target.tenant_id,
+        # Owner-session route (Task 7/M11): attribute to the target's own home tenant. A
+        # superadmin target's `tenant_id` is only a branding anchor from its invite
+        # (Default-Tenant), never a real home -- stamping it would leak a provider-level
+        # event into that tenant's audit view (Review-Fix, Task 7/M11).
+        tenant_id=(target.tenant_id if target.role != "superadmin" else None),
     )
     await session.commit()
     # Carry-forward-Fix aus Task 1: `user_token.created_by` hat KEIN `ON DELETE` (ein
