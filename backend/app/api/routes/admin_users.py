@@ -648,21 +648,12 @@ async def delete_user(
 
 @router.post("/sso/sync", response_model=Message)
 async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Message:
-    """Gleicht SSO-Benutzer PRO aktivem Mandanten ab -- jeder Kunde hat seine eigene
-    ``oidc.admin_group_id``/``oidc.auditor_group_id``/``graph.*``-Konfiguration
-    (Phase-3-TODO, hier geschlossen): vormals lief der Abgleich EINMAL auf der
-    Owner-Session -- weil RLS für die Owner-Rolle nicht greift, läse ``get_all()`` dort ein
-    undefiniertes Gemisch der ``oidc.*``-Zeilen ALLER Tenants, sobald ein zweiter existiert.
+    """Reconcile SSO users against each tenant's own Entra group configuration.
 
-    Scope (H2): ein nicht-superadmin Admin gleicht NUR seinen eigenen autorisierten aktiven
-    Mandanten ab. Instanzweiter Abgleich (alle aktiven Mandanten) bleibt superadmin-exklusiv.
-    ``app_user`` ist instanzweit (kein RLS) -- der eigentliche Schreibzugriff
-    (``oidc.sync_sso_users``) läuft deshalb bewusst auf der übergebenen Owner-`session`
-    (kein aktiver Tenant-Kontext an dieser Stelle: `tenant_scoped_session` bindet den
-    Kontext nur für die Dauer seines eigenen `async with`-Blocks, s.u., danach ist der
-    Owner-Kontext automatisch wieder aktiv) -- anders als der Hintergrund-Lauf
-    (`runner.execute_run`), dessen Tenant-Schleife bereits INNERHALB eines aktiven
-    `use_tenant`-Blocks steht und deshalb explizit `use_owner_context()` braucht.
+    Scope: a non-superadmin admin reconciles ONLY their own authorized active tenant. Instance-
+    wide reconciliation (all active tenants) stays superadmin-exclusive. `app_user` is instance-
+    wide (no RLS), so the write path (`oidc.sync_sso_users`) runs on the owner `session`; the
+    per-tenant `oidc.*` settings are read via a tenant-scoped session inside the loop.
     """
     from ...services import oidc
 
@@ -695,7 +686,7 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
         )
     message = f"{synced} SSO-Benutzer synchronisiert, {removed} entfernt."
     if blocked_count:
-        # COUNT statt Namen -- keine Offenlegung fremder Mandantennamen (H2).
+        # Report a COUNT, never tenant names -- no cross-tenant name disclosure.
         message += f" Entfernen für {blocked_count} Mandant(en) blockiert (Schutz vor Aussperrung)."
     return Message(message=message)
 
