@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     login_lockout_min: int = 15
     setup_rate_limit: str = "30/minute"
 
+    # Shared by `/auth/refresh` and `/auth/activity` (L7): both are normal, frequent
+    # requests during an active session (refresh roughly every `access_token_ttl_min`,
+    # activity pings sparser) -- generous headroom so ordinary usage is never affected,
+    # while still capping the endpoints as a brute-force/abuse target.
+    auth_refresh_rate_limit: str = "60/minute"
+
     # ---- Erst-Seed (nur beim allerersten Start ausgewertet) ----
     admin_username: str | None = None
     admin_password: str | None = None

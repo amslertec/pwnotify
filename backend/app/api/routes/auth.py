@@ -471,6 +471,7 @@ async def _end_if_idle(
 
 
 @router.post("/activity", status_code=204)
+@limiter.limit(_settings.auth_refresh_rate_limit)
 async def activity(request: Request, response: Response, session: SessionDep) -> Response:
     """Aktivitäts-Ping des Frontends: hält ``last_used_at`` an echter Nutzeraktivität aktuell.
 
@@ -500,6 +501,7 @@ async def activity(request: Request, response: Response, session: SessionDep) ->
 
 
 @router.post("/refresh", response_model=UserOut)
+@limiter.limit(_settings.auth_refresh_rate_limit)
 async def refresh(request: Request, response: Response, session: SessionDep) -> UserOut:
     token = request.cookies.get(REFRESH_COOKIE)
     if not token:
@@ -791,6 +793,7 @@ async def revoke_other_sessions(
 
 
 @router.post("/password", response_model=Message)
+@limiter.limit(_settings.login_rate_limit)
 async def change_password(
     request: Request,
     body: PasswordChangeRequest,

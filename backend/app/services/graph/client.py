@@ -38,6 +38,10 @@ REQUIRED_PERMISSIONS = ["User.Read.All", "Domain.Read.All", "Mail.Send"]
 # Verbindungstest sie nicht pauschal ignorieren, aber auch nicht pauschal verlangen.
 GROUP_PERMISSION = "GroupMember.Read.All"
 
+# $top=999 -> ~1M rows per paginated call, comfortably above any real tenant/group size --
+# a firm ceiling against a broken or hostile @odata.nextLink chain looping unbounded (L6).
+_MAX_PAGES = 1000
+
 USER_SELECT = (
     "id,displayName,userPrincipalName,mail,otherMails,accountEnabled,"
     "lastPasswordChangeDateTime,passwordPolicies,department,jobTitle,assignedLicenses,"
@@ -217,6 +221,7 @@ class GraphClient:
             url = (
                 f"{self.config.base}/v1.0/domains?$select=id,isDefault,passwordValidityPeriodInDays"
             )
+            pages = 0
             while url:
                 resp = await self._request(client, "GET", url)
                 data = resp.json()
@@ -230,6 +235,10 @@ class GraphClient:
                         by_domain[dom["id"].lower()] = v
                     if dom.get("isDefault"):
                         default_validity = v
+                pages += 1
+                if pages >= _MAX_PAGES:
+                    log.warning("graph_pagination_cap_reached", pages=pages)
+                    break
                 url = data.get("@odata.nextLink", "")
         return default_validity, by_domain
 
@@ -237,11 +246,16 @@ class GraphClient:
         """Alle Benutzer (paginiert, minimales $select)."""
         async with httpx.AsyncClient(timeout=60) as client:
             url = f"{self.config.base}/v1.0/users?$select={USER_SELECT}&$top=999"
+            pages = 0
             while url:
                 resp = await self._request(client, "GET", url)
                 data = resp.json()
                 for user in data.get("value", []):
                     yield user
+                pages += 1
+                if pages >= _MAX_PAGES:
+                    log.warning("graph_pagination_cap_reached", pages=pages)
+                    break
                 url = data.get("@odata.nextLink", "")
 
     async def get_user_photo(self, user_id: str) -> bytes | None:
@@ -275,11 +289,16 @@ class GraphClient:
                 f"{self.config.base}/v1.0/groups/{group_id}/transitiveMembers/"
                 f"microsoft.graph.user?$select={USER_SELECT}&$top=999"
             )
+            pages = 0
             while url:
                 resp = await self._request(client, "GET", url)
                 data = resp.json()
                 for user in data.get("value", []):
                     yield user
+                pages += 1
+                if pages >= _MAX_PAGES:
+                    log.warning("graph_pagination_cap_reached", pages=pages)
+                    break
                 url = data.get("@odata.nextLink", "")
 
     async def get_group_members(self, group_id: str) -> list[dict[str, Any]]:
@@ -291,10 +310,15 @@ class GraphClient:
                 "microsoft.graph.user"
                 "?$select=id,userPrincipalName,displayName,mail,accountEnabled&$top=999"
             )
+            pages = 0
             while url:
                 resp = await self._request(client, "GET", url)
                 data = resp.json()
                 members.extend(data.get("value", []))
+                pages += 1
+                if pages >= _MAX_PAGES:
+                    log.warning("graph_pagination_cap_reached", pages=pages)
+                    break
                 url = data.get("@odata.nextLink", "")
         return members
 
@@ -303,12 +327,17 @@ class GraphClient:
         ids: set[str] = set()
         async with httpx.AsyncClient(timeout=30) as client:
             url = f"{self.config.base}/v1.0/groups/{group_id}/transitiveMembers?$select=id&$top=999"
+            pages = 0
             while url:
                 resp = await self._request(client, "GET", url)
                 data = resp.json()
                 for member in data.get("value", []):
                     if "id" in member:
                         ids.add(member["id"])
+                pages += 1
+                if pages >= _MAX_PAGES:
+                    log.warning("graph_pagination_cap_reached", pages=pages)
+                    break
                 url = data.get("@odata.nextLink", "")
         return ids
 

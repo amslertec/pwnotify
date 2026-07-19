@@ -8,14 +8,19 @@ Verbindung aufmacht) -- deshalb reicht hier überall die gewöhnliche, savepoint
 `session`-Fixture: alles läuft auf derselben Verbindung, kein Cross-Connection-Problem
 (vgl. Kommentar in `test_active_tenant_resolution.py` zu deren drittem Test). Kein
 Cleanup nötig, die Fixture rollt am Testende zurück.
+
+`refresh` is `@limiter.limit`-decorated (L7); slowapi rejects a duck-typed request unless
+the limiter is disabled, so the autouse fixture below disables it for these direct calls
+(same pattern as `test_invitation_flow.py`).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Iterator
 
 import pytest
-from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE
+from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE, limiter
 from app.api.routes.auth import me, refresh, switch_tenant
 from app.core.config import get_settings
 from app.core.errors import AuthError, ForbiddenError
@@ -27,6 +32,16 @@ from app.repositories import user_repo
 from app.schemas.auth import SwitchTenantRequest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.fixture(autouse=True)
+def _limiter_disabled() -> Iterator[None]:
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = prev
 
 
 class _FakeRequest:

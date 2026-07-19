@@ -5,7 +5,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 from sqlalchemy import text
 
-from ... import __version__
 from ..deps import SessionDep
 
 router = APIRouter(tags=["health"])
@@ -13,8 +12,13 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health() -> dict[str, str]:
-    """Liveness — bewusst ohne DB (vom Docker-HEALTHCHECK genutzt)."""
-    return {"status": "ok", "version": __version__}
+    """Liveness — bewusst ohne DB (vom Docker-HEALTHCHECK genutzt).
+
+    Unauthenticated by design (the Docker HEALTHCHECK has no credentials) -- so it must
+    NOT disclose the running version to anyone probing it. `GET /api/version` (behind
+    `CurrentUser`) is the legitimate, authenticated source of that information.
+    """
+    return {"status": "ok"}
 
 
 @router.get("/ready")

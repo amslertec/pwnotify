@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AssignmentOut(BaseModel):
@@ -28,13 +28,17 @@ class AssignmentOut(BaseModel):
     tenant_ids: list[int]
 
 
+# Caps below guard against unbounded request payloads (L6): 500 for tenant IDs (there are
+# far fewer customers than users, so this leaves generous headroom over any realistic
+# tenant count), 2000 for user IDs (covers large-org bulk assignment batches without
+# accepting an arbitrarily large list).
 class AssignmentUpdate(BaseModel):
-    tenant_ids: list[int] = []
+    tenant_ids: list[int] = Field(default_factory=list, max_length=500)
 
 
 class BulkAssignmentUpdate(BaseModel):
-    user_ids: list[int]
-    tenant_ids: list[int]
+    user_ids: list[int] = Field(max_length=2000)
+    tenant_ids: list[int] = Field(max_length=500)
     action: Literal["add", "remove", "set"]
 
 

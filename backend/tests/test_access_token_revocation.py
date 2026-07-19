@@ -9,20 +9,35 @@ invalidates every access token issued before the bump; `logout`, `revoke_all`
 
 Uses the savepoint-isolated `session` fixture -- all three tests operate on a single
 connection, no cross-connection visibility issue.
+
+`change_password` is `@limiter.limit`-decorated (L7); slowapi rejects a duck-typed request
+unless the limiter is disabled, so the autouse fixture below disables it for these direct
+calls (same pattern as `test_invitation_flow.py`).
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from http.cookies import SimpleCookie
 
 import pytest
-from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
+from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user, limiter
 from app.api.routes.auth import change_password, logout, revoke_other_sessions
 from app.core.errors import AuthError
 from app.core.security import decode_token, hash_password, hash_token, issue_token_pair
 from app.repositories import user_repo
 from app.schemas.auth import PasswordChangeRequest
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.fixture(autouse=True)
+def _limiter_disabled() -> Iterator[None]:
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = prev
 
 
 class _FakeRequest:
