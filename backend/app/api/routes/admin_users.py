@@ -32,7 +32,9 @@ from ..deps import (
     CurrentUser,
     SessionDep,
     SuperadminDefaultContextUser,
+    _resolve_authorized_tenant,
     default_tenant_id,
+    is_superadmin,
 )
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -645,13 +647,15 @@ async def delete_user(
 
 
 @router.post("/sso/sync", response_model=Message)
-async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
+async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Message:
     """Gleicht SSO-Benutzer PRO aktivem Mandanten ab -- jeder Kunde hat seine eigene
     ``oidc.admin_group_id``/``oidc.auditor_group_id``/``graph.*``-Konfiguration
     (Phase-3-TODO, hier geschlossen): vormals lief der Abgleich EINMAL auf der
     Owner-Session -- weil RLS für die Owner-Rolle nicht greift, läse ``get_all()`` dort ein
     undefiniertes Gemisch der ``oidc.*``-Zeilen ALLER Tenants, sobald ein zweiter existiert.
 
+    Scope (H2): ein nicht-superadmin Admin gleicht NUR seinen eigenen autorisierten aktiven
+    Mandanten ab. Instanzweiter Abgleich (alle aktiven Mandanten) bleibt superadmin-exklusiv.
     ``app_user`` ist instanzweit (kein RLS) -- der eigentliche Schreibzugriff
     (``oidc.sync_sso_users``) läuft deshalb bewusst auf der übergebenen Owner-`session`
     (kein aktiver Tenant-Kontext an dieser Stelle: `tenant_scoped_session` bindet den
@@ -662,10 +666,16 @@ async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
     """
     from ...services import oidc
 
-    tenants = await tenant_repo.list_active(session)
+    if is_superadmin(user):
+        tenants = await tenant_repo.list_active(session)
+    else:
+        tid = await _resolve_authorized_tenant(request, user, session)
+        tenant = await tenant_repo.get(session, tid)
+        tenants = [tenant] if tenant is not None else []
+
     configured = False
     synced = removed = 0
-    blocked_tenants: list[str] = []
+    blocked_count = 0
     for tenant in tenants:
         assert tenant.id is not None  # persistierte Zeile aus der DB
         async with tenant_scoped_session(tenant.id) as tsession:
@@ -677,17 +687,16 @@ async def sync_sso(_: AdminUser, session: SessionDep) -> Message:
         synced += stats["synced"]
         removed += stats["removed"]
         if stats.get("removal_blocked"):
-            blocked_tenants.append(tenant.name)
+            blocked_count += 1
 
     if not configured:
         raise ConflictError(
             "SSO ist nicht aktiviert oder keine Admin-Gruppe hinterlegt.", code="sso_not_configured"
         )
     message = f"{synced} SSO-Benutzer synchronisiert, {removed} entfernt."
-    if blocked_tenants:
-        message += (
-            f" Entfernen blockiert für: {', '.join(blocked_tenants)} (Schutz vor Aussperrung)."
-        )
+    if blocked_count:
+        # COUNT statt Namen -- keine Offenlegung fremder Mandantennamen (H2).
+        message += f" Entfernen für {blocked_count} Mandant(en) blockiert (Schutz vor Aussperrung)."
     return Message(message=message)
 
 
