@@ -343,7 +343,7 @@ async def test_local_admin_creates_auditor_grants_auditor_tenant_on_active_tenan
     seed = await _seed(session)
     body = AdminUserCreate(
         username=f"t3-new-auditor-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="auditor",
     )
 
@@ -390,7 +390,7 @@ async def test_local_admin_creates_admin_grants_admin_tenant_on_active_tenant(
     seed = await _seed(session)
     body = AdminUserCreate(
         username=f"t3-new-admin-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="admin",
     )
 
@@ -423,7 +423,7 @@ async def test_local_admin_without_active_tenant_is_rejected(session: AsyncSessi
     nicht zugewiesenen Kontos."""
     seed = await _seed(session)
     body = AdminUserCreate(
-        username=f"t3-orphan-{uuid.uuid4().hex[:8]}", password="a-strong-password-1", role="admin"
+        username=f"t3-orphan-{uuid.uuid4().hex[:8]}", password="Str0ng!Passw0rd1", role="admin"
     )
     with pytest.raises(ForbiddenError) as exc_info:
         await create_local(None, seed.local_admin_a, body, session, None)  # type: ignore[arg-type]
@@ -435,7 +435,7 @@ async def test_local_admin_cannot_scope_creation_to_unheld_tenant(session: Async
     hält) wird -- trotz des rohen Claims -- über `tenant_repo.is_allowed` abgewiesen."""
     seed = await _seed(session)
     body = AdminUserCreate(
-        username=f"t3-rogue-{uuid.uuid4().hex[:8]}", password="a-strong-password-1", role="admin"
+        username=f"t3-rogue-{uuid.uuid4().hex[:8]}", password="Str0ng!Passw0rd1", role="admin"
     )
     with pytest.raises(ForbiddenError) as exc_info:
         await create_local(None, seed.local_admin_a, body, session, seed.b_id)  # type: ignore[arg-type]
@@ -450,7 +450,7 @@ async def test_superadmin_creates_user_unrestricted_without_auto_grant(
     seed = await _seed(session)
     body = AdminUserCreate(
         username=f"t3-super-created-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="admin",
     )
     out = await create_local(None, seed.superadmin, body, session, None)  # type: ignore[arg-type]

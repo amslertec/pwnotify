@@ -275,7 +275,7 @@ async def test_non_superadmin_cannot_call_any_assignment_route(session: AsyncSes
 async def test_create_superadmin_makes_local_superadmin_account(session: AsyncSession) -> None:
     caller = await _mk_user(session, role="superadmin")
     body = SuperadminCreate(
-        username=f"t4-new-super-{uuid.uuid4().hex[:8]}", password="a-strong-password-1"
+        username=f"t4-new-super-{uuid.uuid4().hex[:8]}", password="Str0ng!Passw0rd1"
     )
     out = await create_superadmin(None, caller, body, session)  # type: ignore[arg-type]
     assert out.role == "superadmin"
@@ -286,7 +286,7 @@ async def test_create_superadmin_rejects_sso_flag(session: AsyncSession) -> None
     caller = await _mk_user(session, role="superadmin")
     body = SuperadminCreate(
         username=f"t4-sso-super-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         is_sso=True,
     )
     with pytest.raises(ConflictError) as exc_info:
@@ -297,7 +297,7 @@ async def test_create_superadmin_rejects_sso_flag(session: AsyncSession) -> None
 async def test_non_superadmin_cannot_create_superadmin(session: AsyncSession) -> None:
     local_admin = await _mk_user(session, role="admin")
     body = SuperadminCreate(
-        username=f"t4-rogue-super-{uuid.uuid4().hex[:8]}", password="a-strong-password-1"
+        username=f"t4-rogue-super-{uuid.uuid4().hex[:8]}", password="Str0ng!Passw0rd1"
     )
     with pytest.raises(ForbiddenError) as exc_info:
         gate = await require_superadmin(local_admin)

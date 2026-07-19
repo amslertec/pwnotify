@@ -68,7 +68,7 @@ async def test_customer_admin_creates_admin_home_is_active_tenant_and_lock_bites
 
     body = AdminUserCreate(
         username=f"t3home-new-admin-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="admin",
     )
     out = await create_local(
@@ -127,7 +127,7 @@ async def test_customer_admin_creates_auditor_home_is_active_tenant_with_auditor
 
     body = AdminUserCreate(
         username=f"t3home-new-auditor-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="auditor",
     )
     out = await create_local(
@@ -166,7 +166,7 @@ async def test_superadmin_creates_admin_home_is_default_and_cross_grantable(
 
     body = AdminUserCreate(
         username=f"t3home-super-created-{uuid.uuid4().hex[:8]}",
-        password="a-strong-password-1",
+        password="Str0ng!Passw0rd1",
         role="admin",
     )
     out = await create_local(None, superadmin, body, session, None)  # type: ignore[arg-type]

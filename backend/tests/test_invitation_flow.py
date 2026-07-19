@@ -407,7 +407,7 @@ async def test_direct_create_path_unchanged_with_password(session: AsyncSession)
     out = await create_local(  # type: ignore[arg-type]
         None,
         superadmin,
-        AdminUserCreate(username=username, password="a-strong-password-1", role="admin"),
+        AdminUserCreate(username=username, password="Str0ng!Passw0rd1", role="admin"),
         session,
         None,
     )

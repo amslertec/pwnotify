@@ -45,11 +45,19 @@ _POLICY_DIGIT = re.compile(r"[0-9]")
 _POLICY_SPECIAL = re.compile(r"[^A-Za-z0-9]")
 
 
+WEAK_PASSWORD_MESSAGE = (
+    "Das Passwort erfüllt die Richtlinie nicht (mind. 10 Zeichen, Gross-/Kleinbuchstabe, "
+    "Ziffer, Sonderzeichen)."
+)
+
+
 def password_meets_policy(password: str) -> bool:
-    """Serverseitige Passwort-Policy für Einladung/Reset (Task 5, §7b/§7c) -- die einzige
-    Autorität. Die Frontend-Checkliste (`frontend/src/lib/password.ts`) spiegelt exakt
-    dieselben Regeln, ist aber NUR UX-Vorschau; ein Client, der sie umgeht, scheitert
-    trotzdem hier: mind. 10 Zeichen, je ein Gross-/Kleinbuchstabe, eine Ziffer, ein
+    """Serverseitige Passwort-Policy -- die einzige Autorität, geprüft an JEDEM Pfad, der
+    ein echtes, vom Benutzer wählbares Passwort setzt (Einladung/Reset via `public_tokens.py`,
+    Setup-Superadmin, `/auth/password`, Admin-Direktanlage `create_local`/`create_superadmin`
+    -- Security Phase 5, Task 2). Die Frontend-Checkliste (`frontend/src/lib/password.ts`)
+    spiegelt exakt dieselben Regeln, ist aber NUR UX-Vorschau; ein Client, der sie umgeht,
+    scheitert trotzdem hier: mind. 10 Zeichen, je ein Gross-/Kleinbuchstabe, eine Ziffer, ein
     Sonderzeichen (alles ausser [A-Za-z0-9])."""
     return (
         len(password) >= 10

@@ -177,7 +177,7 @@ async def test_superadmin_invite_requires_email(
 
 async def test_superadmin_direct_mode_requires_username(session: AsyncSession) -> None:
     caller = await _mk_superadmin(session)
-    body = SuperadminCreate(password="a-strong-password-1")  # kein username
+    body = SuperadminCreate(password="Str0ng!Passw0rd1")  # kein username
 
     with pytest.raises(ForbiddenError) as exc_info:
         await create_superadmin(None, caller, body, session)  # type: ignore[arg-type]
@@ -190,7 +190,7 @@ async def test_superadmin_direct_mode_unchanged(session: AsyncSession) -> None:
     fehlschlagen und den Test verraten, falls hier fälschlich ein Invite-Zweig liefe)."""
     caller = await _mk_superadmin(session)
     username = f"direct-superadmin-{uuid.uuid4().hex[:8]}"
-    body = SuperadminCreate(username=username, password="a-strong-password-1")
+    body = SuperadminCreate(username=username, password="Str0ng!Passw0rd1")
 
     out = await create_superadmin(None, caller, body, session)  # type: ignore[arg-type]
 
@@ -208,7 +208,7 @@ async def test_superadmin_direct_mode_unchanged(session: AsyncSession) -> None:
 
 
 async def test_superadmin_create_still_rejects_sso() -> None:
-    body = SuperadminCreate(username="xyz", password="a-strong-password-1", is_sso=True)
+    body = SuperadminCreate(username="xyz", password="Str0ng!Passw0rd1", is_sso=True)
     assert body.is_sso is True  # Route lehnt dies hart ab (unveränderter Guard, s. Route)
 
 

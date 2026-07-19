@@ -488,7 +488,7 @@ async def _assert_auditor_locked_out_of_real_routes(
                 admin,
                 AdminUserCreate(
                     username=f"mx6-should-not-{uuid.uuid4().hex[:8]}",
-                    password="a-strong-password-1",
+                    password="Str0ng!Passw0rd1",
                     role="admin",
                 ),
                 owner,

@@ -10,8 +10,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from ...core.config import get_settings
-from ...core.errors import ConflictError
-from ...core.security import hash_password, hash_token, issue_token_pair
+from ...core.errors import ConflictError, ForbiddenError
+from ...core.security import (
+    WEAK_PASSWORD_MESSAGE,
+    hash_password,
+    hash_token,
+    issue_token_pair,
+    password_meets_policy,
+)
 from ...db.migrate import run_migrations
 from ...repositories import tenant_repo, user_repo
 from ...schemas.auth import UserOut
@@ -132,6 +138,10 @@ async def create_admin(
 ) -> UserOut:
     if await _admin_count(session) > 0:
         raise ConflictError("Es existiert bereits ein Administrator.", code="admin_exists")
+    # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
+    # `min_length=10` on `AdminCreate.password` is only a floor, not the policy itself.
+    if not password_meets_policy(body.password):
+        raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
     # Das erste Setup-Konto ist IMMER der (lokale) Superadmin -- instanzweit, nicht der
     # alte "Drei-Wege"-Admin (Design §9.1). Multi-Tenant-Mode bleibt dabei AUS (in Task 1
     # false geseedet) -- Setup schaltet ihn nicht ein, das macht der Superadmin bewusst

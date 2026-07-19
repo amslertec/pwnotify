@@ -53,7 +53,7 @@ async def test_setup_creates_superadmin_and_renames_default_tenant_mode_stays_of
 ) -> None:
     body = AdminCreate(
         username="ti-first-setup",
-        password="a-long-enough-password",
+        password="Str0ng!Passw0rd1",
         default_tenant_name="Acme AG",
     )
     response = _FakeResponse()
@@ -79,7 +79,7 @@ async def test_setup_without_tenant_name_keeps_default_name(session: AsyncSessio
     default_before = await tenant_repo.default_tenant(session)
     original_name = default_before.name
 
-    body = AdminCreate(username="ti-first-setup-2", password="a-long-enough-password")
+    body = AdminCreate(username="ti-first-setup-2", password="Str0ng!Passw0rd1")
     response = _FakeResponse()
     request = _FakeRequest()
 
@@ -91,12 +91,12 @@ async def test_setup_without_tenant_name_keeps_default_name(session: AsyncSessio
 
 
 async def test_second_setup_call_still_conflicts(session: AsyncSession) -> None:
-    body = AdminCreate(username="ti-first-setup-3", password="a-long-enough-password")
+    body = AdminCreate(username="ti-first-setup-3", password="Str0ng!Passw0rd1")
     response = _FakeResponse()
     request = _FakeRequest()
     await create_admin(body, response, request, session)  # type: ignore[arg-type]
 
-    body2 = AdminCreate(username="ti-second-setup", password="another-long-password")
+    body2 = AdminCreate(username="ti-second-setup", password="An0ther!Passw0rd2")
     with pytest.raises(ConflictError) as exc_info:
         await create_admin(body2, _FakeResponse(), _FakeRequest(), session)  # type: ignore[arg-type]
     assert exc_info.value.code == "admin_exists"

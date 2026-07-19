@@ -162,7 +162,9 @@ async def test_superadmin_default_context_allows_instance_tenant_and_assignment_
     created_superadmin = await create_superadmin(
         request,  # type: ignore[arg-type]
         guarded,
-        SuperadminCreate(username=f"mb-new-superadmin-{uuid.uuid4().hex[:8]}", password="x" * 12),
+        SuperadminCreate(
+            username=f"mb-new-superadmin-{uuid.uuid4().hex[:8]}", password="Str0ng!Passw0rd1"
+        ),
         session,
     )
     assert created_superadmin.role == "superadmin"
@@ -324,7 +326,7 @@ async def test_superadmin_customer_context_blocks_superadmin_crud(session: Async
         await create_superadmin(
             request,  # type: ignore[arg-type]
             guarded,
-            SuperadminCreate(username=new_username, password="x" * 12),
+            SuperadminCreate(username=new_username, password="Str0ng!Passw0rd1"),
             session,
         )
     assert exc_info.value.code == "default_context_required"

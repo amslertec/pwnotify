@@ -19,12 +19,14 @@ from ...core.crypto import decrypt, encrypt
 from ...core.errors import AuthError, ForbiddenError, NotFoundError, PwNotifyError
 from ...core.logging import get_logger
 from ...core.security import (
+    WEAK_PASSWORD_MESSAGE,
     create_2fa_token,
     decode_token,
     hash_password,
     hash_token,
     issue_token_pair,
     needs_rehash,
+    password_meets_policy,
     register_failed_attempt,
     reset_failed_attempts,
     verify_password,
@@ -766,6 +768,10 @@ async def change_password(
 ) -> Message:
     if not verify_password(body.current_password, user.password_hash):
         raise AuthError("Aktuelles Passwort ist falsch.", code="wrong_current_password")
+    # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
+    # `min_length=10` on `PasswordChangeRequest.new_password` is only a floor.
+    if not password_meets_policy(body.new_password):
+        raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
 

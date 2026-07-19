@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 from ...core.config import get_settings
 from ...core.errors import ConflictError, ForbiddenError, NotFoundError
-from ...core.security import hash_password
+from ...core.security import WEAK_PASSWORD_MESSAGE, hash_password, password_meets_policy
 from ...db.tenant_context import tenant_scoped_session
 from ...models._base import utcnow
 from ...models.user import AppUser
@@ -218,6 +218,11 @@ async def create_local(
         if existing is not None:
             raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
         username = body.username
+        # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
+        # `min_length=10` on `AdminUserCreate.password` is only a floor. Direct mode only --
+        # an invite (`raw_password is None`, handled above) never sets a real password here.
+        if not password_meets_policy(raw_password):
+            raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
         password_hash = hash_password(raw_password)
 
     is_superadmin_caller = not admin.is_sso and admin.role == "superadmin"
@@ -474,6 +479,11 @@ async def create_superadmin(
         if existing is not None:
             raise ConflictError("Benutzername bereits vergeben.", code="username_taken")
         username = body.username
+        # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
+        # `min_length=10` on `SuperadminCreate.password` is only a floor. Direct mode only --
+        # an invite (`raw_password is None`, handled above) never sets a real password here.
+        if not password_meets_policy(raw_password):
+            raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
         password_hash = hash_password(raw_password)
 
     user = await user_repo.create(

@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request
 
 from ...core.config import get_settings
 from ...core.errors import ConflictError, ForbiddenError
+from ...core.security import WEAK_PASSWORD_MESSAGE as _WEAK_PASSWORD_MESSAGE
 from ...core.security import hash_password, hash_token, password_meets_policy
 from ...models._base import utcnow
 from ...repositories import user_repo, user_token_repo
@@ -30,11 +31,6 @@ from ..deps import SessionDep, limiter
 router = APIRouter(prefix="/public/token", tags=["public-token"])
 
 _settings = get_settings()
-
-_WEAK_PASSWORD_MESSAGE = (
-    "Das Passwort erfüllt die Richtlinie nicht (mind. 10 Zeichen, Gross-/Kleinbuchstabe, "
-    "Ziffer, Sonderzeichen)."
-)
 
 
 @router.get("/info", response_model=TokenInfo)
