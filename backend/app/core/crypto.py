@@ -41,10 +41,26 @@ def resolve_secret_keys() -> list[bytes]:
     if key_path.exists():
         return [key_path.read_bytes().strip()]
 
-    # Auto-Generierung beim allerersten Start
+    # Auto-Generierung beim allerersten Start. Verzeichnis und Datei restriktiv
+    # anlegen, damit es kein Zeitfenster gibt, in dem der Schlüssel für andere
+    # lokale Prozesse/Nutzer lesbar wäre (vorher: write_bytes() mit umask-Default,
+    # erst danach chmod -- kurzes 0644-Fenster).
     key = Fernet.generate_key()
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_bytes(key)
+    key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        # os.open() setzt den Modus bereits bei der Erzeugung (abzüglich umask), und
+        # O_EXCL verhindert das Überschreiben eines parallel entstandenen Keys.
+        fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # Ein paralleler erster Start hat das Rennen gewonnen -- dessen Key übernehmen.
+        return [key_path.read_bytes().strip()]
+    try:
+        os.write(fd, key)
+    finally:
+        os.close(fd)
+    # os.open()'s Modus wird von der Prozess-umask maskiert (mode & ~umask); ein
+    # permissiver umask (z. B. 0022) würde sonst 0644 statt 0600 ergeben. Der
+    # explizite chmod verengt nur noch, öffnet nie ein Fenster.
     os.chmod(key_path, 0o600)
     return [key]
 

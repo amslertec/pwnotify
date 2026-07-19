@@ -70,10 +70,20 @@ TWOFA_SETUP_STARTED = "auth.2fa_setup_started"  # secret/QR issued, not yet conf
 _NEVER_LOG = frozenset({"password", "secret", "client_secret", "smtp_password", "token", "code"})
 
 
+def _clean_value(value: Any) -> Any:
+    """Drop ``_NEVER_LOG`` keys recursively so a nested secret key inside a
+    ``detail`` sub-dict is dropped too, not only at the top level."""
+    if isinstance(value, dict):
+        return {k: _clean_value(v) for k, v in value.items() if k.lower() not in _NEVER_LOG}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_clean_value(v) for v in value)
+    return value
+
+
 def _clean(detail: dict[str, Any] | None) -> dict[str, Any]:
     if not detail:
         return {}
-    return {k: v for k, v in detail.items() if k.lower() not in _NEVER_LOG}
+    return {k: _clean_value(v) for k, v in detail.items() if k.lower() not in _NEVER_LOG}
 
 
 async def record(
