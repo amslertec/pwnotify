@@ -320,8 +320,8 @@ async def login(
         await session.commit()
         raise AuthError("Ungültiger Benutzername oder Passwort.", code="invalid_credentials")
 
-    # Passwort ok -- ERST jetzt darf die Sperre offengelegt werden, denn nur wer das
-    # Passwort bereits kennt, kann daraus etwas lernen (kein Enumerationsvektor mehr).
+    # Password correct -- ONLY now may the lockout be disclosed, since only someone who
+    # already knows the password can learn anything from it (no longer an enumeration vector).
     if user.locked_until and user.locked_until > now:
         await audit.record(
             session,

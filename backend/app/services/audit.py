@@ -105,6 +105,12 @@ async def record(
     (`password_changed`, `2fa_*`, `logout`) -- left `None` (NULL) unless a future task
     decides otherwise. On a tenant-scoped session this is normally left unset -- the
     `default_factory` already stamps correctly there.
+
+    Note on the `None` case: the `tenant_id` override is intended for owner-session routes
+    that need to attribute an otherwise NULL-tenant event to a customer. It cannot force a
+    NULL stamp on a tenant-scoped session: `tenant_id=None` falls back to the ContextVar
+    default (the active tenant). Pass an explicit int to attribute; omit it to use the
+    ambient tenant.
     """
     try:
         entry = audit_repo.build(
