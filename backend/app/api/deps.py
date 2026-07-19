@@ -24,6 +24,7 @@ from ..services.settings_service import SettingsService
 ACCESS_COOKIE = "pwnotify_access"
 REFRESH_COOKIE = "pwnotify_refresh"
 TWOFA_COOKIE = "pwnotify_2fa"
+OIDC_FLOW_COOKIE = "pwnotify_oidc_flow"
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -401,3 +402,26 @@ def set_2fa_cookie(response: Response, token: str) -> None:
 
 def clear_2fa_cookie(response: Response) -> None:
     response.delete_cookie(TWOFA_COOKIE, path="/")
+
+
+def set_oidc_flow_cookie(response: Response, value: str) -> None:
+    """Short-lived, browser-bound carrier for the encrypted MSAL auth-code flow dict.
+
+    NOT routed through `_cookie_kwargs()`: that hardcodes `samesite="strict"`/`path="/"`, which
+    would break every SSO login. The callback is a cross-site top-level GET navigation redirected
+    from `login.microsoftonline.com` -- only `SameSite=Lax` is sent on such a navigation.
+    """
+    settings = get_settings()
+    response.set_cookie(
+        OIDC_FLOW_COOKIE,
+        value,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        path="/api/auth/oidc",
+    )
+
+
+def clear_oidc_flow_cookie(response: Response) -> None:
+    response.delete_cookie(OIDC_FLOW_COOKIE, path="/api/auth/oidc")

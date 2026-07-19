@@ -62,6 +62,7 @@ from ...services.graph import GraphClient, GraphConfig
 from ...services.settings_service import SettingsService, effective_base_url
 from ..deps import (
     ACCESS_COOKIE,
+    OIDC_FLOW_COOKIE,
     REFRESH_COOKIE,
     TWOFA_COOKIE,
     ActiveTenantClaim,
@@ -70,9 +71,11 @@ from ..deps import (
     SessionDep,
     clear_2fa_cookie,
     clear_auth_cookies,
+    clear_oidc_flow_cookie,
     limiter,
     set_2fa_cookie,
     set_auth_cookies,
+    set_oidc_flow_cookie,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -922,10 +925,10 @@ def _redirect_uri(base: str) -> str:
 async def oidc_login(session: SessionDep, login_hint: str | None = None) -> RedirectResponse:
     settings = await SettingsService(session).get_all()
     base = effective_base_url(settings)
-    url = oidc.build_login_url(
-        settings, _redirect_uri(base), oidc.sign_state(), login_hint=login_hint
-    )
-    return RedirectResponse(url, status_code=302)
+    url, flow_cookie = oidc.initiate_login(settings, _redirect_uri(base), login_hint=login_hint)
+    resp = RedirectResponse(url, status_code=302)
+    set_oidc_flow_cookie(resp, flow_cookie)
+    return resp
 
 
 @router.get("/oidc/callback")
@@ -941,8 +944,15 @@ async def oidc_callback(
     if error or not code or not state:
         return RedirectResponse(f"{base}/login?sso_error=1", status_code=302)
 
-    oidc.verify_state(state)
-    result = await oidc.exchange_and_verify(settings, code, _redirect_uri(base))
+    flow_cookie = request.cookies.get(OIDC_FLOW_COOKIE)
+    if not flow_cookie:
+        # No browser-bound state cookie -> reject (login-CSRF / stale/replayed callback).
+        return RedirectResponse(f"{base}/login?sso_error=1", status_code=302)
+    try:
+        flow = oidc.decode_flow_cookie(flow_cookie)
+        result = await oidc.exchange_and_verify(settings, flow, {"code": code, "state": state})
+    except AuthError, PwNotifyError:
+        return RedirectResponse(f"{base}/login?sso_error=1", status_code=302)
     # Sicherheitsfix (Phase 4c Task 4): `result.allowed`/`result.role` sind gegen die
     # OWNER-Session berechnet -- `SettingsService(session).get_all()` oben liest ohne
     # RLS-Filterung ein undefiniertes Gemisch der `oidc.*`-Zeilen ALLER Kunden, sobald ein
@@ -1135,4 +1145,5 @@ async def oidc_callback(
             await _cache_sso_avatar(user.id, result.username, settings)
     resp = RedirectResponse(f"{base}/", status_code=302)
     set_auth_cookies(resp, pair)
+    clear_oidc_flow_cookie(resp)
     return resp

@@ -33,6 +33,7 @@ from http.cookies import SimpleCookie
 from unittest.mock import AsyncMock, patch
 
 import pytest_asyncio
+from app.api.deps import OIDC_FLOW_COOKIE
 from app.api.routes.auth import oidc_callback
 from app.core.security import decode_token
 from app.db.session import get_session_factory
@@ -68,13 +69,13 @@ def _extract_cookie(resp: RedirectResponse, name: str) -> str | None:
 
 async def _call_oidc_callback(session: AsyncSession, result: oidc.OidcResult) -> RedirectResponse:
     request = _FakeRequest()
-    state = oidc.sign_state()
+    request.cookies = {OIDC_FLOW_COOKIE: oidc.encode_flow_cookie({"state": "x", "nonce": "n"})}
     with patch("app.services.oidc.exchange_and_verify", new=AsyncMock(return_value=result)):
         resp = await oidc_callback(
             request,  # type: ignore[arg-type]
             session,
             code="fake-code",
-            state=state,
+            state="x",
             error=None,
         )
     assert isinstance(resp, RedirectResponse)

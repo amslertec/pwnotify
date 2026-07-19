@@ -8,18 +8,15 @@ Entra-Admin-Gruppe dürfen sich anmelden — die Gruppenprüfung erfolgt über d
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
-import hashlib
-import hmac
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
-import jwt
 import msal
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.crypto import resolve_secret_key
+from ..core.crypto import decrypt, encrypt
 from ..core.errors import AuthError, PwNotifyError
 from ..core.logging import get_logger
 from ..core.security import hash_password
@@ -79,40 +76,33 @@ def _app(settings: dict[str, Any]) -> msal.ConfidentialClientApplication:
     )
 
 
-# -- CSRF-State (signiertes, kurzlebiges Token) ------------------------------- #
-def _state_key() -> bytes:
-    return hmac.new(resolve_secret_key(), b"pwnotify-oidc-state", hashlib.sha256).digest()
+# -- Flow (MSAL native auth-code-flow: PKCE S256 + nonce + state, all built-in) ---------- #
+def encode_flow_cookie(flow: dict[str, Any]) -> str:
+    """Encrypt the MSAL auth-code flow dict for the short-lived, browser-bound state cookie."""
+    return encrypt(json.dumps(flow))
 
 
-def sign_state() -> str:
-    now = dt.datetime.now(dt.UTC)
-    payload = {"nonce": uuid.uuid4().hex, "exp": int((now + dt.timedelta(minutes=10)).timestamp())}
-    return jwt.encode(payload, _state_key(), algorithm="HS256")
-
-
-def verify_state(state: str) -> None:
+def decode_flow_cookie(value: str) -> dict[str, Any]:
+    """Decrypt+parse the flow cookie. Raises AuthError on any tampering/format error."""
     try:
-        jwt.decode(state, _state_key(), algorithms=["HS256"])
-    except jwt.PyJWTError as exc:
+        data: dict[str, Any] = json.loads(decrypt(value))
+    except (ValueError, json.JSONDecodeError) as exc:
         raise AuthError(
             "Ungültiger oder abgelaufener SSO-State.", code="sso_state_invalid"
         ) from exc
+    return data
 
 
-# -- Flow --------------------------------------------------------------------- #
-def build_login_url(
-    settings: dict[str, Any], redirect_uri: str, state: str, login_hint: str | None = None
-) -> str:
+def initiate_login(
+    settings: dict[str, Any], redirect_uri: str, login_hint: str | None = None
+) -> tuple[str, str]:
+    """Start an OIDC auth-code flow with PKCE+nonce. Returns (auth_url, encrypted_flow_cookie)."""
     if not is_configured(settings):
         raise PwNotifyError("SSO ist nicht vollständig konfiguriert.", code="oidc_not_configured")
-    url = _app(settings).get_authorization_request_url(
-        _SCOPES,
-        redirect_uri=redirect_uri,
-        state=state,
-        prompt="select_account",
-        login_hint=login_hint or None,
+    flow = _app(settings).initiate_auth_code_flow(
+        _SCOPES, redirect_uri=redirect_uri, prompt="select_account", login_hint=login_hint or None
     )
-    return str(url)
+    return flow["auth_uri"], encode_flow_cookie(flow)
 
 
 def resolve_role(
@@ -175,14 +165,20 @@ async def resolve_group_role(session: AsyncSession, groups: list[str] | None) ->
     return "auditor", True
 
 
-async def exchange_and_verify(settings: dict[str, Any], code: str, redirect_uri: str) -> OidcResult:
+async def exchange_and_verify(
+    settings: dict[str, Any], flow: dict[str, Any], auth_response: dict[str, Any]
+) -> OidcResult:
+    """Complete the MSAL auth-code flow started by :func:`initiate_login`.
+
+    Delegates state match (CSRF), nonce match against the id_token (replay), and the PKCE
+    ``code_verifier`` exchange entirely to MSAL in one call -- a ``state`` mismatch raises
+    ``ValueError`` before any network call (verified against msal 1.37.0).
+    """
     app = _app(settings)
-    result = await asyncio.to_thread(
-        app.acquire_token_by_authorization_code,
-        code,
-        scopes=_SCOPES,
-        redirect_uri=redirect_uri,
-    )
+    try:
+        result = await asyncio.to_thread(app.acquire_token_by_auth_code_flow, flow, auth_response)
+    except ValueError as exc:  # MSAL raises on state mismatch before any network call
+        raise AuthError("SSO-State stimmt nicht überein.", code="sso_state_mismatch") from exc
     if "access_token" not in result:
         desc = result.get("error_description", result.get("error", "unbekannt"))
         raise AuthError(desc, code="sso_token_exchange_failed")
