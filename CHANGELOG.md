@@ -4,6 +4,29 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] — 2026-07-19
+
+### Security
+
+- **Settings are now validated before they are stored.** A registered setting can declare a
+  validation rule, and an invalid value is rejected with a clear error instead of being written.
+  This closes several ways a bad or crafted value could weaken a safeguard (see below), and it is
+  the foundation the other fixes in this release build on.
+- **Branding paths can no longer point outside the branding folder.** A crafted logo or favicon
+  path could previously make the public branding endpoints — or the e-mail logo — read an
+  arbitrary file on the server (including the key that signs sessions). Branding paths are now
+  rejected if they escape the branding folder, and every place that serves or reads a branding
+  file re-checks containment, so even a tampered stored value cannot leak a file or reveal whether
+  an arbitrary path exists.
+- **The audit trail can no longer be wiped through the retention setting.** A tiny or invalid
+  retention value is rejected, and a purge that would delete more than half of the audit entries is
+  blocked outright — the trail can no longer be erased by a single misconfiguration. "Keep forever"
+  (0) still works.
+- **The mass-send safety brake can no longer be switched off.** The notification-ratio brake no
+  longer accepts a value that disables it, and a second, independent absolute ceiling now caps how
+  many notifications a single run may send. A misconfiguration can no longer trigger an
+  uncontrolled mass send; an administrator can still deliberately raise the limits.
+
 ## [0.2.5] — 2026-07-19
 
 ### Security
@@ -685,6 +708,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.2.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.6
 [0.2.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.5
 [0.2.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.4
 [0.2.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.3
