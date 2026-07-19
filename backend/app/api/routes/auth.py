@@ -127,10 +127,20 @@ def _avatar_mtime(user_id: int) -> int | None:
         return None
 
 
+# M9: without a cap, Pillow decodes whatever pixel area a file declares -- a tiny file
+# claiming a huge width/height forces a huge in-memory bitmap allocation (decompression
+# bomb). 24 MP comfortably covers any legitimate avatar photo while still catching bombs;
+# Pillow raises `Image.DecompressionBombError` (a plain `Exception`) once decoded pixels
+# exceed 2x this value, which the `except Exception` below already turns into a clean `None`.
+_MAX_IMAGE_PIXELS = 24_000_000
+
+
 def _process_avatar(data: bytes) -> bytes | None:
     """Bild zentriert quadratisch zuschneiden -> 256x256 PNG. None bei Fehler."""
     try:
         from PIL import Image
+
+        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
 
         img = Image.open(io.BytesIO(data)).convert("RGBA")
         w, h = img.size

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, Response
 from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
+from ...db.tenant_context import current_tenant_or_none
 from ...schemas.common import Message
 from ...services.settings_validators import contained_path
 from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep
@@ -63,17 +64,44 @@ def _reject_active_svg(data: bytes) -> None:
             )
 
 
-def _branding_dir() -> Path:
+def _branding_root() -> Path:
+    """Shared root that holds every tenant's branding assets (plus legacy, pre-tenant-scoping
+    uploads directly at its top level -- see `_tenant_branding_dir`)."""
     d = Path(get_settings().data_dir) / "branding"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+def _tenant_branding_dir() -> Path:
+    """Per-tenant storage subdirectory for NEW uploads (M5 fix).
+
+    `_branding_root()` used to be written into directly with a fixed stem
+    (`"logo"`/`"favicon"`), shared by every tenant -- tenant A's upload silently
+    overwrote/deleted tenant B's file on disk. Scoping the write path by the active tenant
+    (from the ContextVar bound by `tenant_scoped_session`, set for the duration of every
+    branding route via `TenantSettingsDep`) isolates uploads without touching read
+    containment, which still resolves against the shared root (see `_safe_branding_file`).
+    """
+    tid = current_tenant_or_none()
+    if tid is None:
+        raise PwNotifyError("Kein Mandantenkontext.", code="tenant_required")
+    d = _branding_root() / str(tid)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _safe_branding_file(path: str | None) -> Path | None:
-    """Resolved branding file if it exists inside the branding dir, else None."""
+    """Resolved branding file if it exists inside the branding root, else None.
+
+    Deliberately checked against the shared ROOT, not the per-tenant subdirectory: existing
+    `branding.*_path` values still point at the legacy flat layout
+    (`{data}/branding/logo.png`), and this must keep resolving them. New uploads land
+    tenant-isolated under `_tenant_branding_dir()`, which is itself inside the root, so it
+    still passes containment.
+    """
     if not path:
         return None
-    real = contained_path(_branding_dir().resolve(), path)
+    real = contained_path(_branding_root().resolve(), path)
     if real is None or not real.is_file():
         return None
     return real
@@ -112,6 +140,13 @@ def _file_version(path: str | None) -> int:
 # ~168px physisch; 192px hält alle Displays gestochen scharf bei kleiner Dateigrösse.
 _LOGO_TARGET_HEIGHT = 192
 
+# M9: without a cap, Pillow decodes whatever pixel area a file declares -- a tiny file
+# claiming a huge width/height forces a huge in-memory bitmap allocation (decompression
+# bomb). 24 MP comfortably covers any legitimate logo while still catching bombs; Pillow
+# raises `Image.DecompressionBombError` (a plain `Exception`) once decoded pixels exceed
+# 2x this value, which the `except Exception` below already turns into a clean `None`.
+_MAX_IMAGE_PIXELS = 24_000_000
+
 
 def _autotrim(data: bytes) -> bytes | None:
     """Raster-Logo aufbereiten: transparente Ränder abschneiden, auf HiDPI-Höhe
@@ -121,6 +156,8 @@ def _autotrim(data: bytes) -> bytes | None:
     """
     try:
         from PIL import Image
+
+        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
 
         img = Image.open(io.BytesIO(data)).convert("RGBA")
         bbox = img.getchannel("A").getbbox()
@@ -163,10 +200,12 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
         if trimmed is not None:
             data = trimmed
             ext = ".png"
-    # alte Varianten entfernen, damit nur eine Datei existiert
-    for old in _branding_dir().glob(f"{stem}.*"):
+    # Remove previous variants so only one file remains -- scoped to this tenant's own
+    # subdirectory only (no more cross-tenant deletion, M5).
+    tenant_dir = _tenant_branding_dir()
+    for old in tenant_dir.glob(f"{stem}.*"):
         old.unlink(missing_ok=True)
-    target = _branding_dir() / f"{stem}{ext}"
+    target = tenant_dir / f"{stem}{ext}"
     target.write_bytes(data)
     return str(target)
 
@@ -190,7 +229,7 @@ async def upload_favicon(
 
 
 async def _clear_upload(svc: TenantSettingsDep, key: str, stem: str) -> None:
-    for old in _branding_dir().glob(f"{stem}.*"):
+    for old in _tenant_branding_dir().glob(f"{stem}.*"):
         old.unlink(missing_ok=True)
     await svc.set(key, None)
 
