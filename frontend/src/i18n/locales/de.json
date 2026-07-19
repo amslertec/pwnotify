@@ -162,7 +162,14 @@
       "user.invited": "Benutzer eingeladen",
       "user.invitation_accepted": "Einladung angenommen",
       "auth.password_reset_sent": "Passwort-Reset-Link gesendet",
-      "auth.password_reset_done": "Passwort zurückgesetzt"
+      "auth.password_reset_done": "Passwort zurückgesetzt",
+      "entra_user.exclusion_changed": "Ausschluss geändert",
+      "notification.manual_send": "Manueller Reminder gesendet",
+      "notification.retried": "Benachrichtigung erneut gesendet",
+      "run.triggered": "Lauf gestartet",
+      "branding.changed": "Branding geändert",
+      "user.sso_synced": "SSO synchronisiert",
+      "auth.2fa_setup_started": "2FA-Einrichtung gestartet"
     },
     "detail": {
       "tenant": "Kunde",

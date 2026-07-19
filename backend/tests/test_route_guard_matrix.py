@@ -187,23 +187,50 @@ EXPECTED: Final = {
     ("GET", "/api/branding"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
+    # Security Phase 5, Task 8/M10: these four now also carry `get_tenant_session_write`
+    # (a second, separate `TenantWriteSessionDep` alongside the pre-existing `svc:
+    # TenantSettingsDep`) so the new audit entry can be written write-gated -- a side
+    # effect that also closes a latent gap: an admin with only a read-only (`auditor_tenant`)
+    # grant on the active tenant can no longer reach these upload/delete routes at all,
+    # matching every sibling tenant-write route (`settings.*`, `users.*`, `notifications.
+    # retry`, `runs.trigger`).
     ("DELETE", "/api/branding/favicon"): frozenset(
-        {deps.get_current_user, deps.get_tenant_session, deps.require_admin}
+        {
+            deps.get_current_user,
+            deps.get_tenant_session,
+            deps.get_tenant_session_write,
+            deps.require_admin,
+        }
     ),
     ("GET", "/api/branding/favicon"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
     ("POST", "/api/branding/favicon"): frozenset(
-        {deps.get_current_user, deps.get_tenant_session, deps.require_admin}
+        {
+            deps.get_current_user,
+            deps.get_tenant_session,
+            deps.get_tenant_session_write,
+            deps.require_admin,
+        }
     ),
     ("DELETE", "/api/branding/logo"): frozenset(
-        {deps.get_current_user, deps.get_tenant_session, deps.require_admin}
+        {
+            deps.get_current_user,
+            deps.get_tenant_session,
+            deps.get_tenant_session_write,
+            deps.require_admin,
+        }
     ),
     ("GET", "/api/branding/logo"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
     ("POST", "/api/branding/logo"): frozenset(
-        {deps.get_current_user, deps.get_tenant_session, deps.require_admin}
+        {
+            deps.get_current_user,
+            deps.get_tenant_session,
+            deps.get_tenant_session_write,
+            deps.require_admin,
+        }
     ),
     ("GET", "/api/dashboard"): frozenset({deps.get_current_user, deps.get_tenant_session}),
     ("GET", "/api/entra-avatar/{entra_id}"): frozenset(

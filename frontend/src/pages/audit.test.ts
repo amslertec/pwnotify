@@ -41,11 +41,18 @@ const ALLE_AKTIONEN = [
   'user.invitation_accepted',
   'auth.password_reset_sent',
   'auth.password_reset_done',
+  'entra_user.exclusion_changed',
+  'notification.manual_send',
+  'notification.retried',
+  'run.triggered',
+  'branding.changed',
+  'user.sso_synced',
+  'auth.2fa_setup_started',
 ]
 
 describe('audit.actions i18n', () => {
-  it('hat genau 31 bekannte Aktionskennungen (Ground Truth aus audit.py)', () => {
-    expect(ALLE_AKTIONEN).toHaveLength(31)
+  it('hat genau 38 bekannte Aktionskennungen (Ground Truth aus audit.py)', () => {
+    expect(ALLE_AKTIONEN).toHaveLength(38)
   })
 
   const tDe = i18n.getFixedT('de')

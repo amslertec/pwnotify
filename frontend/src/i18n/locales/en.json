@@ -162,7 +162,14 @@
       "user.invited": "User invited",
       "user.invitation_accepted": "Invitation accepted",
       "auth.password_reset_sent": "Password reset link sent",
-      "auth.password_reset_done": "Password reset"
+      "auth.password_reset_done": "Password reset",
+      "entra_user.exclusion_changed": "Exclusion changed",
+      "notification.manual_send": "Manual reminder sent",
+      "notification.retried": "Notification retried",
+      "run.triggered": "Run triggered",
+      "branding.changed": "Branding changed",
+      "user.sso_synced": "SSO synced",
+      "auth.2fa_setup_started": "2FA setup started"
     },
     "detail": {
       "tenant": "Customer",

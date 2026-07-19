@@ -86,6 +86,11 @@ async def two_tenants(migrated_engine: AsyncEngine) -> AsyncGenerator[dict[str, 
         try:
             yield {"a": int(a), "b": int(b)}
         finally:
+            # `branding.changed` audit rows (Security Phase 5, Task 8/M10) reference these
+            # tenants via a plain FK (no ON DELETE) -- clear them before the tenant rows.
+            await conn.execute(
+                text("DELETE FROM audit_log WHERE tenant_id IN (:a, :b)"), {"a": a, "b": b}
+            )
             await conn.execute(
                 text("DELETE FROM setting WHERE tenant_id IN (:a, :b)"), {"a": a, "b": b}
             )
@@ -108,12 +113,12 @@ async def test_second_tenant_upload_does_not_overwrite_first_tenants_logo_file(
 
     async with tenant_scoped_session(a) as session_a:
         svc_a = SettingsService(session_a)
-        await branding.upload_logo(None, svc_a, _upload_file(LOGO_A))  # type: ignore[arg-type]
+        await branding.upload_logo(None, None, svc_a, session_a, _upload_file(LOGO_A))  # type: ignore[arg-type]
         path_a = await svc_a.get("branding.logo_path")
 
     async with tenant_scoped_session(b) as session_b:
         svc_b = SettingsService(session_b)
-        await branding.upload_logo(None, svc_b, _upload_file(LOGO_B))  # type: ignore[arg-type]
+        await branding.upload_logo(None, None, svc_b, session_b, _upload_file(LOGO_B))  # type: ignore[arg-type]
         path_b = await svc_b.get("branding.logo_path")
 
     assert path_a is not None

@@ -55,6 +55,16 @@ INVITATION_ACCEPTED = "user.invitation_accepted"  # öffentlicher Accept-Endpunk
 PASSWORD_RESET_SENT = "auth.password_reset_sent"  # Admin hat einen Reset-Link ausgelöst
 PASSWORD_RESET_DONE = "auth.password_reset_done"  # öffentlicher Reset-Endpunkt
 
+# Security Phase 5, Task 8 (M10): coverage for the remaining security-relevant routes that
+# previously wrote no audit entry at all.
+USER_EXCLUDED = "entra_user.exclusion_changed"  # exclude/include -- single, bulk, or via settings
+NOTIFICATION_SENT_MANUAL = "notification.manual_send"  # single or bulk manual reminder
+NOTIFICATION_RETRIED = "notification.retried"
+RUN_TRIGGERED = "run.triggered"
+BRANDING_CHANGED = "branding.changed"  # logo/favicon upload or delete
+SSO_SYNCED = "user.sso_synced"
+TWOFA_SETUP_STARTED = "auth.2fa_setup_started"  # secret/QR issued, not yet confirmed
+
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.
 _NEVER_LOG = frozenset({"password", "secret", "client_secret", "smtp_password", "token", "code"})

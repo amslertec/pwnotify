@@ -115,10 +115,11 @@ async def iter_active_for_notification(session: AsyncSession) -> list[EntraUser]
 
 
 async def set_excluded(session: AsyncSession, user_id: int, excluded: bool) -> None:
+    """Flip the exclusion flag. Does NOT commit -- callers (Security Phase 5, Task 8/M10)
+    write an `audit_log` entry alongside this change and commit both atomically."""
     user = await session.get(EntraUser, user_id)
     if user:
         user.excluded = excluded
-        await session.commit()
 
 
 async def mark_group_excluded(session: AsyncSession, entra_ids: set[str], excluded: bool) -> int:

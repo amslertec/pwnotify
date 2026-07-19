@@ -9,6 +9,7 @@ from ...core.errors import NotFoundError
 from ...repositories import run_repo
 from ...schemas.common import Page
 from ...schemas.entities import RunDetail, RunOut
+from ...services import audit
 from ...services.scheduler import get_scheduler
 from ..deps import (
     AdminUser,
@@ -57,9 +58,28 @@ async def trigger(
     if is_superadmin(user):
         # Instance-wide fan-out stays superadmin-exclusive.
         run = await get_scheduler().trigger_now(dry_run_override=body.dry_run)
+        await audit.record(
+            session,
+            action=audit.RUN_TRIGGERED,
+            actor=user,
+            request=request,
+            detail={"dry_run": bool(body.dry_run), "scope": "instance"},
+        )
     else:
         # Every other admin triggers only their own authorized active tenant -- WRITE gate
         # (Task 4, H8/Minor-1): a mere read (auditor) grant must not be enough to trigger a run.
         tid = await _resolve_authorized_tenant(request, user, session, write=True)
         run = await get_scheduler().trigger_now(dry_run_override=body.dry_run, tenant_ids=[tid])
+        # Owner-session route (Task 8/M10, using the Task 7/M11 override): attribute to the
+        # caller's own authorized tenant, so their own tenant's admin/auditor sees this entry
+        # too, not just the superadmin.
+        await audit.record(
+            session,
+            action=audit.RUN_TRIGGERED,
+            actor=user,
+            request=request,
+            detail={"dry_run": bool(body.dry_run), "scope": "tenant"},
+            tenant_id=tid,
+        )
+    await session.commit()
     return RunDetail.model_validate(run, from_attributes=True)

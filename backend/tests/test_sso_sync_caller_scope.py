@@ -87,6 +87,11 @@ async def two_configured_tenants_and_admin(
         yield a, b, int(admin.id)
     finally:
         async with migrated_engine.connect() as conn:
+            # `user.sso_synced` audit rows (Security Phase 5, Task 8/M10) reference these
+            # tenants via a plain FK (no ON DELETE) -- clear them before the tenant rows.
+            await conn.execute(
+                text("DELETE FROM audit_log WHERE tenant_id IN (:a, :b)"), {"a": a, "b": b}
+            )
             await conn.execute(text("DELETE FROM admin_tenant WHERE tenant_id = :a"), {"a": a})
             await conn.execute(text("DELETE FROM app_user WHERE id = :u"), {"u": admin.id})
             await conn.execute(

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ...core.errors import ForbiddenError
+from ...models.entra import Exclusion
 from ...repositories import exclusion_repo
 from ...schemas.common import Message
 from ...schemas.entities import ExclusionOut
@@ -168,20 +169,35 @@ async def list_exclusions(_: CurrentUser, session: TenantSessionDep) -> list[Exc
 
 @router.post("/exclusions", response_model=ExclusionOut)
 async def add_exclusion(
-    _: AdminUser, body: dict[str, str], session: TenantWriteSessionDep
+    request: Request, admin: AdminUser, body: dict[str, str], session: TenantWriteSessionDep
 ) -> ExclusionOut:
-    exc = await exclusion_repo.add(
+    kind = body.get("kind", "user")
+    value = body["value"]
+    await audit.record(
         session,
-        kind=body.get("kind", "user"),
-        value=body["value"],
-        label=body.get("label"),
+        action=audit.USER_EXCLUDED,
+        actor=admin,
+        request=request,
+        target=value,
+        detail={"excluded": True, "count": 1, "kind": kind},
     )
+    exc = await exclusion_repo.add(session, kind=kind, value=value, label=body.get("label"))
     return ExclusionOut.model_validate(exc, from_attributes=True)
 
 
 @router.delete("/exclusions/{exclusion_id}", response_model=Message)
 async def delete_exclusion(
-    _: AdminUser, exclusion_id: int, session: TenantWriteSessionDep
+    request: Request, admin: AdminUser, exclusion_id: int, session: TenantWriteSessionDep
 ) -> Message:
+    exc = await session.get(Exclusion, exclusion_id)
+    if exc is not None:
+        await audit.record(
+            session,
+            action=audit.USER_EXCLUDED,
+            actor=admin,
+            request=request,
+            target=exc.value,
+            detail={"excluded": False, "count": 1, "kind": exc.kind},
+        )
     await exclusion_repo.delete(session, exclusion_id)
     return Message(message="Ausschluss entfernt.")

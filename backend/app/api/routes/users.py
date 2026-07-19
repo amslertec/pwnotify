@@ -7,7 +7,7 @@ import csv
 import io
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ from ...core.errors import NotFoundError, PwNotifyError
 from ...repositories import entra_repo
 from ...schemas.common import Message, Page
 from ...schemas.entities import EntraUserDetail, EntraUserOut
+from ...services import audit
 from ...services.mail import build_sender
 from ...services.notifier import notify_user
 from ..deps import (
@@ -174,18 +175,35 @@ async def get_user(_: CurrentUser, user_id: int, session: TenantSessionDep) -> E
 
 @router.post("/{user_id}/exclude", response_model=Message)
 async def set_exclude(
-    _: AdminUser, user_id: int, body: ExcludeRequest, session: TenantWriteSessionDep
+    request: Request,
+    admin: AdminUser,
+    user_id: int,
+    body: ExcludeRequest,
+    session: TenantWriteSessionDep,
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     await entra_repo.set_excluded(session, user_id, body.excluded)
+    await audit.record(
+        session,
+        action=audit.USER_EXCLUDED,
+        actor=admin,
+        request=request,
+        target=user.upn,
+        detail={"excluded": body.excluded, "count": 1, "kind": "single"},
+    )
+    await session.commit()
     return Message(message="Aktualisiert.")
 
 
 @router.post("/{user_id}/notify", response_model=Message)
 async def notify_now(
-    _: AdminUser, user_id: int, session: TenantWriteSessionDep, svc: TenantWriteSettingsDep
+    request: Request,
+    admin: AdminUser,
+    user_id: int,
+    session: TenantWriteSessionDep,
+    svc: TenantWriteSettingsDep,
 ) -> Message:
     user = await entra_repo.get(session, user_id)
     if user is None:
@@ -204,6 +222,15 @@ async def notify_now(
         run_id=None,
         force=True,
     )
+    await audit.record(
+        session,
+        action=audit.NOTIFICATION_SENT_MANUAL,
+        actor=admin,
+        request=request,
+        target=user.upn,
+        detail={"count": 1, "outcome": outcome.action},
+    )
+    await session.commit()
     if outcome.action == "failed":
         raise NotFoundError(outcome.error or "", code="send_failed")
     if outcome.action == "skipped":
@@ -213,11 +240,23 @@ async def notify_now(
 
 @router.post("/bulk", response_model=Message)
 async def bulk(
-    _: AdminUser, body: BulkRequest, session: TenantWriteSessionDep, svc: TenantWriteSettingsDep
+    request: Request,
+    admin: AdminUser,
+    body: BulkRequest,
+    session: TenantWriteSessionDep,
+    svc: TenantWriteSettingsDep,
 ) -> Message:
     if body.action in ("exclude", "include"):
         for uid in body.ids:
             await entra_repo.set_excluded(session, uid, body.action == "exclude")
+        await audit.record(
+            session,
+            action=audit.USER_EXCLUDED,
+            actor=admin,
+            request=request,
+            detail={"excluded": body.action == "exclude", "count": len(body.ids), "kind": "bulk"},
+        )
+        await session.commit()
         return Message(message=f"{len(body.ids)} Benutzer aktualisiert.")
     if body.action == "notify":
         settings = await svc.get_all()
@@ -241,5 +280,13 @@ async def bulk(
             )
             if outcome.action == "sent":
                 sent += 1
+        await audit.record(
+            session,
+            action=audit.NOTIFICATION_SENT_MANUAL,
+            actor=admin,
+            request=request,
+            detail={"count": sent, "requested": len(body.ids), "kind": "bulk"},
+        )
+        await session.commit()
         return Message(message=f"{sent} Reminder gesendet.")
     raise NotFoundError("Unbekannte Aktion.", code="unknown_action")

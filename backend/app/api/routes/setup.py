@@ -23,6 +23,7 @@ from ...repositories import tenant_repo, user_repo
 from ...schemas.auth import UserOut
 from ...schemas.common import Message
 from ...schemas.settings import GraphTestRequest, GraphTestResult, MailTestRequest
+from ...services import audit
 from ...services.connectivity import send_test_mail, test_graph
 from ..deps import (
     SessionDep,
@@ -160,6 +161,18 @@ async def create_admin(
         default = await tenant_repo.default_tenant(session)
         assert default.id is not None
         await tenant_repo.update(session, default.id, name=body.default_tenant_name)
+    # First-setup superadmin creation was previously unaudited entirely (Security Phase 5,
+    # Task 8/M10) -- reuse SUPERADMIN_CREATED (same meaning: a superadmin account came into
+    # existence), `actor=user` since the account IS its own creator here, `detail` marks it
+    # as the first-setup path (vs. a later superadmin invited by `create_superadmin`).
+    await audit.record(
+        session,
+        action=audit.SUPERADMIN_CREATED,
+        actor=user,
+        target=user.username,
+        request=request,
+        detail={"first_setup": True},
+    )
     # Auto-Login, damit der Wizard nahtlos mit Graph/Mail weitermacht.
     pair = issue_token_pair(str(user.id))
     await user_repo.create_session(

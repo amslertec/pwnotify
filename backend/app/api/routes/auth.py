@@ -871,6 +871,10 @@ async def two_factor_setup(
     secret = generate_secret()
     user.totp_secret = encrypt(secret)  # gespeichert, aber noch nicht aktiv
     user.totp_enabled = False
+    # Security Phase 5, Task 8/M10: issuing a fresh TOTP secret/QR is itself security-
+    # relevant (an account takeover of the enrollment step could plant an attacker's own
+    # secret) -- no `detail`, the secret itself must never reach the audit log.
+    await audit.record(session, action=audit.TWOFA_SETUP_STARTED, actor=user, request=request)
     await session.commit()
     uri = provisioning_uri(secret, user.username)
     return TwoFactorSetupOut(otpauth_uri=uri, qr_png=qr_png_data_uri(uri), secret=secret)

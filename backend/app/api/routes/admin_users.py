@@ -699,6 +699,7 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
     """
     from ...services import oidc
 
+    tid: int | None = None
     if is_superadmin(user):
         tenants = await tenant_repo.list_active(session)
     else:
@@ -730,6 +731,19 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
     if blocked_count:
         # Report a COUNT, never tenant names -- no cross-tenant name disclosure.
         message += f" Entfernen für {blocked_count} Mandant(en) blockiert (Schutz vor Aussperrung)."
+    # Security Phase 5, Task 8/M10: one summary entry for the whole sync -- per-tenant rows
+    # would be noise, and the caller's own message already avoids leaking foreign tenant
+    # names. `tid` (Task 7/M11 override) is set only in the single-tenant, non-superadmin
+    # branch above; the superadmin fan-out stays instance-wide (`tenant_id=None`).
+    await audit.record(
+        session,
+        action=audit.SSO_SYNCED,
+        actor=user,
+        request=request,
+        detail={"synced": synced, "removed": removed, "blocked": blocked_count},
+        tenant_id=tid,
+    )
+    await session.commit()
     return Message(message=message)
 
 

@@ -7,16 +7,18 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core import imagetype
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
 from ...db.tenant_context import current_tenant_or_none
 from ...schemas.common import Message
+from ...services import audit
 from ...services.settings_validators import contained_path
-from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep
+from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep, TenantWriteSessionDep
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -210,21 +212,50 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
     return str(target)
 
 
+async def _audit_branding_change(
+    session: AsyncSession, *, admin: AdminUser, request: Request, asset: str, op: str
+) -> None:
+    """Shared audit write for the four upload/delete routes below (Security Phase 5, Task
+    8/M10). Runs on its OWN `TenantWriteSessionDep` connection, separate from `svc`'s --
+    `svc: TenantSettingsDep` already committed its own change (`SettingsService.set`); this
+    just records + commits the audit entry on the write-gated session."""
+    await audit.record(
+        session,
+        action=audit.BRANDING_CHANGED,
+        actor=admin,
+        request=request,
+        detail={"asset": asset, "op": op},
+    )
+    await session.commit()
+
+
 @router.post("/logo", response_model=Message)
 async def upload_logo(
-    _: AdminUser, svc: TenantSettingsDep, file: UploadFile = File(...)
+    request: Request,
+    admin: AdminUser,
+    svc: TenantSettingsDep,
+    session: TenantWriteSessionDep,
+    file: UploadFile = File(...),
 ) -> Message:
     path = await _save_upload(file, "logo", trim=True)
     await svc.set("branding.logo_path", path)
+    await _audit_branding_change(session, admin=admin, request=request, asset="logo", op="upload")
     return Message(message="Logo gespeichert.")
 
 
 @router.post("/favicon", response_model=Message)
 async def upload_favicon(
-    _: AdminUser, svc: TenantSettingsDep, file: UploadFile = File(...)
+    request: Request,
+    admin: AdminUser,
+    svc: TenantSettingsDep,
+    session: TenantWriteSessionDep,
+    file: UploadFile = File(...),
 ) -> Message:
     path = await _save_upload(file, "favicon")
     await svc.set("branding.favicon_path", path)
+    await _audit_branding_change(
+        session, admin=admin, request=request, asset="favicon", op="upload"
+    )
     return Message(message="Favicon gespeichert.")
 
 
@@ -235,14 +266,22 @@ async def _clear_upload(svc: TenantSettingsDep, key: str, stem: str) -> None:
 
 
 @router.delete("/logo", response_model=Message)
-async def delete_logo(_: AdminUser, svc: TenantSettingsDep) -> Message:
+async def delete_logo(
+    request: Request, admin: AdminUser, svc: TenantSettingsDep, session: TenantWriteSessionDep
+) -> Message:
     await _clear_upload(svc, "branding.logo_path", "logo")
+    await _audit_branding_change(session, admin=admin, request=request, asset="logo", op="delete")
     return Message(message="Logo entfernt — Standard aktiv.")
 
 
 @router.delete("/favicon", response_model=Message)
-async def delete_favicon(_: AdminUser, svc: TenantSettingsDep) -> Message:
+async def delete_favicon(
+    request: Request, admin: AdminUser, svc: TenantSettingsDep, session: TenantWriteSessionDep
+) -> Message:
     await _clear_upload(svc, "branding.favicon_path", "favicon")
+    await _audit_branding_change(
+        session, admin=admin, request=request, asset="favicon", op="delete"
+    )
     return Message(message="Favicon entfernt — Standard aktiv.")
 
 

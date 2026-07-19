@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from ...core.config import get_settings
 from ...core.errors import NotFoundError
@@ -12,6 +12,7 @@ from ...models._base import utcnow
 from ...repositories import entra_repo, notification_repo
 from ...schemas.common import Message, Page
 from ...schemas.entities import NotificationOut
+from ...services import audit
 from ...services.mail import build_sender
 from ...services.settings_service import effective_base_url
 from ...services.templating import build_context, email_logo, render
@@ -74,7 +75,11 @@ async def list_notifications(
 
 @router.post("/{log_id}/retry", response_model=Message)
 async def retry(
-    _: AdminUser, log_id: int, session: TenantWriteSessionDep, svc: TenantWriteSettingsDep
+    request: Request,
+    admin: AdminUser,
+    log_id: int,
+    session: TenantWriteSessionDep,
+    svc: TenantWriteSettingsDep,
 ) -> Message:
     log_entry = await notification_repo.get(session, log_id)
     if log_entry is None:
@@ -135,9 +140,25 @@ async def retry(
     err_text = "; ".join(errors)[:2000] or None
     if not sent_any:
         await notification_repo.record(session, {**data, "status": "failed", "error": err_text})
+        await audit.record(
+            session,
+            action=audit.NOTIFICATION_RETRIED,
+            actor=admin,
+            request=request,
+            target=user.upn,
+            detail={"outcome": "failed"},
+        )
         await session.commit()
         raise NotFoundError(err_text or "", code="resend_failed")
 
     await notification_repo.record(session, {**data, "status": "sent", "error": err_text})
+    await audit.record(
+        session,
+        action=audit.NOTIFICATION_RETRIED,
+        actor=admin,
+        request=request,
+        target=user.upn,
+        detail={"outcome": "sent"},
+    )
     await session.commit()
     return Message(message="Erneut gesendet.")

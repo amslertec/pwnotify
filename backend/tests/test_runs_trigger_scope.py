@@ -99,6 +99,9 @@ async def customer_and_admin(
         yield cid, int(admin.id), default_id
     finally:
         async with migrated_engine.connect() as conn:
+            # `run.triggered` audit rows (Security Phase 5, Task 8/M10) reference this
+            # tenant via a plain FK (no ON DELETE) -- clear them before the tenant row.
+            await conn.execute(text("DELETE FROM audit_log WHERE tenant_id = :c"), {"c": cid})
             await conn.execute(text("DELETE FROM run WHERE tenant_id = :c"), {"c": cid})
             await conn.execute(text("DELETE FROM admin_tenant WHERE tenant_id = :c"), {"c": cid})
             await conn.execute(text("DELETE FROM user_session WHERE user_id = :u"), {"u": admin.id})

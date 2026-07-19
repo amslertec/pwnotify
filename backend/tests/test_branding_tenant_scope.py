@@ -85,12 +85,14 @@ async def real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
 @pytest_asyncio.fixture
 async def cleanup_branding_settings(migrated_engine: AsyncEngine) -> AsyncGenerator[None]:
     """Räumt die branding.*-Settings des Default-Tenants nach dem Test weg (residue-frei,
-    Suite muss zweimal hintereinander grün laufen)."""
+    Suite muss zweimal hintereinander grün laufen). Also clears the `branding.changed`
+    audit rows the upload/delete calls below now write (Security Phase 5, Task 8/M10)."""
     yield
     async with migrated_engine.connect() as conn:
         await conn.execute(
             text("DELETE FROM setting WHERE key IN ('branding.logo_path', 'branding.favicon_path')")
         )
+        await conn.execute(text("DELETE FROM audit_log WHERE action = 'branding.changed'"))
         await conn.commit()
 
 
@@ -109,7 +111,7 @@ async def test_upload_and_delete_logo_via_tenant_session_no_500(
         svc = SettingsService(session)
         file = _upload_file(HARMLESS_SVG_LOGO, "image/svg+xml")
 
-        msg = await branding.upload_logo(None, svc, file)  # type: ignore[arg-type]
+        msg = await branding.upload_logo(None, None, svc, session, file)  # type: ignore[arg-type]
         assert msg.message
 
         stored_path = await svc.get("branding.logo_path")
@@ -124,7 +126,7 @@ async def test_upload_and_delete_logo_via_tenant_session_no_500(
             f"Setting hängt am falschen Tenant: {row.tenant_id} != {real_default_tenant_id}"
         )
 
-        del_msg = await branding.delete_logo(None, svc)  # type: ignore[arg-type]
+        del_msg = await branding.delete_logo(None, None, svc, session)  # type: ignore[arg-type]
         assert del_msg.message
         assert await svc.get("branding.logo_path") is None
     finally:
