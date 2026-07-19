@@ -17,9 +17,9 @@ from http.cookies import SimpleCookie
 
 import pytest
 from app.api.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
-from app.api.routes.auth import change_password, logout
+from app.api.routes.auth import change_password, logout, revoke_other_sessions
 from app.core.errors import AuthError
-from app.core.security import hash_password, hash_token, issue_token_pair
+from app.core.security import decode_token, hash_password, hash_token, issue_token_pair
 from app.repositories import user_repo
 from app.schemas.auth import PasswordChangeRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -175,3 +175,64 @@ async def test_password_change_revokes_old_access_token_but_keeps_caller(
     new_access_request = _FakeRequest({ACCESS_COOKIE: change_response.cookie_values[ACCESS_COOKIE]})
     got_again = await get_current_user(new_access_request, session)  # type: ignore[arg-type]
     assert got_again.id == user_id
+
+
+# ---- revoke_other_sessions bumps the generation -> the OTHER device's access token --- #
+# ---- dies IMMEDIATELY (not just after its refresh session is revoked), while the ----- #
+# ---- caller's own device is re-issued fresh cookies and stays logged in -------------- #
+
+
+async def test_revoke_others_revokes_other_devices_access_token_immediately(
+    session: AsyncSession,
+) -> None:
+    user_id = await _make_user(session, username="revoke-others@local")
+    user = await user_repo.get(session, user_id)
+    assert user is not None
+
+    # Two devices, both with a live access token at generation 0.
+    current_access_token, current_refresh_token = await _seed_session(
+        session, user_id=user_id, access_gen=0
+    )
+    other_access_token, _other_refresh_token = await _seed_session(
+        session, user_id=user_id, access_gen=0
+    )
+
+    # Control: both access tokens are valid before the call.
+    current_access_request = _FakeRequest({ACCESS_COOKIE: current_access_token})
+    other_access_request = _FakeRequest({ACCESS_COOKIE: other_access_token})
+    assert (await get_current_user(current_access_request, session)).id == user_id  # type: ignore[arg-type]
+    assert (await get_current_user(other_access_request, session)).id == user_id  # type: ignore[arg-type]
+
+    revoke_request = _FakeRequest({REFRESH_COOKIE: current_refresh_token})
+    revoke_response = _FakeResponse()
+    await revoke_other_sessions(
+        request=revoke_request,  # type: ignore[arg-type]
+        user=user,
+        session=session,
+        response=revoke_response,  # type: ignore[arg-type]
+    )
+
+    # (a) the OTHER device's access token is dead RIGHT NOW -- not in up to 15 minutes.
+    with pytest.raises(AuthError) as exc_info:
+        await get_current_user(other_access_request, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "token_revoked"
+
+    # (b) fresh auth cookies were issued for the caller's own device.
+    assert ACCESS_COOKIE in revoke_response.cookie_values
+    assert REFRESH_COOKIE in revoke_response.cookie_values
+
+    # (c) the NEW access token for the caller's own device is accepted.
+    new_current_access_request = _FakeRequest(
+        {ACCESS_COOKIE: revoke_response.cookie_values[ACCESS_COOKIE]}
+    )
+    got_again = await get_current_user(new_current_access_request, session)  # type: ignore[arg-type]
+    assert got_again.id == user_id
+
+    # (d) exactly one active refresh session remains -- the caller's own, rotated to the
+    # new refresh token issued on the response. The other device's session is revoked.
+    rows = await user_repo.list_sessions(session, user_id)
+    assert len(rows) == 1
+    new_refresh_jti = decode_token(
+        revoke_response.cookie_values[REFRESH_COOKIE], expected_type="refresh"
+    )["jti"]
+    assert rows[0].refresh_jti == new_refresh_jti

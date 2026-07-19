@@ -713,7 +713,7 @@ async def sessions(request: Request, user: CurrentUser, session: SessionDep) -> 
 
 @router.post("/sessions/revoke-others", response_model=Message)
 async def revoke_other_sessions(
-    request: Request, user: CurrentUser, session: SessionDep
+    request: Request, user: CurrentUser, session: SessionDep, response: Response
 ) -> Message:
     current_jti = None
     token = request.cookies.get(REFRESH_COOKIE)
@@ -721,6 +721,27 @@ async def revoke_other_sessions(
         with contextlib.suppress(jwt.PyJWTError):
             current_jti = decode_token(token, expected_type="refresh").get("jti")
     n = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
+
+    # Wie change_password: die widerrufenen Sitzungen dürfen nicht bis zu 15 Minuten
+    # lang noch gültige Access-Tokens behalten -- ein verlorenes/gestohlenes Gerät muss
+    # SOFORT abgeschnitten sein. Generation bumpen invalidiert ALLE Access-Tokens des
+    # Users (auch die eigene, aktuell gehaltene); die eigene Sitzung wird daher direkt
+    # im Anschluss mit der neuen Generation neu ausgestellt, damit der Aufrufer selbst
+    # nicht ausgesperrt wird.
+    await user_repo.bump_token_generation(session, user.id)  # type: ignore[arg-type]
+    await session.refresh(user)
+    if current_jti is not None:
+        us = await user_repo.get_session_by_jti(session, current_jti)
+        if us is not None:
+            pair = issue_token_pair(
+                str(user.id), active_tenant=us.active_tenant_id, generation=user.token_generation
+            )
+            us.refresh_jti = pair.refresh_jti
+            us.token_hash = hash_token(pair.refresh_token)
+            us.expires_at = pair.refresh_expires
+            us.last_used_at = utcnow()
+            set_auth_cookies(response, pair)
+
     await audit.record(
         session,
         action=audit.SESSIONS_REVOKED,
