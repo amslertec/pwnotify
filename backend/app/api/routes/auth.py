@@ -767,6 +767,14 @@ async def two_factor_setup(
 ) -> TwoFactorSetupOut:
     if user.is_sso:
         raise PwNotifyError("2FA ist nur für lokale Konten verfügbar.", code="twofa_local_only")
+    if user.totp_enabled:
+        # Re-enrollment while 2FA is active is forbidden: an interim 2FA token (issued to a
+        # 2FA-enabled account after password-only login) must not be usable to overwrite the
+        # stored secret. Re-enrollment is only possible after an authenticated `disable`.
+        raise ForbiddenError(
+            "2FA ist bereits aktiv. Zum Neueinrichten zuerst deaktivieren.",
+            code="twofa_already_enabled",
+        )
     secret = generate_secret()
     user.totp_secret = encrypt(secret)  # gespeichert, aber noch nicht aktiv
     user.totp_enabled = False
@@ -786,6 +794,11 @@ async def two_factor_enable(
 ) -> RecoveryCodesOut:
     if user.is_sso or not user.totp_secret:
         raise PwNotifyError("2FA-Einrichtung nicht gestartet.", code="twofa_not_started")
+    if user.totp_enabled:
+        raise ForbiddenError(
+            "2FA ist bereits aktiv. Zum Neueinrichten zuerst deaktivieren.",
+            code="twofa_already_enabled",
+        )
     if not verify_totp(decrypt(user.totp_secret), body.code):
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
     codes, hashes = generate_recovery_codes()
