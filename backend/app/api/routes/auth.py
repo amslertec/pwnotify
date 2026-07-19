@@ -799,10 +799,15 @@ async def two_factor_enable(
             "2FA ist bereits aktiv. Zum Neueinrichten zuerst deaktivieren.",
             code="twofa_already_enabled",
         )
-    if not verify_totp(decrypt(user.totp_secret), body.code):
+    # Consume the enrollment code the same way `two_factor_verify` consumes a login code:
+    # record the matched step in `totp_last_step` so the exact code just typed cannot be
+    # replayed at `/2fa/verify` for the rest of its ~30-90 s TOTP validity window.
+    step = matching_step(decrypt(user.totp_secret), body.code)
+    if step is None:
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
     codes, hashes = generate_recovery_codes()
     user.totp_enabled = True
+    user.totp_last_step = step
     user.recovery_codes = json.dumps(hashes)
     user.updated_at = utcnow()
     await audit.record(session, action=audit.TWOFA_ENABLED, actor=user, request=request)
