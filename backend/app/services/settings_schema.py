@@ -6,6 +6,7 @@ Fernet-verschlüsselt und in API-Responses maskiert.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +36,7 @@ from .default_templates import (
 class SettingSpec:
     default: Any
     secret: bool = False
+    validate: Callable[[Any], Any] | None = None
 
 
 # Dotted keys, gruppiert nach Settings-Tab.

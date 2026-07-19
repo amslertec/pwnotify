@@ -70,17 +70,27 @@ class SettingsService:
         return data
 
     async def set_many(self, values: dict[str, Any]) -> None:
-        """Setzt mehrere Keys. Für Secrets: MASK/None -> unverändert lassen."""
+        """Setzt mehrere Keys. Für Secrets: MASK/None -> unverändert lassen.
+
+        Alle Werte werden vorab validiert: ein einzelner ungültiger Wert bricht den
+        gesamten Batch mit einem ValidationError (HTTP 400) ab, BEVOR irgendetwas
+        geschrieben wird (Two-Pass: erst validieren, dann schreiben).
+        """
+        prepared: list[tuple[str, Any, bool]] = []
         for key, value in values.items():
             if key not in SETTINGS:
                 continue
             spec = SETTINGS[key]
-            if spec.secret:
+            if spec.secret and value in (MASK, None, ""):
                 # Masken-Marker oder None bedeutet: bestehenden Wert nicht überschreiben.
-                if value in (MASK, None, ""):
-                    continue
+                continue
+            if spec.validate is not None:
+                value = spec.validate(value)
+            if spec.secret:
                 value = encrypt(str(value))
-            await self._upsert(key, value, spec.secret)
+            prepared.append((key, value, spec.secret))
+        for key, value, is_secret in prepared:
+            await self._upsert(key, value, is_secret)
         await self.session.commit()
 
     async def set(self, key: str, value: Any) -> None:

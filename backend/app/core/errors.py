@@ -48,6 +48,11 @@ class ForbiddenError(PwNotifyError):
     code = "forbidden"
 
 
+class ValidationError(PwNotifyError):
+    status_code = 400
+    code = "validation_error"
+
+
 class SetupRequiredError(PwNotifyError):
     status_code = 409
     code = "setup_required"
