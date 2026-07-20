@@ -18,7 +18,7 @@ from ...core import imagetype
 from ...core.config import get_settings
 from ...core.crypto import decrypt, encrypt
 from ...core.errors import AuthError, ForbiddenError, NotFoundError, PwNotifyError
-from ...core.http import client_user_agent
+from ...core.http import client_ip, client_user_agent
 from ...core.logging import get_logger
 from ...core.security import (
     WEAK_PASSWORD_MESSAGE,
@@ -267,7 +267,7 @@ async def _complete_login(
         token_hash=hash_token(pair.refresh_token),
         expires_at=pair.refresh_expires,
         user_agent=client_user_agent(request),
-        ip=request.client.host if request.client else None,
+        ip=client_ip(request),
         active_tenant_id=tid,
     )
     await session.commit()
@@ -569,7 +569,7 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
     us.expires_at = pair.refresh_expires
     us.last_used_at = now
     us.user_agent = client_user_agent(request) or us.user_agent
-    us.ip_address = (request.client.host if request.client else None) or us.ip_address
+    us.ip_address = client_ip(request) or us.ip_address
     await session.commit()
     set_auth_cookies(response, pair)
     return await _user_out(session, user, us.active_tenant_id)
@@ -1287,7 +1287,7 @@ async def oidc_callback(
         token_hash=hash_token(pair.refresh_token),
         expires_at=pair.refresh_expires,
         user_agent=client_user_agent(request),
-        ip=request.client.host if request.client else None,
+        ip=client_ip(request),
         active_tenant_id=home_tenant_id,
     )
     await session.commit()

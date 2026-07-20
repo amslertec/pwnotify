@@ -12,6 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.audit import AuditLog
 from ..services.retention import AUDIT_RETENTION_FLOOR_DAYS, purge_blocked_reason
 
+# Width of `audit_log.actor_username` and `audit_log.target` (both `Column(String(255))`).
+# Same varchar-rejection class as `ip_address`/`user_agent` (finding F-01): on the SSO paths
+# `actor_username`/`target` come from ID-token claims, and the `email` claim (Entra `mail`,
+# up to 256 chars) can exceed 255. An over-long value would fail the audit INSERT and roll back
+# the caller's commit -- suppressing the LOGIN_FAILED record for a rejected SSO login. Truncate
+# here at the single build choke point so no caller can trip the column width.
+_AUDIT_TEXT_MAX_LEN = 255
+
+
+def _fit(value: str | None) -> str | None:
+    return value[:_AUDIT_TEXT_MAX_LEN] if value is not None else None
+
 
 def build(
     *,
@@ -42,6 +54,8 @@ def build(
     `stamp_tenant` is `False`, `tenant_id` is ignored and the column's `default_factory`
     decides (as before this task).
     """
+    actor_username = _fit(actor_username)
+    target = _fit(target)
     if stamp_tenant:
         return AuditLog(
             tenant_id=tenant_id,

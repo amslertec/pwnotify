@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from ...core.config import get_settings
 from ...core.errors import ConflictError, ForbiddenError
-from ...core.http import client_user_agent
+from ...core.http import client_ip, client_user_agent
 from ...core.security import (
     WEAK_PASSWORD_MESSAGE,
     hash_password,
@@ -190,7 +190,7 @@ async def create_admin(
         token_hash=hash_token(pair.refresh_token),
         expires_at=pair.refresh_expires,
         user_agent=client_user_agent(request),
-        ip=request.client.host if request.client else None,
+        ip=client_ip(request),
     )
     set_auth_cookies(response, pair)
     return UserOut.model_validate(user, from_attributes=True)
