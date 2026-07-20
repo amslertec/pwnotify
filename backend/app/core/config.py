@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     # nicht aus dem Host-Header. Wer es eng haben will, trägt seine Domain(s) ein.
     allowed_hosts: str = ""
 
+    # Interactive OpenAPI docs (`/api/docs`) and the schema (`/api/openapi.json`). OFF by
+    # default (M6): both publish the complete route map + request/response schemas to any
+    # anonymous caller. Turn on deliberately (e.g. during integration work) with
+    # PWNOTIFY_ENABLE_DOCS=true.
+    enable_docs: bool = False
+
+    # Hard cap on the request body size (M5), enforced by an ASGI guard BEFORE any handler
+    # reads the body. Comfortably above the largest legitimate upload (avatar 5 MB), so
+    # normal uploads are unaffected while a multi-GB body is rejected at the transport layer.
+    max_request_body_bytes: int = 10 * 1024 * 1024
+
+    # Rate limit for the unauthenticated `/ready` probe (M6). Moderate on purpose: high enough
+    # for orchestrator/health polling, low enough that a flood cannot exhaust the DB pool.
+    ready_rate_limit: str = "60/minute"
+
     # ---- Auth / JWT ----
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 14

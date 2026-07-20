@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -42,8 +42,9 @@ from .api.routes import (
 from .api.routes import (
     settings as settings_routes,
 )
+from .core.body_limit import MaxBodySizeMiddleware
 from .core.config import get_settings
-from .core.errors import register_exception_handlers
+from .core.errors import UnhandledExceptionMiddleware, register_exception_handlers
 from .core.logging import configure_logging, get_logger
 from .core.security_headers import (
     SecurityHeadersMiddleware,
@@ -87,6 +88,10 @@ class SPAStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    # Fail fast at startup instead of serving a healthy-looking container whose every
+    # tenant-scoped request 500s: touching runtime_database_url raises when
+    # PWNOTIFY_RUNTIME_DB_PASSWORD is unset (config.py refuses a superuser fallback).
+    _ = settings.runtime_database_url
     # 1) Migrationen (idempotent; im Thread, da alembic env.py asyncio.run nutzt)
     await asyncio.to_thread(run_migrations)
     # 2) Seed aus ENV (nur beim ersten Start wirksam)
@@ -120,16 +125,25 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="PwNotify",
         version=__version__,
-        default_response_class=ORJSONResponse,
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        # OpenAPI docs/schema off by default (M6) -- they expose the full route map to anyone.
+        docs_url="/api/docs" if settings.enable_docs else None,
+        openapi_url="/api/openapi.json" if settings.enable_docs else None,
         lifespan=lifespan,
     )
+
+    # Catch-all for unhandled exceptions (I2). Registered FIRST so it is the INNERMOST user
+    # middleware -- it converts a genuine 500 into a clean JSON response that then flows back
+    # out through SecurityHeadersMiddleware (so the headers apply and no traceback leaks).
+    app.add_middleware(UnhandledExceptionMiddleware)
 
     # Rate-Limiting (Login-Brute-Force-Schutz)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
+
+    # Reject over-large request bodies before any handler reads them (M5). Inside the security
+    # headers (added later, so outer) -> the 413 still carries them.
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_request_body_bytes)
 
     # Host-Header prüfen, sofern konfiguriert. Standard ist offen — siehe config.py.
     hosts = [h.strip() for h in settings.allowed_hosts.split(",") if h.strip()]
@@ -189,7 +203,7 @@ def create_app() -> FastAPI:
 
 
 def _rate_limit_handler(request, exc):  # type: ignore[no-untyped-def]
-    return ORJSONResponse(
+    return JSONResponse(
         status_code=429,
         content={
             "error": {"code": "rate_limited", "message": "Zu viele Anfragen. Bitte kurz warten."}

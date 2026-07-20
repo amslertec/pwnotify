@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from ..deps import SessionDep
+from ...core.config import get_settings
+from ..deps import SessionDep, limiter
 
 router = APIRouter(tags=["health"])
+
+_settings = get_settings()
 
 
 @router.get("/health")
@@ -22,8 +25,13 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def ready(session: SessionDep) -> dict[str, object]:
-    """Readiness — prüft DB-Verbindung."""
+@limiter.limit(_settings.ready_rate_limit)
+async def ready(request: Request, session: SessionDep) -> dict[str, object]:
+    """Readiness — prüft DB-Verbindung.
+
+    Rate-limited (M6): unauthenticated and DB-touching, so an unbounded flood would exhaust
+    the connection pool. `request` is required by slowapi to key the limit on the client IP.
+    """
     db_ok = True
     try:
         await session.execute(text("SELECT 1"))
