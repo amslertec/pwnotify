@@ -30,7 +30,13 @@ from .default_templates import (
     DEFAULT_TEXT_RESET_DE,
     DEFAULT_TEXT_RESET_EN,
 )
-from .settings_validators import audit_retention_days, branding_path, number_range
+from .settings_validators import (
+    audit_retention_days,
+    branding_path,
+    number_range,
+    smtp_host,
+    url_setting,
+)
 
 
 @dataclass(frozen=True)
@@ -44,7 +50,9 @@ class SettingSpec:
 SETTINGS: dict[str, SettingSpec] = {
     # ---- Allgemein ----
     # Öffentliche URL der App (für SSO-Redirect und E-Mail-Links). Leer -> ENV PWNOTIFY_BASE_URL.
-    "app.public_url": SettingSpec(""),
+    # A7: url_setting erzwingt https + verbietet gefährliche Schemata/CRLF — der Wert speist die
+    # Einmal-Token-Links ausgehender Reset-/Invite-Mails (effective_base_url).
+    "app.public_url": SettingSpec("", validate=url_setting),
     # Prüft periodisch das neueste GitHub-Release und zeigt bei neuerer Version einen Hinweis.
     "app.update_check": SettingSpec(True),
     # Mandantenfähigkeit umschalten (Access-Model-Phase). Default AUS: eine frische wie
@@ -90,7 +98,9 @@ SETTINGS: dict[str, SettingSpec] = {
     "mail.backend": SettingSpec("graph"),  # graph | smtp
     "mail.from": SettingSpec(""),
     "mail.recipient_strategy": SettingSpec("primary"),
-    "mail.smtp_host": SettingSpec(""),
+    # A6: smtp_host lehnt interne/Link-Local-/RFC1918-Ziele ab (blinde SSRF), ausser explizit
+    # über PWNOTIFY_SMTP_ALLOWED_HOSTS freigegeben. tls=none-Kreuzprüfung: SettingsService.set_many.
+    "mail.smtp_host": SettingSpec("", validate=smtp_host),
     "mail.smtp_port": SettingSpec(587),
     "mail.smtp_username": SettingSpec(""),
     "mail.smtp_password": SettingSpec("", secret=True),
@@ -154,8 +164,10 @@ SETTINGS: dict[str, SettingSpec] = {
     "branding.primary_color": SettingSpec("#4F46E5"),
     "branding.logo_path": SettingSpec(None, validate=branding_path),
     "branding.favicon_path": SettingSpec(None, validate=branding_path),
+    # A7: url_setting wie app.public_url — die Reset-URL wird in ausgehende Mails eingebettet.
     "branding.reset_url": SettingSpec(
-        "https://account.activedirectory.windowsazure.com/ChangePassword.aspx"
+        "https://account.activedirectory.windowsazure.com/ChangePassword.aspx",
+        validate=url_setting,
     ),
     # ---- Template ----
     "template.language_default": SettingSpec("de"),  # de | en

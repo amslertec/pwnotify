@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: str | None = None
     smtp_tls: str = "starttls"  # starttls | ssl | none
+    # A6: Kommagetrennte Allowlist von SMTP-Hosts (IP-Literale oder Hostnamen), die interne
+    # Ziele (Loopback/RFC1918/Link-Local) sein und/oder unverschlüsselt (tls=none) betrieben
+    # werden dürfen. Leer (Standard): ein interner SMTP-Host bzw. Klartext-Auth wird als
+    # SSRF-/Cleartext-Fehlkonfiguration abgelehnt, bis ein Relay hier bewusst freigegeben wird.
+    smtp_allowed_hosts: str = ""
 
     schedule_cron: str = "0 8 * * *"
     reminder_days: str = "14,7,3,1,0"

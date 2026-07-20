@@ -8,10 +8,12 @@ validator keep their previous free-form behaviour (backwards compatible).
 
 from __future__ import annotations
 
+import ipaddress
 import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..core.config import get_settings
 from ..core.errors import ValidationError
@@ -126,3 +128,104 @@ def branding_path(value: Any) -> Any:
     if contained_path(branding_dir(), value) is None:
         raise ValidationError("Branding path escapes the branding directory.")
     return value
+
+
+def url_setting(value: Any) -> Any:
+    """Validator for public URL settings (``app.public_url`` / ``branding.reset_url``).
+
+    Both feed the one-time-token links of outgoing reset/invite mails: ``app.public_url``
+    builds ``effective_base_url()``, ``branding.reset_url`` is emitted verbatim. An unset
+    value ("") is allowed and falls back to the ENV/default. A *set* value must be a plain
+    ``https://`` URL with a host -- this rejects link-injection via dangerous schemes
+    (``javascript:``/``data:``) and header/log injection via CR/LF, so a tenant admin cannot
+    redirect the token links to an attacker-controlled destination (A7).
+    """
+    if value in (None, ""):
+        return value
+    if not isinstance(value, str):
+        raise ValidationError("URL muss eine Zeichenkette sein.")
+    # Check raw for CR/LF FIRST: urlsplit() silently strips leading control chars, so a later
+    # parse would not see an injected newline.
+    if "\r" in value or "\n" in value or "\t" in value:
+        raise ValidationError("URL darf keine Zeilenumbrüche enthalten.")
+    parsed = urlsplit(value)
+    if parsed.scheme != "https":
+        raise ValidationError("URL muss mit https:// beginnen.")
+    if not parsed.netloc:
+        raise ValidationError("URL muss einen gültigen Host enthalten.")
+    return value
+
+
+# Hostnames that are effectively loopback without being an IP literal.
+_LOCALHOST_NAMES = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+
+
+def _smtp_allowlist() -> set[str]:
+    """Operator-configured hosts (``PWNOTIFY_SMTP_ALLOWED_HOSTS``, comma-separated) that may be
+    internal SMTP targets and/or receive plaintext (tls=none). Default empty."""
+    raw = get_settings().smtp_allowed_hosts or ""
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
+def _normalise_host(host: str) -> str:
+    return host.strip().strip("[]").lower()
+
+
+def is_internal_host(host: str) -> bool:
+    """True if ``host`` denotes a loopback / link-local / private (RFC1918/ULA) target.
+
+    A bare hostname (not an IP literal) counts as internal only when it is an obvious
+    localhost alias -- full DNS-rebinding protection is out of scope; the goal is catching the
+    obvious SSRF / misconfiguration on IP literals + localhost.
+    """
+    h = _normalise_host(host)
+    if not h:
+        return False
+    if h in _LOCALHOST_NAMES:
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_link_local or ip.is_private
+
+
+def smtp_host(value: Any) -> Any:
+    """Validator for ``mail.smtp_host`` (A6): reject internal targets, allow external + empty.
+
+    An internal/link-local/loopback/private host is a blind-SSRF / internal-port-scan vector,
+    so it is rejected UNLESS the operator explicitly allowlisted it via
+    ``PWNOTIFY_SMTP_ALLOWED_HOSTS`` (a legitimate internal relay). Clearing the host ("") is
+    always allowed.
+    """
+    if value in (None, ""):
+        return value
+    if not isinstance(value, str):
+        raise ValidationError("SMTP-Host muss eine Zeichenkette sein.")
+    if is_internal_host(value) and _normalise_host(value) not in _smtp_allowlist():
+        raise ValidationError(
+            "Interner SMTP-Host abgelehnt. Nur explizit über PWNOTIFY_SMTP_ALLOWED_HOSTS "
+            "freigegebene Relays dürfen auf interne/lokale Adressen zeigen."
+        )
+    return value
+
+
+def check_smtp_tls_allowed(host: Any, tls_mode: Any) -> None:
+    """Cross-key rule (A6): plaintext SMTP (``tls=none``) is only permitted to an INTERNAL
+    relay, never to an external host, where it would leak the SMTP credentials in cleartext.
+
+    Lives in the set path (``SettingsService.set_many``), not in a per-key validator, because
+    a single-key validator cannot see the other key: a PUT may change only ``smtp_tls`` while
+    the host already sits in the DB. An internal host can only have been persisted after
+    passing ``smtp_host`` (i.e. it is allowlisted), so "internal" here already implies the
+    operator opted the relay in.
+    """
+    if tls_mode != "none":
+        return
+    if not host:
+        # No host configured yet -> nothing is sent; the send-time smtp_no_host guard handles it.
+        return
+    if not is_internal_host(str(host)):
+        raise ValidationError(
+            "Unverschlüsseltes SMTP (TLS=none) ist nur für interne Relays zulässig."
+        )

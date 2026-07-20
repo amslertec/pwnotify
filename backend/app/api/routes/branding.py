@@ -5,8 +5,9 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
+from defusedxml.ElementTree import fromstring as defused_fromstring
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,16 +35,70 @@ _MAX_BYTES = 2 * 1024 * 1024
 
 # SVG ist XML und darf Skripte, Event-Handler und externe Referenzen enthalten. Da die
 # Datei unter der eigenen Domain ausgeliefert wird, liefe solcher Code im App-Origin.
-# Statt zu säubern (Sanitizer sind notorisch löchrig) wird abgelehnt: ein Logo braucht
-# nichts davon.
-_SVG_ACTIVE_PATTERNS = (
-    (re.compile(rb"<\s*script", re.I), "Skript-Element"),
-    (re.compile(rb"\son[a-z]+\s*=", re.I), "Event-Handler-Attribut"),
-    (re.compile(rb"javascript\s*:", re.I), "javascript:-URL"),
-    (re.compile(rb"<\s*foreignObject", re.I), "foreignObject-Element"),
-    (re.compile(rb"<\s*!ENTITY", re.I), "XML-Entity (XXE)"),
-    (re.compile(rb"<\s*iframe", re.I), "iframe-Element"),
-)
+# A8: Eine Regex-Denylist ist über Entity-/Zeichen-Kodierung, SMIL (<set>/<animate>) und
+# <use href="http…"> umgehbar. Stattdessen ALLOWLIST-Parse: das SVG mit einem gehärteten
+# XML-Parser lesen und nur eine konservative Menge harmloser Logo-Elemente/-Attribute
+# durchlassen; alles andere -> ablehnen. (Die Auslieferungs-CSP/nosniff trägt weiterhin.)
+#
+# Nur Elemente, die ein statisches Logo tatsächlich braucht. Vergleich case-insensitiv über
+# den lokalen Namen (Namespace abgetrennt) -> ein SVG-Namespace-<script> heisst lokal
+# "script" und fällt durch; foreignObject/use/animate/set/handler stehen bewusst nicht drin.
+_SVG_ALLOWED_TAGS = {
+    "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "text", "tspan", "defs", "lineargradient", "radialgradient", "stop", "title", "desc",
+}  # fmt: skip
+
+# Nur geometrische/Stil-Attribute. KEINE Event-Handler (on*), KEINE externen Referenzen.
+_SVG_ALLOWED_ATTRS = {
+    "id", "class", "style", "transform", "viewbox", "version", "preserveaspectratio", "space",
+    "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height",
+    "d", "points", "dx", "dy", "rotate", "xmlns",
+    "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap",
+    "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset",
+    "stroke-opacity", "opacity", "color",
+    "gradientunits", "gradienttransform", "spreadmethod", "offset", "stop-color", "stop-opacity",
+    "font-family", "font-size", "font-weight", "font-style", "text-anchor", "dominant-baseline",
+    "letter-spacing", "word-spacing",
+}  # fmt: skip
+
+# CSS/URL-Referenzen: nur interne Fragmente (url(#id)) sind zulässig; alles andere ist eine
+# externe Referenz und wird abgelehnt.
+_URL_REF = re.compile(r"url\(\s*['\"]?([^'\")]+)", re.I)
+
+
+def _localname(tag: str) -> str:
+    """Lokaler Name ohne ``{namespace}``-Präfix (ElementTree-Notation)."""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _reject_svg(reason: str, *, code: str = "svg_active_content") -> NoReturn:
+    raise PwNotifyError(
+        f"Das SVG wurde abgelehnt ({reason}). Bitte ein einfaches Logo ohne Skripte/"
+        "externe Referenzen hochladen — oder PNG/WebP verwenden.",
+        code=code,
+    )
+
+
+def _has_external_url_ref(value: str) -> bool:
+    """True, sobald ein ``url(...)`` auf etwas anderes als ein internes Fragment (#id) zeigt."""
+    return any(not m.group(1).strip().startswith("#") for m in _URL_REF.finditer(value))
+
+
+def _check_svg_attr(attr: str, value: str) -> None:
+    local = _localname(attr).lower()
+    if local.startswith("on"):
+        _reject_svg("Event-Handler-Attribut")
+    if "javascript:" in value.lower():
+        _reject_svg("javascript:-URL")
+    if _has_external_url_ref(value):
+        _reject_svg("externe Referenz (url())")
+    if local == "href":  # href / xlink:href -> nur interne Fragmente (#id)
+        if not value.strip().startswith("#"):
+            _reject_svg("externe href-Referenz")
+        return
+    if local not in _SVG_ALLOWED_ATTRS:
+        _reject_svg(f"nicht erlaubtes Attribut ({local})")
+
 
 # Verhindert, dass ein Bild als aktives Dokument interpretiert wird. `sandbox` entzieht
 # der Antwort u. a. Skriptausführung und den eigenen Origin; als <img> eingebunden —
@@ -56,14 +111,28 @@ _ASSET_HEADERS = {
 
 
 def _reject_active_svg(data: bytes) -> None:
-    """Lehnt SVGs mit aktiven Inhalten ab (Stored XSS im eigenen Origin)."""
-    for pattern, label in _SVG_ACTIVE_PATTERNS:
-        if pattern.search(data):
-            raise PwNotifyError(
-                f"Das SVG enthält aktive Inhalte ({label}) und wurde abgelehnt. "
-                "Bitte ein Logo ohne Skripte hochladen — oder PNG/WebP verwenden.",
-                code="svg_active_content",
-            )
+    """Allowlist-Parse eines hochgeladenen SVG (A8): mit gehärtetem Parser lesen und nur
+    harmlose Logo-Elemente/-Attribute durchlassen; alles andere -> ablehnen.
+
+    defused_fromstring liest mit deaktivierter DTD/Entity-Expansion und ohne externe Refs —
+    das schliesst XXE und entity-kodierte Payloads schon beim Parsen aus. Ein SVG, das sich
+    nicht sauber parsen lässt, wird abgelehnt (kein Fallback auf ungeprüfte Auslieferung).
+    """
+    try:
+        root = defused_fromstring(data, forbid_dtd=True)
+    except PwNotifyError:
+        raise
+    except Exception:  # ParseError, DefusedXmlException, ...
+        _reject_svg("nicht sicher lesbares XML", code="svg_parse_failed")
+    for el in root.iter():
+        tag = el.tag
+        if not isinstance(tag, str):
+            continue  # Kommentare/PIs kommen als Callables -> überspringen
+        local = _localname(tag).lower()
+        if local not in _SVG_ALLOWED_TAGS:
+            _reject_svg(f"nicht erlaubtes Element (<{local}>)")
+        for attr, val in el.attrib.items():
+            _check_svg_attr(attr, val)
 
 
 def _branding_root() -> Path:

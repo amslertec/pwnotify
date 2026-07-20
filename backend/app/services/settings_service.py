@@ -16,6 +16,7 @@ from ..models._base import utcnow
 from ..models.setting import Setting
 from ..repositories import tenant_repo
 from .settings_schema import MASK, SECRET_KEYS, SETTINGS, default_settings
+from .settings_validators import check_smtp_tls_allowed
 
 log = get_logger("settings")
 
@@ -107,6 +108,15 @@ class SettingsService:
             if spec.secret:
                 value = encrypt(str(value))
             prepared.append((key, value, spec.secret))
+        # A6 cross-key check: plaintext SMTP (tls=none) only to an internal relay. A single-key
+        # validator cannot see both keys, and a PUT may change only one of them -- so merge the
+        # batch with the persisted state to know the EFFECTIVE host/tls, then enforce here,
+        # before anything is written. Only pay the get_all() cost when a mail key is in play.
+        if "mail.smtp_tls" in values or "mail.smtp_host" in values:
+            current = await self.get_all()
+            eff_host = values.get("mail.smtp_host", current.get("mail.smtp_host"))
+            eff_tls = values.get("mail.smtp_tls", current.get("mail.smtp_tls"))
+            check_smtp_tls_allowed(eff_host, eff_tls)
         for key, value, is_secret in prepared:
             await self._upsert(key, value, is_secret)
         await self.session.commit()

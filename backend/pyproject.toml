@@ -39,6 +39,8 @@ dependencies = [
   # 2FA (TOTP) für lokale Konten + QR-Code-Erzeugung (nutzt Pillow)
   "pyotp==2.10.0",
   "qrcode==8.2",
+  # Gehärteter XML-Parser für die SVG-Upload-Allowlist (DTD/Entities/externe Refs aus)
+  "defusedxml==0.7.1",
 ]
 
 [dependency-groups]
