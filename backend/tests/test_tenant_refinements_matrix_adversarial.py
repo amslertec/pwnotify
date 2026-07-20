@@ -69,7 +69,12 @@ from tests.test_group_sync_deprovision_adversarial import (
 )
 
 # REUSE the Task-4 SSO callback fake + result/mode helpers verbatim.
-from tests.test_oidc_group_auth import _call_oidc_callback, _result, _write_mode
+from tests.test_oidc_group_auth import (  # noqa: F401 -- _oidc_limiter_disabled is autouse
+    _call_oidc_callback,
+    _oidc_limiter_disabled,
+    _result,
+    _write_mode,
+)
 
 # REUSE the Task-1 unconfigured-Graph run harness + the GraphClient-never-built spy verbatim.
 from tests.test_runner_sync_guard import (

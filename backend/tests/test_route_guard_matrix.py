@@ -174,7 +174,7 @@ EXPECTED: Final = {
     ("DELETE", "/api/auth/me/avatar"): frozenset({deps.get_current_user}),
     ("GET", "/api/auth/me/avatar"): frozenset({deps.get_current_user}),
     ("POST", "/api/auth/me/avatar"): frozenset({deps.get_current_user}),
-    ("GET", "/api/auth/oidc/callback"): PUBLIC,
+    ("POST", "/api/auth/oidc/callback"): PUBLIC,
     ("GET", "/api/auth/oidc/login"): PUBLIC,
     ("POST", "/api/auth/password"): frozenset({deps.get_current_user}),
     ("POST", "/api/auth/profile"): frozenset({deps.get_current_user}),

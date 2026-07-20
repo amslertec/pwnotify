@@ -47,6 +47,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from starlette.responses import RedirectResponse
 
+from tests.test_oidc_group_auth import _oidc_limiter_disabled  # noqa: F401
+
 _USER_DOMAIN = "@roletenant.test"
 
 _TID_A = "role-per-tenant-tid-a"

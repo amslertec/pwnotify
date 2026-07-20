@@ -30,6 +30,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from starlette.responses import RedirectResponse
 
+from tests.test_oidc_group_auth import _oidc_limiter_disabled  # noqa: F401
+
 _DOMAIN = "@h3lockout.test"
 _TID = "h3-lockout-entra-tid"
 _ADMIN_GROUP = "h3-lockout-admin-group"

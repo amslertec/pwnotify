@@ -32,6 +32,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from starlette.responses import RedirectResponse
 
+from tests.test_oidc_group_auth import _oidc_limiter_disabled  # noqa: F401
+
 _USER_DOMAIN = "@inactive-sso.test"
 _TID_DEFAULT = "inactive-sso-default-tid"
 _SETTINGS_ADMIN_GROUP = "inactive-sso-settings-admins"

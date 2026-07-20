@@ -44,7 +44,12 @@ from starlette.responses import RedirectResponse
 
 # REUSE the Task-4 callback fake + result/mode helpers verbatim -- one source of truth so the
 # matrix and the auth suite cannot diverge (brief: "REUSE its harness/seeding verbatim").
-from tests.test_oidc_group_auth import _call_oidc_callback, _result, _write_mode
+from tests.test_oidc_group_auth import (  # noqa: F401 -- _oidc_limiter_disabled is autouse
+    _call_oidc_callback,
+    _oidc_limiter_disabled,
+    _result,
+    _write_mode,
+)
 
 _DOMAIN = "@grpmatrix.test"
 

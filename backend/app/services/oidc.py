@@ -99,8 +99,18 @@ def initiate_login(
     """Start an OIDC auth-code flow with PKCE+nonce. Returns (auth_url, encrypted_flow_cookie)."""
     if not is_configured(settings):
         raise PwNotifyError("SSO ist nicht vollständig konfiguriert.", code="oidc_not_configured")
+    # response_mode=form_post (RFC 9700 §4.3.1): Entra returns the authorization code in the
+    # POST body of an auto-submitting form instead of appending it to the redirect URL. The code
+    # then never lands in the URL bar, browser history, `Referer` headers, or reverse-proxy
+    # access logs -- closing the code-leak surface of the default query response mode. The
+    # matching consequence is that the callback becomes a cross-site POST; see the flow-cookie
+    # docstring in `deps.set_oidc_flow_cookie` for the SameSite=None; Secure (HTTPS-only) fallout.
     flow = _app(settings).initiate_auth_code_flow(
-        _SCOPES, redirect_uri=redirect_uri, prompt="select_account", login_hint=login_hint or None
+        _SCOPES,
+        redirect_uri=redirect_uri,
+        prompt="select_account",
+        login_hint=login_hint or None,
+        response_mode="form_post",
     )
     return flow["auth_uri"], encode_flow_cookie(flow)
 

@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 import jwt
-from fastapi import APIRouter, File, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
 from ...core import imagetype
@@ -990,7 +990,13 @@ def _redirect_uri(base: str) -> str:
 
 
 @router.get("/oidc/login")
-async def oidc_login(session: SessionDep, login_hint: str | None = None) -> RedirectResponse:
+@limiter.limit(_settings.login_rate_limit)
+async def oidc_login(
+    request: Request, session: SessionDep, login_hint: str | None = None
+) -> RedirectResponse:
+    # Rate-limited (audit I4, RFC 9700): this unauthenticated route is an outbound amplifier --
+    # every hit makes the server perform an MSAL token-exchange setup and (on callback) a Graph
+    # lookup. `request` is required for slowapi's per-client key function.
     settings = await SettingsService(session).get_all()
     base = effective_base_url(settings)
     url, flow_cookie = oidc.initiate_login(settings, _redirect_uri(base), login_hint=login_hint)
@@ -999,13 +1005,20 @@ async def oidc_login(session: SessionDep, login_hint: str | None = None) -> Redi
     return resp
 
 
-@router.get("/oidc/callback")
+# POST, not GET: with response_mode=form_post (RFC 9700 §4.3.1) Entra delivers the callback as a
+# cross-site POST whose form body carries code/state/error -- read them from the form, not the
+# query string. This does NOT open a new CSRF surface: the exchange is still gated on the
+# encrypted, browser-bound flow cookie (Fernet, state-bound) plus the `state` parameter, neither
+# of which an attacker can forge; PKCE/nonce/state remain enforced by MSAL unchanged.
+# Rate-limited (audit I4): same unauthenticated outbound-amplifier reasoning as `oidc_login`.
+@router.post("/oidc/callback")
+@limiter.limit(_settings.login_rate_limit)
 async def oidc_callback(
     request: Request,
     session: SessionDep,
-    code: str | None = None,
-    state: str | None = None,
-    error: str | None = None,
+    code: str | None = Form(default=None),
+    state: str | None = Form(default=None),
+    error: str | None = Form(default=None),
 ) -> RedirectResponse:
     settings = await SettingsService(session).get_all()
     base = effective_base_url(settings)

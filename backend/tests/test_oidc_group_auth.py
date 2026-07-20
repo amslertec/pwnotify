@@ -23,11 +23,12 @@ persistenter Fixture-Zustand, der die Reihenfolge der Tests verletzen könnte).
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from unittest.mock import AsyncMock, patch
 
+import pytest
 import pytest_asyncio
-from app.api.deps import OIDC_FLOW_COOKIE
+from app.api.deps import OIDC_FLOW_COOKIE, limiter
 from app.api.routes.auth import oidc_callback
 from app.db.session import get_session_factory
 from app.models.audit import AuditLog
@@ -51,6 +52,22 @@ _TEAM_AUDITOR_GROUP = "group-auth-team-auditors"
 # Settings-Rollen-Gruppen (per-Kunde) -- bewusst DISJUNKT von den Team-Gruppen.
 _DEFAULT_SETTINGS_ADMIN_GROUP = "group-auth-default-settings-admins"
 _CUSTOMER_SETTINGS_ADMIN_GROUP = "group-auth-customer-settings-admins"
+
+
+@pytest.fixture(autouse=True)
+def _oidc_limiter_disabled() -> Iterator[None]:
+    """`oidc_callback` is now `@limiter.limit`-decorated (audit I4). slowapi's wrapper requires a
+    real `starlette.requests.Request`, which the duck-typed `_FakeRequest` these unit tests pass
+    is not, and would additionally trip the login rate limit across the many callback calls per
+    test. Disabling the limiter keeps these focused on the flow/authorization logic; the 429
+    behaviour itself is proven over real HTTP in `test_oidc_form_post`. Imported (autouse) by the
+    other direct-call OIDC suites too, so the shared `_call_oidc_callback` helper stays valid."""
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = prev
 
 
 class _FakeRequest:

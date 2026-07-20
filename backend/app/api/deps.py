@@ -408,17 +408,25 @@ def set_oidc_flow_cookie(response: Response, value: str) -> None:
     """Short-lived, browser-bound carrier for the encrypted MSAL auth-code flow dict.
 
     NOT routed through `_cookie_kwargs()`: that hardcodes `samesite="strict"`/`path="/"`, which
-    would break every SSO login. The callback is a cross-site top-level GET navigation redirected
-    from `login.microsoftonline.com` -- only `SameSite=Lax` is sent on such a navigation.
+    would break every SSO login.
+
+    With `response_mode=form_post` (RFC 9700 §4.3.1) the callback is now a cross-site *POST*
+    submitted by an auto-posting form on `login.microsoftonline.com`, not a top-level GET
+    navigation. A browser does NOT attach a `SameSite=Lax` cookie to a cross-site POST, so the
+    flow cookie (PKCE verifier + nonce + state) would never reach the callback and every SSO
+    login would break. It must therefore be `SameSite=None`, and the cookie spec mandates that
+    `SameSite=None` always be paired with `Secure`. `secure=True` is hardcoded here (NOT
+    `settings.cookie_secure`): `Secure` is now a hard requirement of the flow, which is the
+    deliberately accepted consequence that SSO works only over HTTPS. Only THIS cookie changes;
+    the access/refresh/2fa cookies keep their strict, first-party settings.
     """
-    settings = get_settings()
     response.set_cookie(
         OIDC_FLOW_COOKIE,
         value,
         max_age=600,
         httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
+        samesite="none",
+        secure=True,
         path="/api/auth/oidc",
     )
 

@@ -33,7 +33,7 @@ import msal
 import msal.authority
 import pytest
 import pytest_asyncio
-from app.api.deps import OIDC_FLOW_COOKIE
+from app.api.deps import OIDC_FLOW_COOKIE, limiter, set_oidc_flow_cookie
 from app.api.routes.auth import oidc_callback
 from app.core.errors import AuthError
 from app.db.session import get_session_factory
@@ -41,7 +41,7 @@ from app.repositories import user_repo
 from app.services import oidc
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 _TEST_DOMAIN = "@pkcestate.test"
 _REDIRECT_URI = "https://pwnotify.test/api/auth/oidc/callback"
@@ -66,6 +66,20 @@ _FAKE_OIDC_CONFIG = {
 def _no_network_tenant_discovery() -> Iterator[None]:
     with patch("msal.authority.tenant_discovery", return_value=_FAKE_OIDC_CONFIG):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _limiter_disabled() -> Iterator[None]:
+    """`oidc_callback` is now `@limiter.limit`-decorated (audit I4). slowapi's wrapper insists on
+    a real `starlette.requests.Request` when enabled, which the duck-typed `_FakeRequest` used by
+    the direct-call tests here is not; disabling the limiter keeps these unit-level tests focused
+    on the flow logic. The 429 behaviour is proven over real HTTP in `test_oidc_form_post`."""
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = prev
 
 
 class _FakeRequest:
@@ -127,6 +141,37 @@ def test_initiate_login_emits_pkce_and_nonce() -> None:
     assert "code_verifier" in flow
     assert "nonce" in flow
     assert "state" in flow
+
+
+def test_initiate_login_requests_form_post_response_mode() -> None:
+    """RFC 9700 §4.3.1: the auth-code flow must be started with `response_mode=form_post` so Entra
+    returns the code in a cross-site POST body, not the redirect URL. Red against the old code,
+    which passed no `response_mode`."""
+    fake_flow = {"auth_uri": "https://login.example/authorize", "state": "s", "nonce": "n"}
+    with patch.object(
+        msal.ConfidentialClientApplication,
+        "initiate_auth_code_flow",
+        return_value=fake_flow,
+    ) as mock_initiate:
+        oidc.initiate_login(_SETTINGS, _REDIRECT_URI)
+
+    assert mock_initiate.call_args.kwargs["response_mode"] == "form_post"
+
+
+def test_flow_cookie_is_samesite_none_and_secure() -> None:
+    """The flow cookie must be `SameSite=None; Secure`: with form_post the callback is a cross-site
+    POST, on which a `SameSite=Lax` cookie is NOT sent, and `SameSite=None` mandates `Secure`
+    (HTTPS-only SSO). Red against the old code, which set `SameSite=Lax` and `Secure` only when
+    `settings.cookie_secure`."""
+    resp = Response()
+    set_oidc_flow_cookie(resp, "encrypted-flow-value")
+
+    raw = next(
+        h for h in resp.headers.getlist("set-cookie") if h.startswith(f"{OIDC_FLOW_COOKIE}=")
+    )
+    lowered = raw.lower()
+    assert "samesite=none" in lowered
+    assert "secure" in lowered
 
 
 # ---- 3. The code_verifier MSAL generated is what MSAL receives back at the exchange ---- #
