@@ -344,11 +344,25 @@ async def sync_sso_users(
             # let group membership take over a local admin/superadmin). Skip it entirely.
             log.warning("sso_sync_local_account_conflict", username=upn, role=user.role)
             continue
+        elif user.tenant_id != tenant_id:
+            # M8: an SSO account homed in a DIFFERENT tenant happens to share this UPN. A
+            # customer admin controls their own tenant's group membership, hence this `desired`
+            # set -- letting it overwrite another tenant's account (role, activation) would be a
+            # cross-tenant takeover. Skip entirely; the account stays owned by its home tenant.
+            log.warning(
+                "sso_sync_foreign_tenant_conflict",
+                username=upn,
+                home_tenant=user.tenant_id,
+                sync_tenant=tenant_id,
+            )
+            continue
         else:
             user.is_sso = True
             user.display_name = name
             user.role = role
-            user.is_active = True
+            # L8: do NOT force is_active=True on every sync. Presence is governed by the removal
+            # pass below (absent from the desired group -> deleted). Blindly reactivating would
+            # silently revive a deliberately deactivated account once a deactivation path exists.
         synced += 1
 
     # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen -- NUR die
