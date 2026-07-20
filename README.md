@@ -141,7 +141,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.3.0`.
+`amslertec/pwnotify:0.3.1`.
 
 ### Building the image yourself
 
@@ -173,6 +173,15 @@ docker compose -f docker-compose-prod.yml up -d
 (or plain `docker compose pull && docker compose up -d` if you renamed the file to
 `docker-compose.yml`, as in the installation steps above). Migrations run automatically on
 container start.
+
+### 0.3.0 → 0.3.1: hardened database image
+
+The bundled database image is now `amslertec/pwnotifydb:18` — the same PostgreSQL 18.4 as the
+official `postgres:18-alpine`, rebuilt with **0 known HIGH/CRITICAL CVEs** (gosu replaced by
+su-exec, c-ares upgraded). It is a drop-in swap: same server version, same `PGDATA`, same
+environment, so your existing data volume works unchanged. `docker compose … pull && up -d`
+switches to it automatically. To keep stock Postgres instead, set
+`PWNOTIFY_DB_IMAGE=postgres:18-alpine` in your `.env`.
 
 ### 0.2.6 → 0.2.7: dedicated runtime DB role
 

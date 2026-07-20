@@ -4,6 +4,17 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-07-20
+
+### Changed
+
+- **The bundled database image is now `amslertec/pwnotifydb:18`** — the same PostgreSQL 18.4 as
+  the official `postgres:18-alpine`, rebuilt with **0 known HIGH/CRITICAL CVEs** (the `gosu`
+  privilege-drop helper is replaced by `su-exec`, and `c-ares` is upgraded). It is a drop-in
+  swap: same server version, same `PGDATA`, same environment, so existing data volumes work
+  unchanged. Set `PWNOTIFY_DB_IMAGE=postgres:18-alpine` to keep stock Postgres. No application
+  code changed in this release.
+
 ## [0.3.0] — 2026-07-19
 
 This release completes a six-part security-hardening series (0.2.5–0.3.0) that worked through an
@@ -812,6 +823,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.1
 [0.3.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.0
 [0.2.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.9
 [0.2.8]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.8

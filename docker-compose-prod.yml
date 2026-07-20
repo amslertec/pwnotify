@@ -13,7 +13,10 @@ name: pwnotify
 
 services:
   db:
-    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    # Hardened PostgreSQL 18 (0 known HIGH/CRITICAL CVEs) — same server as
+    # postgres:18-alpine, with gosu replaced by su-exec and c-ares upgraded.
+    # Drop-in and data-compatible. Override with PWNOTIFY_DB_IMAGE if desired.
+    image: ${PWNOTIFY_DB_IMAGE:-amslertec/pwnotifydb:18@sha256:8ca7c06419825a4fd4727503af49fa0e95f2d27e91dc5818dce8d5209a5c731a}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pwnotify}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
@@ -43,8 +46,8 @@ services:
 
   app:
     # From Docker Hub. Pin by digest for immutable deployments, e.g.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.3.0@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.0}
+    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.3.1@sha256:<digest>
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.1}
     pull_policy: always
     depends_on:
       db:
