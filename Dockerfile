@@ -23,7 +23,7 @@ COPY frontend/ ./
 RUN pnpm run build            # Ausgabe -> /fe/dist
 
 # ---------- Stage 2: Python-Dependencies (venv) ------------------------------
-FROM cgr.dev/chainguard/python:latest-dev@sha256:b5ce829f93559a3a724837305f267244529bad30b878dc5623940af0a255c6b9 AS deps
+FROM cgr.dev/chainguard/python:latest-dev@sha256:31d318170df60ddec4b04ed595cbe79c33eeb2cf94f9676db6f9eaf46542e6be AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN mkdir -p /tmp/data-empty
 
 # ---------- Stage 3: Runtime -------------------------------------------------
-FROM cgr.dev/chainguard/python:latest@sha256:ce9aaca1f826f7f963cd031e98f8c19f993b1843096d395ea919b646e72cb8de AS runtime
+FROM cgr.dev/chainguard/python:latest@sha256:2c6a2e8bdeb1336cd8545d3586d1c1e5b4f7564ef00924b0447ebfbe57a549ee AS runtime
 
 # --- OCI-Labels (Werte via build-args aus CI) ---
 ARG VERSION=0.3.2
