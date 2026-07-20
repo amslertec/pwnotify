@@ -1,8 +1,8 @@
-"""SSO/OIDC via Microsoft Entra (Authorization-Code-Flow).
+"""SSO/OIDC via Microsoft Entra (authorization code flow).
 
-Nutzt dieselbe App-Registrierung wie Graph. Nur Mitglieder der konfigurierten
-Entra-Admin-Gruppe dürfen sich anmelden — die Gruppenprüfung erfolgt über den
-``groups``-Claim im ID-Token (App-Manifest: ``groupMembershipClaims``).
+Uses the same app registration as Graph. Only members of the configured Entra
+admin group may sign in -- the group check happens via the ``groups`` claim in
+the ID token (app manifest: ``groupMembershipClaims``).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ _LOGIN = {
     "usgov": "https://login.microsoftonline.us",
     "china": "https://login.chinacloudapi.cn",
 }
-_SCOPES = ["User.Read"]  # liefert gültiges Token; groups-Claim kommt aus dem Manifest
+_SCOPES = ["User.Read"]  # yields a valid token; groups claim comes from the manifest
 
 
 @dataclass
@@ -42,16 +42,16 @@ class OidcResult:
     role: str = "admin"
     reason: str | None = None
     tid: str | None = None
-    """Entra-Tenant-ID (`tid`-Claim) des ID-Tokens -- Grundlage für das SSO-Tenant-Mapping
-    (Phase 4a Task 4). ``None`` nur, wenn das Token den Claim ausnahmsweise nicht enthält."""
+    """Entra tenant ID (`tid` claim) of the ID token -- basis for the SSO tenant mapping
+    (phase 4a task 4). ``None`` only if the token exceptionally does not include the claim."""
     groups: list[str] | None = None
-    """Roher Gruppen-Claim (bzw. Graph-Rückfrage-Ergebnis) des Tokens -- ``None`` nur, wenn
-    keine Gruppeninformation ermittelbar war. Grundlage für die AUTORITATIVE, per-Kunde
-    erfolgende Rollen-Neuauflösung im Callback (Sicherheitsfix, Phase 4c Task 4): `role`/
-    `allowed` oben sind gegen die OWNER-/Instanz-Settings berechnet (Übergang, s. u.) und
-    dürfen NICHT unbesehen für die Rolle in einem per `tid` gefundenen Kunden übernommen
-    werden, sobald ≥2 SSO-Kunden existieren -- `resolve_role(groups, tenant_settings)` muss
-    dafür erneut aufgerufen werden."""
+    """Raw group claim (or Graph lookup result) of the token -- ``None`` only if no group
+    information could be determined. Basis for the AUTHORITATIVE, per-customer role
+    re-resolution in the callback (security fix, phase 4c task 4): `role`/`allowed` above
+    are computed against the OWNER/instance settings (transitional, see below) and must
+    NOT be adopted unchecked for the role in a customer found via `tid` once >=2 SSO
+    customers exist -- `resolve_role(groups, tenant_settings)` must be called again for
+    that."""
 
 
 def is_configured(settings: dict[str, Any]) -> bool:
@@ -119,16 +119,16 @@ def initiate_login(
 def resolve_role(
     groups: list[str] | None, settings: dict[str, Any]
 ) -> tuple[str, bool, str | None]:
-    """Bestimmt Rolle + Zugriff EINES per-Kunde-Settings-Dicts gegen einen Gruppen-Claim.
+    """Determines role + access of ONE per-customer settings dict against a group claim.
 
-    Rein/zustandslos, damit sie zweimal aufgerufen werden kann: einmal in
-    `exchange_and_verify` gegen die Owner-/Instanz-Settings (Übergangspfad, Token-Austausch
-    selbst läuft noch über die instanzweite App-Registrierung), und AUTORITATIV ein zweites
-    Mal im Callback gegen die Settings DES per `tid` gefundenen Kunden (Sicherheitsfix,
-    Phase 4c Task 4) -- erst dieser zweite Aufruf entscheidet über `user.role`/Zulassung.
-    Admin-Gruppe hat Vorrang vor Auditor-Gruppe.
+    Pure/stateless so it can be called twice: once in `exchange_and_verify` against the
+    owner/instance settings (transitional path, the token exchange itself still runs via
+    the instance-wide app registration), and a second time AUTHORITATIVELY in the callback
+    against the settings OF the customer found via `tid` (security fix, phase 4c task 4) --
+    only this second call decides `user.role`/admission. Admin group takes precedence over
+    auditor group.
 
-    Gibt ``(role, allowed, reason)`` zurück; ``reason`` ist ``None`` bei Erfolg.
+    Returns ``(role, allowed, reason)``; ``reason`` is ``None`` on success.
     """
     if groups is None:
         return (
@@ -148,24 +148,24 @@ def resolve_role(
 
 
 async def resolve_group_role(session: AsyncSession, groups: list[str] | None) -> tuple[str, bool]:
-    """Rolle + Zugriff für PROVIDER-Personal im Multi-Tenant-Mode aus der TEAM-Mitgliedschaft.
+    """Role + access for PROVIDER staff in multi-tenant mode, derived from TEAM membership.
 
-    WARUM es existiert: SSO ist im Multi-Tenant-Mode ein PROVIDER-Feature. Läuft eine Instanz
-    im Multi-Tenant-Mode, entscheidet NICHT mehr die per-Kunde-Settings-Rollen-Gruppe
-    (`resolve_role`), sondern die Mitgliedschaft in einem Team (`AssignmentGroup`) über Zulassung
-    und Rolle -- das gesamte SSO-Personal wird über Teams verwaltet, nicht über die
-    `oidc.admin_group_id`/`oidc.auditor_group_id`-Settings. Diese Funktion ist hinter dem
-    Callback-Gate für JEDEN Multi-Tenant-SSO-Login erreichbar (`if multi_tenant`, unabhängig vom
-    gematchten `tid`); das Konto homet dabei stets auf dem Default-Tenant. Nur im SINGLE-Tenant-
-    Mode bleibt der Login bei `resolve_role`.
+    WHY it exists: SSO is a PROVIDER feature in multi-tenant mode. When an instance runs
+    in multi-tenant mode, it is no longer the per-customer settings role group
+    (`resolve_role`) that decides admission and role, but membership in a team
+    (`AssignmentGroup`) -- all SSO staff is managed via teams, not via the
+    `oidc.admin_group_id`/`oidc.auditor_group_id` settings. This function is reachable
+    behind the callback gate for EVERY multi-tenant SSO login (`if multi_tenant`,
+    regardless of the matched `tid`); the account always homes on the default tenant in
+    that case. Only in SINGLE-tenant mode does the login stay with `resolve_role`.
 
-    Fail-closed OHNE Settings-Fallback: kein Token-`groups`-Claim oder KEIN Claim, der auf
-    IRGENDEIN Team zeigt, heisst NICHT autorisiert (`("admin", False)`). Sonst gewinnt Admin --
-    matcht der Claim ein Admin-Team, wird die Rolle `"admin"`, andernfalls (nur Auditor-Teams)
-    `"auditor"`.
+    Fail-closed WITHOUT a settings fallback: no token `groups` claim, or NO claim pointing
+    at ANY team, means NOT authorized (`("admin", False)`). Otherwise admin wins -- if the
+    claim matches an admin team, the role becomes `"admin"`, otherwise (only auditor
+    teams) `"auditor"`.
 
-    Gibt `(role, allowed)` zurück -- KEIN `reason` (der Callback liefert den festen Grund-String
-    bei Verweigerung selbst)."""
+    Returns `(role, allowed)` -- NO `reason` (the callback supplies the fixed reason string
+    itself on denial)."""
     if not groups:
         return "admin", False
     roles = await assignment_group_repo.group_roles_for_entra_groups(session, set(groups))
@@ -203,11 +203,11 @@ async def exchange_and_verify(
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
     groups = claims.get("groups")
     if not isinstance(groups, list):
-        # Zwei Ursachen: 'groupMembershipClaims' ist im App-Manifest nicht gesetzt — oder
-        # der Benutzer ist in mehr als 200 Gruppen, dann liefert Entra statt der Liste nur
-        # einen Verweis ("Overage"). Letzteres trifft ausgerechnet Konten mit vielen
-        # Mitgliedschaften, also typischerweise Administratoren. Deshalb wird hier gezielt
-        # nachgefragt, statt die Anmeldung pauschal abzulehnen.
+        # Two causes: 'groupMembershipClaims' is not set in the app manifest -- or the
+        # user is a member of more than 200 groups, in which case Entra returns only a
+        # reference ("overage") instead of the list. The latter happens to affect accounts
+        # with many memberships, i.e. typically administrators. This is why we specifically
+        # query here instead of rejecting the sign-in outright.
         groups = await _groups_via_graph(
             settings, claims.get("oid") or username, [admin_group, auditor_group]
         )
@@ -226,11 +226,11 @@ async def exchange_and_verify(
 async def _groups_via_graph(
     settings: dict[str, Any], user_id: str, group_ids: list[str]
 ) -> list[str] | None:
-    """Mitgliedschaft direkt bei Graph erfragen, wenn das Token keine Gruppen liefert.
+    """Query membership directly from Graph when the token does not supply groups.
 
-    Gibt die Teilmenge der geprüften Gruppen zurück, ``None`` wenn die Rückfrage nicht
-    möglich war (kein Secret, keine Gruppen konfiguriert, Graph-Fehler) — dann bleibt es
-    beim bisherigen Verhalten: Anmeldung ablehnen statt im Zweifel Rechte vergeben.
+    Returns the subset of the checked groups, ``None`` if the query was not possible (no
+    secret, no groups configured, Graph error) -- in that case the previous behavior
+    applies: reject sign-in instead of granting access when in doubt.
     """
     gesucht = [g for g in group_ids if g]
     if not (user_id and gesucht and settings.get("graph.client_secret")):
@@ -255,24 +255,24 @@ async def _groups_via_graph(
 
 
 _MAX_REMOVAL_RATIO = 0.5
-"""Ab welchem Anteil ein Sync als Fehlkonfiguration statt als Abgang gilt."""
+"""Threshold ratio above which a sync is treated as a misconfiguration rather than a departure."""
 
 
 def removal_blocked_reason(
     *, desired_count: int, existing_count: int, removal_count: int
 ) -> str | None:
-    """Prüft, ob eine geplante Löschung plausibel ist. Gibt den Grund zurück, wenn nicht.
+    """Checks whether a planned deletion is plausible. Returns the reason if not.
 
-    Der Sync entfernt SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind. Zwei
-    Fälle sind fast immer ein Konfigurationsfehler statt ein echter Abgang — und beide
-    enden damit, dass sich der Betreiber aus der eigenen Anwendung aussperrt:
+    The sync removes SSO users who are no longer in any authorized group. Two cases are
+    almost always a configuration error rather than a genuine departure -- and both end
+    with the operator locking themselves out of their own application:
 
-    * Die Soll-Menge ist leer (leergeräumte Gruppe, falsche Group-ID): niemand entfernt
-      absichtlich alle Admins auf einmal.
-    * Der Sync will die Mehrheit aller SSO-Benutzer entfernen.
+    * The desired set is empty (emptied group, wrong group ID): nobody intentionally
+      removes all admins at once.
+    * The sync would remove the majority of all SSO users.
 
-    Im Zweifel wird nicht gelöscht: ein zu viel behaltener Benutzer ist reparabel,
-    ein Aussperren aller Administratoren nicht.
+    When in doubt, nothing is deleted: keeping one user too many is fixable, locking out
+    all administrators is not.
     """
     if removal_count == 0:
         return None
@@ -296,20 +296,19 @@ def removal_blocked_reason(
 async def sync_sso_users(
     session: AsyncSession, settings: dict[str, Any], *, tenant_id: int
 ) -> dict[str, int]:
-    """Gleicht die SSO-Benutzer EINES Mandanten mit dessen Entra-Admin- und -Auditor-Gruppe ab.
+    """Reconciles the SSO users of ONE tenant against its Entra admin and auditor group.
 
-    Mitglieder der Admin-Gruppe erhalten die Rolle ``admin``, Mitglieder der
-    Auditor-Gruppe ``auditor`` (Admin hat Vorrang). Frühere SSO-Benutzer, die in
-    keiner der Gruppen mehr sind, werden entfernt — abgesichert durch
-    :func:`removal_blocked_reason`.
+    Members of the admin group receive the role ``admin``, members of the auditor group
+    ``auditor`` (admin takes precedence). Former SSO users who are no longer in either
+    group are removed -- safeguarded by :func:`removal_blocked_reason`.
 
-    Sicherheitsfix: sowohl das Anlegen (``tenant_id`` auf dem neuen Konto) als auch die
-    Entfernungsmenge (``list_sso_for_tenant`` statt der instanzweiten ``list_sso``) sind
-    strikt auf ``tenant_id`` gescoped. Vorher hätte ein Sync für Kunde A die SSO-Konten
-    JEDES anderen Kunden als "in keiner Gruppe mehr" gesehen (deren UPNs stehen ja nicht
-    in A's ``desired``) und gelöscht -- inklusive deren Administratoren. `tenant_id` ist
-    deshalb Pflichtparameter, kein Default: ein Aufruf ohne aktiven Tenant muss beim
-    Aufrufer scheitern/übersprungen werden, nicht hier still instanzweit laufen.
+    Security fix: both account creation (``tenant_id`` on the new account) and the removal
+    set (``list_sso_for_tenant`` instead of the instance-wide ``list_sso``) are strictly
+    scoped to ``tenant_id``. Previously, a sync for customer A would have seen the SSO
+    accounts of EVERY other customer as "no longer in any group" (their UPNs are of course
+    not in A's ``desired``) and deleted them -- including their administrators.
+    `tenant_id` is therefore a required parameter, not a default: a call without an active
+    tenant must fail/be skipped by the caller, not silently run instance-wide here.
     """
     admin_group = str(settings.get("oidc.admin_group_id") or "")
     auditor_group = str(settings.get("oidc.auditor_group_id") or "")
@@ -325,7 +324,7 @@ async def sync_sso_users(
         )
     )
 
-    # upn_lower -> (Original-UPN, Rolle, Anzeigename); Admin-Gruppe überschreibt Auditor.
+    # upn_lower -> (original UPN, role, display name); admin group overrides auditor.
     desired: dict[str, tuple[str, str, str]] = {}
     if auditor_group:
         for m in await graph.get_group_members(auditor_group):
@@ -376,10 +375,10 @@ async def sync_sso_users(
             # silently revive a deliberately deactivated account once a deactivation path exists.
         synced += 1
 
-    # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen -- NUR die
-    # dieses Mandanten (siehe Sicherheitsfix-Hinweis im Docstring oben). Wir behalten die
-    # Konto-Objekte (nicht nur die IDs): für den Audit-Eintrag brauchen wir die UPN (M-02)
-    # und für den Last-Admin-Backstop Rolle/Tenant-Zugehörigkeit (L-03).
+    # Remove SSO users who are no longer in any authorized group -- ONLY those of THIS
+    # tenant (see security-fix note in the docstring above). We keep the account objects
+    # (not just the ids): we need the UPN for the audit entry (M-02) and role/tenant
+    # membership for the last-admin backstop (L-03).
     existing_sso = await user_repo.list_sso_for_tenant(session, tenant_id)
     removable = [u for u in existing_sso if u.username.lower() not in desired]
 
@@ -389,7 +388,7 @@ async def sync_sso_users(
         removal_count=len(removable),
     )
     if blocked:
-        await session.commit()  # Rollen-/Namensabgleich oben behalten, nur nicht löschen
+        await session.commit()  # keep the role/name reconcile above, just don't delete
         log.error(
             "sso_removal_blocked",
             reason=blocked,
@@ -404,9 +403,9 @@ async def sync_sso_users(
     for u in removable:
         if u.id is None:
             continue
-        # L-03: Last-Admin-Backstop -- den einzigen Admin eines Tenants NIE deprovisionieren,
-        # selbst wenn die Löschquote es zuliesse. Konsistent mit A4 (set_role/delete_user):
-        # ein per SSO-Gruppenabgang verlorener letzter Admin sperrt den Tenant sonst aus.
+        # L-03: last-admin backstop -- NEVER deprovision the sole admin of a tenant, even
+        # if the removal ratio would allow it. Consistent with A4 (set_role/delete_user): a
+        # last admin lost via SSO group departure would otherwise lock the tenant out.
         protected = False
         for tid in await tenant_repo.admin_tenants(session, u):
             if await user_repo.count_tenant_admins(session, tid) <= 1:
@@ -418,8 +417,9 @@ async def sync_sso_users(
             continue
         upn = u.username
         await user_repo.delete(session, u.id)
-        # M-02: eine Löschung ist nie leise. Atomar mit der Löschung, da `user_repo.delete`
-        # nicht mehr selbst committet (M-03) und dieser Sync unten einmal committet.
+        # M-02: a deletion is never silent. Atomic with the deletion, since
+        # `user_repo.delete` no longer commits itself (M-03) and this sync commits once
+        # below.
         await audit.record(
             session,
             action=audit.USER_DELETED,
@@ -430,9 +430,9 @@ async def sync_sso_users(
         )
         removed += 1
 
-    # M-02: ein Aggregat-SSO_SYNCED, damit auch ein GEPLANTER Sync eine Spur hinterlässt (bisher
-    # schrieb das nur die manuelle Route). Auf den synchronisierten Tenant attribuiert. Auch bei
-    # admin_protected schreiben, damit ein Lauf, der NUR einen Admin schützte, sichtbar bleibt.
+    # M-02: an aggregate SSO_SYNCED so a SCHEDULED sync also leaves a trace (previously
+    # only the manual route wrote that). Attributed to the synced tenant. Also written on
+    # admin_protected, so a run that ONLY protected an admin remains visible.
     if synced or removed or admin_protected:
         await audit.record(
             session,

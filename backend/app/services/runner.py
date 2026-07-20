@@ -1,6 +1,6 @@
-"""Orchestriert einen kompletten Lauf: Graph-Sync -> Benachrichtigungen -> Run-Protokoll.
+"""Orchestrates a complete run: Graph sync -> notifications -> run log.
 
-Fehler einzelner User oder eines Teilschritts dürfen den Lauf nie abbrechen.
+Errors from a single user or a sub-step must never abort the run.
 """
 
 from __future__ import annotations
@@ -32,24 +32,24 @@ from .settings_service import SettingsService, effective_base_url
 
 log = get_logger("runner")
 
-# Unterhalb dieser Menge wird nie blockiert: bei wenigen Konten ist ein hoher Anteil
-# Fälliger normal (3 von 5 = 60 %) und harmlos.
+# Below this count, blocking never happens: with few accounts, a high ratio of due
+# accounts is normal (3 of 5 = 60%) and harmless.
 _MASS_SEND_MIN_COUNT = 20
 
 
 def mass_send_blocked_reason(
     *, due: int, checked: int, max_ratio: float, max_count: int | None = None
 ) -> str | None:
-    """Prüft, ob ein Lauf verdächtig viele Benachrichtigungen verschicken würde.
+    """Checks whether a run would send a suspiciously large number of notifications.
 
-    Ein einzelner Konfigurationsfehler — etwa eine falsche Gültigkeitsdauer — lässt
-    schlagartig alle Konten als fällig erscheinen. Ohne Bremse gingen dann tausende Mails an
-    echte Empfänger; das ist nicht rückholbar und beim Kunden ein Vertrauensschaden. Gibt den
-    Grund zurück, wenn abgebrochen werden soll, sonst ``None``.
+    A single configuration error -- e.g. a wrong validity period -- can suddenly make all
+    accounts appear due. Without a brake, that would send thousands of emails to real
+    recipients; that is not undoable and a trust-damaging incident with the customer.
+    Returns the reason if the run should be aborted, otherwise ``None``.
 
-    Zwei Bremsen: der absolute Cap (``max_count``) lässt sich NICHT über das Verhältnis
-    abschalten und greift auch bei sehr grossen Beständen; die Verhältnis-Bremse
-    (``max_ratio``) fängt den „plötzlich alle fällig"-Fall bei kleineren Beständen.
+    Two brakes: the absolute cap (``max_count``) canNOT be switched off via the ratio and
+    also applies to very large datasets; the ratio brake (``max_ratio``) catches the
+    "suddenly everything is due" case for smaller datasets.
     """
     if due == 0 or checked == 0:
         return None
@@ -61,7 +61,7 @@ def mass_send_blocked_reason(
             "dauer oder Sync-Gruppe). Es wurde nichts versendet. Einstellungen prüfen oder "
             "einen Testlauf (Dry-Run) starten."
         )
-    # Verhältnis-Bremse (kleine Bestände unterhalb des Floors werden nie blockiert).
+    # Ratio brake (small datasets below the floor are never blocked).
     if max_ratio > 0 and due >= _MASS_SEND_MIN_COUNT and due > checked * max_ratio:
         return (
             f"Der Lauf würde {due} von {checked} Benutzern benachrichtigen "
@@ -75,11 +75,11 @@ def mass_send_blocked_reason(
 async def _apply_privacy_retention(
     session: Any, settings: dict[str, Any], *, sync_ok: bool
 ) -> list[dict[str, Any]]:
-    """Fristen für personenbezogene Daten anwenden. Gibt Protokollschritte zurück.
+    """Apply retention periods for personal data. Returns log steps.
 
-    ``sync_ok`` ist die entscheidende Sicherung: Nur wenn der Graph-Sync in diesem Lauf
-    sauber durchlief, ist ``last_synced_at`` aussagekräftig. Nach einem gescheiterten Sync
-    wirken alle Konten veraltet — Löschen wäre dann eine Katastrophe mit Ansage.
+    ``sync_ok`` is the decisive safeguard: ``last_synced_at`` is only meaningful if the
+    Graph sync completed cleanly in this run. After a failed sync, all accounts look
+    stale -- deleting them then would be a disaster waiting to happen.
     """
     schritte: list[dict[str, Any]] = []
 
@@ -101,7 +101,7 @@ async def _apply_privacy_retention(
 
     log_tage = int(settings.get("privacy.log_retention_days") or 0)
     if log_tage > 0:
-        # Historie: unabhängig vom Sync, das Alter der Einträge stimmt immer.
+        # History: independent of the sync, the age of the entries is always accurate.
         entfernt = await notification_repo.delete_older_than(session, days=log_tage)
         if entfernt:
             log.info("log_retention_applied", removed=entfernt, days=log_tage)
@@ -137,14 +137,15 @@ async def _apply_audit_retention(session: Any, settings: dict[str, Any]) -> list
 
 
 async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[str]:
-    """Ausschluss-IDs aus den Regeln (User-Werte + transitive Gruppenmitglieder)."""
+    """Exclusion ids from the rules (user values + transitive group members)."""
     excluded: set[str] = set(await exclusion_repo.user_values(session))
     group_ids = await exclusion_repo.group_ids(session)
-    # Gruppen-basierte Ausschlüsse brauchen Graph. Ist Graph NICHT konfiguriert, den Client
-    # gar nicht bauen -- die MSAL-Authority-Validierung wirft sonst schon bei der Konstruktion
-    # (leere `graph.tenant_id` -> `https://login.microsoftonline.com/` ohne Tenant-Segment) und
-    # zwar AUSSERHALB des `try` unten, sodass der rohe MSAL-Fehler in den Run leckt (gleiche
-    # Ursache wie beim gegateten `sync_users`). Ohne Graph bleiben die User-Wert-Ausschlüsse.
+    # Group-based exclusions need Graph. If Graph is NOT configured, don't even build the
+    # client -- otherwise the MSAL authority validation already raises during construction
+    # (empty `graph.tenant_id` -> `https://login.microsoftonline.com/` with no tenant
+    # segment), and OUTSIDE the `try` below at that, so the raw MSAL error leaks into the
+    # run (same cause as with the gated `sync_users`). Without Graph, the user-value
+    # exclusions remain.
     if group_ids and is_graph_configured(settings):
         graph = GraphClient(
             GraphConfig(
@@ -186,7 +187,7 @@ async def execute_run(
         status = "success"
         error: str | None = None
         started = dt.datetime.now(dt.UTC)
-        # Vorbelegt, damit das finally auch greift, wenn der Lauf vorher scheitert.
+        # Pre-assigned so the finally also applies if the run fails earlier.
         sender: Any = None
 
         try:
@@ -194,10 +195,10 @@ async def execute_run(
             try:
                 stats = await sync_users(session, settings)
                 if stats.get("skipped") == "graph_not_configured":
-                    # Kein MSAL-Token-Versuch ohne Graph-Konfiguration -- kein Fehler,
-                    # der Lauf bleibt "success". Sichtbar wird das ausschliesslich über
-                    # diesen `detail_log`-Eintrag, NICHT zusätzlich als `run.error`
-                    # (sonst erschiene die Meldung doppelt).
+                    # No MSAL token attempt without Graph configuration -- not an error,
+                    # the run stays "success". This is made visible exclusively via this
+                    # `detail_log` entry, NOT additionally as `run.error` (otherwise the
+                    # message would appear twice).
                     detail.append({"step": "sync", "skipped": "graph_not_configured"})
                     log.info("run_sync_skipped", reason="graph_not_configured")
                 else:
@@ -208,20 +209,22 @@ async def execute_run(
                 detail.append({"step": "sync", "error": str(exc)})
                 log.error("run_sync_failed", error=str(exc))
 
-            # 1b) SSO-Benutzer mit der Admin-Gruppe abgleichen (best effort).
-            # WICHTIG: `app_user` ist instanzweit (kein tenant_id-RLS) -- läuft daher
-            # bewusst auf einer eigenen Owner-Session, NICHT auf der tenant-gescopten
-            # `session` dieses Laufs (die Einstellungen bleiben trotzdem die des
-            # aktiven Tenants, aus `settings` oben gelesen).
-            # Sicherheitsfix: `sync_sso_users` braucht den aktiven Tenant, um Anlegen UND
-            # Entfernen strikt auf diesen Kunden zu scopen (sonst sähe es instanzweit auch
-            # SSO-Konten anderer Kunden als "nicht mehr in der Gruppe" an und löschte sie).
-            # Der Tenant MUSS hier, VOR `use_owner_context()`, gelesen werden -- der Wechsel
-            # in den Owner-Kontext setzt das ContextVar für die Dauer des Blocks auf `None`.
+            # 1b) Reconcile SSO users with the admin group (best effort).
+            # IMPORTANT: `app_user` is instance-wide (no tenant_id RLS) -- therefore
+            # deliberately runs on its own owner session, NOT on this run's tenant-scoped
+            # `session` (the settings nonetheless remain those of the active tenant, read
+            # from `settings` above).
+            # Security fix: `sync_sso_users` needs the active tenant to strictly scope both
+            # creation AND removal to this customer (otherwise it would instance-wide see
+            # other customers' SSO accounts too as "no longer in the group" and delete
+            # them).
+            # The tenant MUST be read here, BEFORE `use_owner_context()` -- switching into
+            # the owner context sets the ContextVar to `None` for the duration of the
+            # block.
             tenant_id_for_sso = current_tenant_or_none()
             if tenant_id_for_sso is None:
-                # Kein aktiver Tenant (z. B. Owner-/Single-Tenant-Bootpfad) -- ohne Tenant
-                # ist der Sync nicht sicher scopebar, also überspringen statt zu raten.
+                # No active tenant (e.g. owner/single-tenant boot path) -- without a
+                # tenant the sync cannot be safely scoped, so skip instead of guessing.
                 log.warning("sso_sync_skipped", reason="no_active_tenant")
             else:
                 try:
@@ -233,11 +236,11 @@ async def execute_run(
                                 owner_session, settings, tenant_id=tenant_id_for_sso
                             )
                     if sso_stats.get("removal_blocked") or sso_stats.get("admin_protected"):
-                        # Sichtbar machen: ein blockierter Abgleich heisst, dass die
-                        # Gruppenkonfiguration nicht stimmt; ein geschützter letzter Admin
-                        # (L-03) heisst, ein Tenant hätte fast seinen einzigen Admin verloren.
-                        # Der Lauf darf dann nicht "success" melden, sonst bleibt das unbemerkt —
-                        # "partial" löst zusätzlich den Admin-Alert aus.
+                        # Make it visible: a blocked reconcile means the group
+                        # configuration is wrong; a protected last admin (L-03) means a
+                        # tenant nearly lost its only admin. The run must not report
+                        # "success" in that case, or it would go unnoticed -- "partial"
+                        # additionally triggers the admin alert.
                         status = "partial"
                         detail.append({"step": "sso_sync", **sso_stats})
                     elif sso_stats["synced"] or sso_stats["removed"]:
@@ -246,15 +249,15 @@ async def execute_run(
                     detail.append({"step": "sso_sync", "error": str(exc)})
                     log.warning("sso_sync_failed", error=str(exc))
 
-            # 1c) Aufbewahrungsfristen anwenden (alle standardmässig aus).
+            # 1c) Apply retention periods (all off by default).
             try:
                 detail.extend(await _apply_audit_retention(session, settings))
             except Exception as exc:
                 log.warning("audit_purge_failed", error=str(exc))
 
-            # Ausgeschiedene Konten nur entfernen, wenn der Sync ODER die Frist es hergibt.
-            # Wichtig: Bei einem gescheiterten Sync altern alle Einträge gleichzeitig —
-            # dann darf hier nichts gelöscht werden, sonst räumt eine Störung den Bestand.
+            # Only remove departed accounts if the sync OR the retention period allows it.
+            # Important: after a failed sync, all entries age simultaneously -- nothing may
+            # be deleted here in that case, or an outage would wipe out the dataset.
             try:
                 for schritt in await _apply_privacy_retention(
                     session, settings, sync_ok=status == "success"
@@ -276,10 +279,10 @@ async def execute_run(
             )
             checked = len(users)
 
-            # Vor dem ersten Versand abschätzen, wie viele Mails anstünden. Bewusst ohne
-            # die Dedup-Abfrage (eine DB-Abfrage je Benutzer) — als Obergrenze reicht das,
-            # und genau der Fehlerfall "plötzlich sind alle fällig" wird so erkannt,
-            # bevor die erste Mail rausgeht.
+            # Before the first send, estimate how many emails would be due. Deliberately
+            # without the dedup query (one DB query per user) -- as an upper bound this is
+            # sufficient, and exactly the failure case "suddenly everything is due" is
+            # caught this way before the first email goes out.
             due_estimate = sum(
                 1
                 for u in users
@@ -348,8 +351,8 @@ async def execute_run(
             error = str(exc)
             log.error("run_failed", error=str(exc))
         finally:
-            # Gepoolte Verbindungen des Mail-Versands freigeben — sonst bleiben sie über
-            # den Lauf hinaus offen. Auch im Fehlerfall.
+            # Release pooled mail-sending connections -- otherwise they stay open beyond
+            # the run. Also on the error path.
             close = getattr(getattr(sender, "client", None), "aclose", None)
             if close is not None:
                 with contextlib.suppress(Exception):
@@ -380,7 +383,7 @@ async def execute_run(
             skipped=skipped,
             dry_run=dry_run,
         )
-        # Admin-Digest / Fehler-Alert (best effort — beeinflusst den Lauf nie).
+        # Admin digest / error alert (best effort -- never affects the run).
         try:
             await alerts.maybe_send_run_alert(session, settings, run, base_url)
         except Exception as exc:

@@ -1,6 +1,6 @@
-"""DB-Zugriff für Einmal-Tokens (Einladung, Passwort-Reset) -- `models/token.py`.
+"""DB access for one-time tokens (invitation, password reset) -- `models/token.py`.
 
-Instanzweite Tabelle wie `app_user`/`user_session` (kein RLS, siehe `db/rls.py::RLS_TABLES`).
+Instance-wide table like `app_user`/`user_session` (no RLS, see `db/rls.py::RLS_TABLES`).
 """
 
 from __future__ import annotations
@@ -41,11 +41,11 @@ async def create(
 async def get_live_by_hash(
     session: AsyncSession, token_hash: str, purpose: str
 ) -> UserToken | None:
-    """Nur ein NOCH gültiges Token: unverbraucht, nicht abgelaufen, passender `purpose`.
+    """Only a token that is STILL valid: unconsumed, not expired, matching `purpose`.
 
-    Jeder andere Zustand (nie existiert, falscher Zweck, abgelaufen, bereits verbraucht)
-    liefert bewusst dasselbe `None` -- die aufrufende Route darf daraus NIE unterschiedliche
-    Fehlermeldungen ableiten (keine Enumeration, siehe `api/routes/public_tokens.py`)."""
+    Every other state (never existed, wrong purpose, expired, already consumed)
+    deliberately returns the same `None` -- the calling route must NEVER derive different
+    error messages from that (no enumeration, see `api/routes/public_tokens.py`)."""
     res = await session.execute(
         select(UserToken).where(
             UserToken.token_hash == token_hash,
@@ -58,19 +58,19 @@ async def get_live_by_hash(
 
 
 async def consume(session: AsyncSession, token: UserToken) -> bool:
-    """Markiert das Token als verbraucht (Single-Use) -- ATOMARE, guarded UPDATE (TOCTOU-Fix):
-    `UPDATE ... WHERE id=:id AND consumed_at IS NULL RETURNING id` statt des früheren ORM-
-    Attribut-Sets (`token.consumed_at = utcnow()`). Zwei parallele Requests, die BEIDE
-    dieselbe noch-gültige Zeile über `get_live_by_hash` gelesen haben, bevor einer von
-    beiden committet hat, dürfen nicht beide erfolgreich verbrauchen -- die `WHERE
-    consumed_at IS NULL`-Guard lässt nur den ERSTEN Commit durch, jeder weitere UPDATE auf
-    dieselbe (jetzt schon verbrauchte) Zeile liefert 0 Treffer.
+    """Marks the token as consumed (single-use) -- ATOMIC, guarded UPDATE (TOCTOU fix):
+    `UPDATE ... WHERE id=:id AND consumed_at IS NULL RETURNING id` instead of the earlier
+    ORM attribute set (`token.consumed_at = utcnow()`). Two parallel requests that BOTH
+    read the same still-valid row via `get_live_by_hash` before either one committed must
+    not both succeed in consuming it -- the `WHERE consumed_at IS NULL` guard only lets the
+    FIRST commit through, every further UPDATE on the same (now already consumed) row
+    returns 0 hits.
 
-    Gibt `True` zurück, wenn DIESER Aufruf das Token verbraucht hat (bereits committed).
-    Gibt `False` zurück, wenn es zwischenzeitlich (von einer anderen, gleichzeitigen Anfrage)
-    bereits verbraucht wurde -- KEIN Commit in diesem Fall. Der Aufrufer MUSS `False`
-    identisch zu 'Token nie gefunden' behandeln (derselbe generische `token_invalid`-Fehler,
-    keine Enumeration, siehe `api/routes/public_tokens.py`)."""
+    Returns `True` if THIS call consumed the token (already committed).
+    Returns `False` if it was already consumed in the meantime (by another, concurrent
+    request) -- NO commit in that case. The caller MUST treat `False` identically to
+    'token never found' (the same generic `token_invalid` error, no enumeration, see
+    `api/routes/public_tokens.py`)."""
     res = await session.execute(
         sa_update(UserToken)
         .where(UserToken.id == token.id, UserToken.consumed_at.is_(None))
@@ -84,11 +84,11 @@ async def consume(session: AsyncSession, token: UserToken) -> bool:
 
 
 async def consume_live_for_user(session: AsyncSession, *, app_user_id: int, purpose: str) -> None:
-    """Entwertet ALLE noch gültigen Tokens dieses Zwecks für das Konto -- idempotent.
+    """Invalidates ALL still-valid tokens of this purpose for the account -- idempotent.
 
-    Ein neu ausgestellter Reset-Link soll der einzig gültige sein: sonst könnte ein älterer,
-    per Mail noch offener Link (z. B. aus einem abgebrochenen ersten Versuch) parallel
-    weiterverwendet werden (§7c: 'ein neues Token ersetzt ältere Reset-Tokens')."""
+    A newly issued reset link is meant to be the only valid one: otherwise an older link
+    still open via email (e.g. from an aborted first attempt) could be used in parallel
+    (§7c: 'a new token replaces older reset tokens')."""
     res = await session.execute(
         select(UserToken).where(
             UserToken.app_user_id == app_user_id,
@@ -104,18 +104,17 @@ async def consume_live_for_user(session: AsyncSession, *, app_user_id: int, purp
 
 
 async def delete_created_by(session: AsyncSession, user_id: int) -> None:
-    """Löscht Tokens, die dieses Konto ALS ADMIN ausgestellt hat (`created_by`) --
-    Carry-forward-Fix aus Task 1: `created_by` trägt bewusst KEIN `ON DELETE` (ein
-    gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN Nutzers nicht
-    mitreissen) -- ohne diesen Aufräumschritt VOR dem Löschen des Erstellerkontos selbst
-    schlägt das Löschen mit einem `IntegrityError` fehl, sobald noch Tokens offen sind, die
-    dieser Admin ausgestellt hat. Mirror von `user_repo.delete`s expliziter
-    Sessions-Löschung (dieselbe Begründung: kein ORM-Relationship, DELETE erzwingt die
-    Reihenfolge).
+    """Deletes tokens that this account issued AS ADMIN (`created_by`) -- carry-forward
+    fix from Task 1: `created_by` deliberately carries NO `ON DELETE` (a deleted issuer
+    account must not drag down a still-valid token belonging to ANOTHER user) -- without
+    this cleanup step BEFORE deleting the issuer account itself, the deletion fails with an
+    `IntegrityError` as soon as tokens issued by this admin are still open. Mirrors
+    `user_repo.delete`'s explicit session deletion (same rationale: no ORM relationship,
+    DELETE enforces the ordering).
 
-    Committet NICHT (M-03): Dieser Schritt steht in `delete_user` zwischen dem gestagten
-    `USER_DELETED`-Audit-Eintrag und der eigentlichen Kontolöschung. Ein interner Commit
-    hier würde den davor gestagten Audit-Eintrag verfrüht festschreiben, sodass ein
-    späterer Fehler eine Phantom-Löschung im Log hinterliesse. Der einzige Aufrufer
-    (`admin_users.delete_user`) committet Audit + Löschung gemeinsam am Ende."""
+    Does NOT commit (M-03): this step sits in `delete_user` between the staged
+    `USER_DELETED` audit entry and the actual account deletion. An internal commit here
+    would prematurely finalize the audit entry staged before it, so that a later failure
+    would leave a phantom deletion in the log. The sole caller (`admin_users.delete_user`)
+    commits audit + deletion together at the end."""
     await session.execute(sa_delete(UserToken).where(UserToken.created_by == user_id))

@@ -1,4 +1,4 @@
-"""DB-Zugriff für gespiegelte Entra-Benutzer."""
+"""DB access for mirrored Entra users."""
 
 from __future__ import annotations
 
@@ -26,12 +26,11 @@ SORTABLE = {
 
 
 async def upsert(session: AsyncSession, data: dict[str, Any]) -> None:
-    """Insert-or-update anhand ``entra_id`` (setzt beim Update ``excluded`` nicht zurück).
+    """Insert-or-update keyed on ``entra_id`` (does not reset ``excluded`` on update).
 
-    ``tenant_id`` kommt explizit aus dem aktiven Tenant-Kontext: dies ist ein Core-
-    ``pg_insert``, das (anders als ``session.add(EntraUser(...))``) den ORM-
-    ``default_factory`` NICHT durchläuft -- ohne diesen Wert würde die NOT-NULL-Spalte
-    fehlschlagen.
+    ``tenant_id`` comes explicitly from the active tenant context: this is a core
+    ``pg_insert``, which (unlike ``session.add(EntraUser(...))``) does NOT go through the
+    ORM ``default_factory`` -- without this value the NOT-NULL column would fail.
     """
     stmt = pg_insert(EntraUser).values(**data, tenant_id=current_tenant_or_none())
     update_cols = {k: stmt.excluded[k] for k in data if k not in ("entra_id", "id", "excluded")}
@@ -70,7 +69,7 @@ def _apply_filters(stmt: Select[Any], *, search: str | None, status: str | None)
         stmt = stmt.where(EntraUser.account_enabled.is_(False))
     elif status == "excluded":
         stmt = stmt.where(EntraUser.excluded.is_(True))
-    # Shared Mailboxes nur in der eigenen Ansicht (status='shared'), sonst ausgeblendet.
+    # Shared mailboxes only show up in their own view (status='shared'), otherwise hidden.
     if status == "shared":
         stmt = stmt.where(EntraUser.is_shared.is_(True))
     else:
@@ -146,7 +145,7 @@ async def mark_group_excluded(session: AsyncSession, entra_ids: set[str], exclud
 
 async def counts_for_dashboard(session: AsyncSession) -> dict[str, int]:
     async def _count(*conds: Any) -> int:
-        # Shared Mailboxes zählen nie in den regulären KPIs mit.
+        # Shared mailboxes never count towards the regular KPIs.
         stmt = select(func.count(EntraUser.id)).where(EntraUser.is_shared.is_(False))
         for c in conds:
             stmt = stmt.where(c)
@@ -159,8 +158,8 @@ async def counts_for_dashboard(session: AsyncSession) -> dict[str, int]:
             )
         ).scalar_one()
     )
-    # Kategorien schliessen sich gegenseitig aus: deaktivierte Konten zählen nur unter
-    # "disabled", die Ablauf-Kategorien (soon/expired/never/ok) nur aktive Konten.
+    # Categories are mutually exclusive: disabled accounts only count under
+    # "disabled", the expiry categories (soon/expired/never/ok) only count active accounts.
     active = EntraUser.account_enabled.is_(True)
     return {
         "total": await _count(),
@@ -173,7 +172,7 @@ async def counts_for_dashboard(session: AsyncSession) -> dict[str, int]:
 
 
 async def expiry_histogram(session: AsyncSession, days: int = 30) -> list[dict[str, Any]]:
-    """Anzahl Ablauf-Ereignisse je Tag — nur aktive, nicht-shared, nicht-ausgeschlossene."""
+    """Number of expiry events per day -- active, non-shared, non-excluded only."""
     today = dt.datetime.now(dt.UTC).date()
     rows = (
         (
@@ -209,17 +208,17 @@ async def count_all(session: AsyncSession) -> int:
 
 
 async def count_stale(session: AsyncSession, *, days: int) -> int:
-    """Wie viele Konten wurden seit ``days`` nicht mehr synchronisiert?"""
+    """How many accounts have not been synced for ``days`` days?"""
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
     stmt = select(func.count()).select_from(EntraUser).where(EntraUser.last_synced_at < cutoff)
     return int((await session.execute(stmt)).scalar_one())
 
 
 async def delete_stale(session: AsyncSession, *, days: int) -> int:
-    """Konten entfernen, die seit ``days`` nicht mehr im Sync auftauchten.
+    """Remove accounts that have not shown up in a sync for ``days`` days.
 
-    Der Aufrufer muss vorher :func:`services.retention.purge_blocked_reason` prüfen —
-    ein fehlgeschlagener Sync lässt sonst den ganzen Bestand veraltet aussehen.
+    The caller must check :func:`services.retention.purge_blocked_reason` beforehand --
+    otherwise a failed sync would make the entire dataset look stale.
     """
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
     n = await count_stale(session, days=days)

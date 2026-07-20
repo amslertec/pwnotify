@@ -1,15 +1,15 @@
-"""TDD für Task 4 der Access-Modell/Superadmin-Phase: Zuweisungs-API
-(`admin_assignments.py`) + Superadmin-Verwaltung (`admin_users.py`).
+"""TDD for Task 4 of the access-model/superadmin phase: assignment API
+(`admin_assignments.py`) + superadmin management (`admin_users.py`).
 
-Treibt die Route-Funktionen direkt an (wie `test_admin_tenants.py`/
-`test_admin_users_scoping.py`) -- die gewöhnliche savepoint-isolierte `session`-Fixture
-genügt, kein manuelles Aufräumen nötig (äusserer Rollback macht die Suite rückstandsfrei,
-zweimal hintereinander ausführbar).
+Drives the route functions directly (like `test_admin_tenants.py`/
+`test_admin_users_scoping.py`) -- the ordinary savepoint-isolated `session` fixture is
+sufficient, no manual cleanup needed (the outer rollback makes the suite residue-free,
+runnable twice in a row).
 
-Kernbeweis (REFINEMENT ggü. dem Task-4-Brief): der Grant-Typ folgt strukturell der ROLLE
-des Zielkontos, nicht einer vom Aufrufer frei wählbaren Dual-Liste -- ein `role=='admin'`
-Ziel bekommt NIE eine `auditor_tenant`-Zeile und umgekehrt, unabhängig davon, was der
-Aufrufer "meinte".
+Core proof (REFINEMENT relative to the Task 4 brief): the grant kind follows structurally
+from the target account's ROLE, not from a dual list freely chosen by the caller -- a
+`role=='admin'` target NEVER gets an `auditor_tenant` row and vice versa, regardless of
+what the caller "meant".
 """
 
 from __future__ import annotations
@@ -165,7 +165,7 @@ async def test_grant_type_follows_target_role_auditor_writes_auditor_tenant(
     auditor_row = await _auditor_row(session, local_auditor.id)
     assert auditor_row is not None
     admin_row = await _admin_row(session, local_auditor.id, tenant_a.id)
-    assert admin_row is None, "Auditor-Ziel erhielt fälschlich eine admin_tenant-Zeile"
+    assert admin_row is None, "auditor target incorrectly received an admin_tenant row"
 
 
 async def test_admin_role_target_never_gets_auditor_tenant_row(session: AsyncSession) -> None:
@@ -190,12 +190,12 @@ async def test_admin_role_target_never_gets_auditor_tenant_row(session: AsyncSes
 async def test_sso_admin_of_main_tenant_can_be_granted_another_tenant(
     session: AsyncSession,
 ) -> None:
-    """Design §2/§11.2: ein SSO-Konto des Haupttenants kann zusätzlich auf einen weiteren
-    Kunden berechtigt werden -- die Kapazität folgt weiterhin der (Ziel-)Rolle.
+    """Design §2/§11.2: an SSO account of the main tenant can additionally be granted
+    access to another customer -- the capacity still follows the (target) role.
 
-    "Haupttenant" heisst hier wörtlich der DEFAULT-Tenant (Task 2's `is_provider_account`) --
-    nur dessen Konten sind cross-grant-fähig, ein beliebiger anderer Heim-Tenant wäre seit
-    dem Cross-Grant-Lock kundengebunden und dürfte NICHT auf `other` berechtigt werden."""
+    "Main tenant" here literally means the DEFAULT tenant (Task 2's `is_provider_account`)
+    -- only its accounts are cross-grant-capable; any other home tenant would be
+    customer-bound since the cross-grant lock and must NOT be granted access to `other`."""
     superadmin = await _mk_user(session, role="superadmin")
     home = await tenant_repo.default_tenant(session)
     other = await _mk_tenant(session)
@@ -332,11 +332,11 @@ async def test_demote_last_active_superadmin_is_rejected(session: AsyncSession) 
 
 
 async def test_delete_last_active_superadmin_is_rejected(session: AsyncSession) -> None:
-    """Der einzige AKTIVE Superadmin ist der Aufrufer selbst -- ein zweites Superadmin-
-    Konto existiert, ist aber deaktiviert (`is_active=False`) und zählt daher nicht in
-    `count_superadmins`. Der Aufrufer (aktiver Superadmin, also nicht durch den neuen
-    `superadmin_required`-Schutz blockiert, s.u.) darf dieses letzte-aktive-Superadmin-
-    Gleichgewicht trotzdem nicht antasten -- `cannot_delete_last_superadmin` greift weiter."""
+    """The only ACTIVE superadmin is the caller itself -- a second superadmin account
+    exists but is deactivated (`is_active=False`) and therefore doesn't count in
+    `count_superadmins`. The caller (an active superadmin, so not blocked by the new
+    `superadmin_required` protection, see below) must still not touch this
+    last-active-superadmin balance -- `cannot_delete_last_superadmin` still applies."""
     caller = await _mk_user(session, role="superadmin")
     inactive_superadmin = await _mk_user(session, role="superadmin")
     assert inactive_superadmin.id is not None
@@ -350,11 +350,11 @@ async def test_delete_last_active_superadmin_is_rejected(session: AsyncSession) 
 
 
 async def test_plain_admin_cannot_delete_superadmin_target(session: AsyncSession) -> None:
-    """Sicherheitsreview-Fix (Task 4): vormals war `delete_user` NUR über den
-    Last-Superadmin-Zähler geschützt -- bei 2+ Superadmins konnte ein PLAIN Admin
-    (dieses Gate ist `AdminUser`, nicht `SuperadminUser`) einen NICHT-letzten Superadmin
-    löschen, wiederholt bis zum letzten. Jetzt: jeder Löschversuch eines Superadmin-Ziels
-    durch einen Nicht-Superadmin scheitert hart, unabhängig von der Anzahl."""
+    """Security-review fix (Task 4): previously `delete_user` was ONLY protected via the
+    last-superadmin counter -- with 2+ superadmins, a PLAIN admin (this gate is
+    `AdminUser`, not `SuperadminUser`) could delete a NON-last superadmin, repeated down to
+    the last one. Now: any deletion attempt on a superadmin target by a non-superadmin
+    fails hard, regardless of the count."""
     plain_admin = await _mk_user(session, role="admin")
     superadmin_1 = await _mk_user(session, role="superadmin")
     superadmin_2 = await _mk_user(session, role="superadmin")
@@ -364,8 +364,8 @@ async def test_plain_admin_cannot_delete_superadmin_target(session: AsyncSession
         await delete_user(None, plain_admin, superadmin_2.id, session)  # type: ignore[arg-type]
     assert exc_info.value.code == "superadmin_required"
     assert await session.get(AppUser, superadmin_2.id) is not None
-    # 2 Superadmins vorhanden -- keine Last-Superadmin-Ausrede möglich, es ist echt der
-    # neue superadmin_required-Schutz, der hier greift.
+    # 2 superadmins exist -- no last-superadmin excuse possible, it is genuinely the new
+    # superadmin_required protection that applies here.
     assert superadmin_1.role == "superadmin"
 
 
@@ -392,11 +392,11 @@ async def test_superadmin_can_delete_non_last_superadmin(session: AsyncSession) 
 
 
 async def test_local_admin_can_still_delete_plain_admin_and_auditor(session: AsyncSession) -> None:
-    """Regressionsschutz: der neue Superadmin-Schutz betrifft NUR Superadmin-Ziele -- ein
-    lokaler Admin darf weiterhin gewöhnliche Admin-/Auditor-Konten löschen, SOFERN sie
-    innerhalb seines eigenen Tenant-Bereichs liegen (Cross-Tenant-Fix, s. `test_admin_users_
-    scoping.py`) -- alle drei Konten hier sind bewusst auf denselben Tenant A gescopt, damit
-    diese Regression von der neuen Scope-Prüfung unberührt bleibt."""
+    """Regression guard: the new superadmin protection affects ONLY superadmin targets --
+    a local admin may still delete ordinary admin/auditor accounts, PROVIDED they lie
+    within its own tenant scope (cross-tenant fix, see `test_admin_users_scoping.py`) --
+    all three accounts here are deliberately scoped to the same tenant A, so this
+    regression remains unaffected by the new scope check."""
     tenant_a = await _mk_tenant(session)
     assert tenant_a.id is not None
     caller = await _mk_user(session, role="admin")
@@ -470,9 +470,9 @@ async def test_promoting_sso_account_to_superadmin_is_rejected(session: AsyncSes
 
 
 async def test_promoting_local_admin_clears_its_tenant_grants(session: AsyncSession) -> None:
-    """Dokumentierte Design-Entscheidung: bei der Beförderung werden vorhandene
-    `admin_tenant`-Zuweisungen geräumt (Superadmin sieht ohnehin alles, verwaiste
-    Zeilen wären Datenmüll)."""
+    """Documented design decision: existing `admin_tenant` assignments are cleared on
+    promotion (a superadmin already sees everything; orphaned rows would be data
+    litter)."""
     caller = await _mk_user(session, role="superadmin")
     local_admin = await _mk_user(session, role="admin")
     tenant_a = await _mk_tenant(session)

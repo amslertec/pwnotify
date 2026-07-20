@@ -1,18 +1,17 @@
-"""TDD für Task 1 der Tenant-Refinements: `sync_users` darf bei fehlender
-Graph-Konfiguration KEINEN MSAL-Token-Versuch mehr unternehmen.
+"""TDD for Task 1 of the tenant refinements: `sync_users` must no longer attempt an
+MSAL token when the Graph configuration is missing.
 
-Bug: `sync_users` baute den `GraphClient` (und damit die MSAL-Authority) IMMER, auch mit
-leerem `graph.tenant_id`. Die Authority landete dann ohne Mandanten-Segment
-(``.../login.microsoftonline.com/``), MSAL warf einen rohen, englischen Fehler, und
-`execute_run` verbuchte den ALS `status="partial"` + `run.error` UND als
-`{"step":"sync","error":...}` im `detail_log` -- doppelt und auf Englisch in der
-Runs-UI.
+Bug: `sync_users` ALWAYS built the `GraphClient` (and thus the MSAL authority), even with
+an empty `graph.tenant_id`. The authority then ended up without a tenant segment
+(``.../login.microsoftonline.com/``), MSAL raised a raw, English error, and `execute_run`
+recorded it BOTH as `status="partial"` + `run.error` AND as `{"step":"sync","error":...}`
+in `detail_log` -- duplicated and in English in the runs UI.
 
-Fix: `is_graph_configured(settings)` (Mandant + Client + Secret, alle nicht-leer nach
-`strip()`) ist die erste Prüfung in `sync_users` -- ohne sie wird gar kein `GraphClient`
-gebaut. `execute_run` verbucht den Skip-Fall als harmlosen `detail_log`-Eintrag
-(`{"step":"sync","skipped":"graph_not_configured"}`), OHNE `status="partial"`/`error` zu
-setzen -- die Deduplizierung findet dort statt, nicht in der UI (Task 2).
+Fix: `is_graph_configured(settings)` (tenant + client + secret, all non-empty after
+`strip()`) is the first check in `sync_users` -- without it, no `GraphClient` is built at
+all. `execute_run` records the skip case as a harmless `detail_log` entry
+(`{"step":"sync","skipped":"graph_not_configured"}`), WITHOUT setting `status="partial"`/
+`error` -- the deduplication happens there, not in the UI (Task 2).
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ def _unconfigured_settings(**overrides: Any) -> dict[str, Any]:
 
 
 def _boom_if_constructed(*_args: Any, **_kwargs: Any) -> Any:
-    raise AssertionError("GraphClient wurde trotz fehlender Konfiguration gebaut")
+    raise AssertionError("GraphClient was built despite missing configuration")
 
 
 # ---- is_graph_configured: reine Bool-Logik -------------------------------------------- #
@@ -75,7 +74,7 @@ def test_is_graph_configured_false_when_all_missing() -> None:
     assert not is_graph_configured({})
 
 
-# ---- sync_users: unkonfiguriert -> Skip, KEIN GraphClient, KEIN Token-Versuch --------- #
+# ---- sync_users: unconfigured -> skip, NO GraphClient, NO token attempt -------------- #
 
 
 async def test_sync_users_skips_without_building_graph_client(
@@ -88,7 +87,7 @@ async def test_sync_users_skips_without_building_graph_client(
     assert result == {"checked": 0, "skipped": "graph_not_configured"}
 
 
-# ---- sync_users: konfiguriert -> Guard ist No-Op, bestehender Sync-Pfad unverändert --- #
+# ---- sync_users: configured -> guard is a no-op, existing sync path unchanged -------- #
 
 
 class _FakeGraph:
@@ -134,7 +133,7 @@ async def test_sync_users_configured_guard_is_noop(
     assert upserted[0]["upn"] == "guard-configured@example.com"
 
 
-# ---- execute_run: unkonfiguriert -> success, kein doppelter Fehler ------------------- #
+# ---- execute_run: unconfigured -> success, no duplicate error ------------------------ #
 
 
 async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
@@ -145,19 +144,20 @@ async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
 
 
 class _FakeSender:
-    """Ersetzt den echten Mail-Sender -- `mail.backend` ist standardmässig `"graph"`,
-    `build_sender` baute (unabhängig vom hier getesteten Sync-Guard, vorbestehendes
-    Verhalten) bislang ebenfalls unbedingt einen `GraphClient`. Das ist NICHT Gegenstand
-    dieses Tasks (nur der Sync-Schritt); ein Fake hält den Test auf den Sync-Guard
-    fokussiert, ohne über einen zweiten, unabhängigen Pfad ohnehin ins MSAL zu laufen."""
+    """Replaces the real mail sender -- `mail.backend` defaults to `"graph"`, and
+    `build_sender` (independently of the sync guard tested here, pre-existing behavior)
+    has so far also unconditionally built a `GraphClient`. That is NOT the subject of this
+    task (only the sync step); a fake keeps the test focused on the sync guard, without
+    hitting MSAL anyway via a second, independent path."""
 
     client = None
 
 
 def _patch_everything_but_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Netzwerk-/Mail-lastige Nebenschritte abschalten (gleiches Muster wie
-    `test_scheduler_tenant_scope.py`/`test_runtime_isolation.py`) -- das Ziel dieses Tests
-    ist der Sync-Guard, nicht SSO-Abgleich, Ausschlüsse, Mail-Versand oder der Admin-Alert."""
+    """Disable network-/mail-heavy side steps (same pattern as
+    `test_scheduler_tenant_scope.py`/`test_runtime_isolation.py`) -- the target of this
+    test is the sync guard, not SSO reconcile, exclusions, mail sending, or the admin
+    alert."""
 
     async def _fake_sso_sync(
         session: Any, settings: dict[str, Any], *, tenant_id: int
@@ -195,7 +195,7 @@ async def test_execute_run_skips_sync_cleanly_when_graph_unconfigured(
         assert run.status == "success"
         assert run.error is None
         assert run.detail_log == [{"step": "sync", "skipped": "graph_not_configured"}], (
-            f"Skip muss GENAU einmal, benign, ohne 'error'-Key auftauchen: {run.detail_log}"
+            f"skip must appear EXACTLY once, benign, without an 'error' key: {run.detail_log}"
         )
     finally:
         async with migrated_engine.connect() as conn:
@@ -206,19 +206,19 @@ async def test_execute_run_skips_sync_cleanly_when_graph_unconfigured(
 async def test_resolve_excluded_ids_skips_graph_when_unconfigured(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_resolve_excluded_ids` baute den GraphClient bislang bei JEDER Gruppen-Ausschlussregel
-    -- auch ohne Graph-Konfiguration, sodass die MSAL-Authority-Validierung (leere
-    `graph.tenant_id`) den rohen Fehler in den Run leakte (die zweite Quelle neben `sync_users`).
-    Jetzt gilt derselbe `is_graph_configured`-Guard: ohne Graph wird KEIN Client gebaut und es
-    bleiben nur die User-Wert-Ausschlüsse. Non-vakuös -- ohne Guard löst `_boom_if_constructed`
-    aus."""
+    """`_resolve_excluded_ids` used to build the GraphClient for EVERY group exclusion rule
+    -- even without Graph configuration, so the MSAL authority validation (empty
+    `graph.tenant_id`) leaked the raw error into the run (the second source besides
+    `sync_users`). Now the same `is_graph_configured` guard applies: without Graph, NO
+    client is built and only the user-value exclusions remain. Non-vacuous -- without the
+    guard, `_boom_if_constructed` fires."""
     from app.services import runner
 
     async def _user_values(_session: Any) -> list[str]:
         return ["excluded-1", "excluded-2"]
 
     async def _group_ids(_session: Any) -> list[str]:
-        return ["group-a"]  # nicht-leer: ohne Guard würde der GraphClient gebaut
+        return ["group-a"]  # non-empty: without the guard, GraphClient would be built
 
     monkeypatch.setattr(runner.exclusion_repo, "user_values", _user_values)
     monkeypatch.setattr(runner.exclusion_repo, "group_ids", _group_ids)
@@ -232,8 +232,8 @@ async def test_resolve_excluded_ids_skips_graph_when_unconfigured(
 async def test_resolve_excluded_ids_uses_graph_when_configured(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gegenprobe: mit konfiguriertem Graph wird der Client gebaut und die Gruppenmitglieder
-    fliessen in die Ausschlussmenge -- der Guard ist bei konfiguriertem Graph ein No-op."""
+    """Counter-check: with Graph configured, the client is built and the group members
+    flow into the exclusion set -- the guard is a no-op when Graph is configured."""
     from app.services import runner
 
     async def _user_values(_session: Any) -> list[str]:

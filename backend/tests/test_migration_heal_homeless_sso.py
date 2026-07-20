@@ -1,15 +1,15 @@
-"""Verifiziert Migration `38535d051a81` (homeless SSO -> Default-Tenant) direkt.
+"""Verifies migration `38535d051a81` (homeless SSO -> default tenant) directly.
 
-Wie `test_migration_is_default_home.py`: die savepoint-isolierte `session`-Fixture reicht
-nicht -- der UPDATE läuft nur EINMAL, beim `upgrade()` selbst, und `migrated_engine` hat
-die Migration bereits vor jedem Test gegen eine leere DB gefahren. Dieser Test treibt die
-Migration daher selbst: downgrade auf den Vorgänger-Head, Testdaten committen, upgrade
-zurück auf `head`, Ergebnis prüfen.
+Like `test_migration_is_default_home.py`: the savepoint-isolated `session` fixture is not
+enough -- the UPDATE runs only ONCE, during `upgrade()` itself, and `migrated_engine` has
+already run the migration against an empty DB before each test. This test therefore drives
+the migration itself: downgrade to the predecessor head, commit test data, upgrade back to
+`head`, check the result.
 
-Läuft auf einer eigenen, ECHT committeten Verbindung (kein Savepoint-Rollback) -- der
-`finally`-Block räumt deshalb explizit auf: selbst angelegte Test-Zeilen löschen, wieder
-upgrade auf `head` -- damit nachfolgende Tests im selben Lauf (derselbe physische
-Testcontainer, Port 5433) eine unveränderte, rückstandsfreie DB vorfinden.
+Runs on its own, REALLY committed connection (no savepoint rollback) -- the `finally`
+block therefore explicitly cleans up: deletes the test rows it created itself, upgrades
+back to `head` -- so subsequent tests in the same run (same physical test container, port
+5433) find an unchanged, residue-free DB.
 """
 
 from __future__ import annotations
@@ -36,9 +36,9 @@ def _alembic_config() -> Config:
 
 
 async def _downgrade(revision: str) -> None:
-    # env.py läuft intern über asyncio.run() -- darf nicht in einem bereits aktiven Loop
-    # laufen (siehe app/db/migrate.py::run_migrations); pytest-asyncio hat aber selbst
-    # einen Loop offen, deshalb in einen Thread auslagern (gleiches Muster wie conftest.py).
+    # env.py internally runs via asyncio.run() -- must not run inside an already active
+    # loop (see app/db/migrate.py::run_migrations); pytest-asyncio however already has a
+    # loop open, so offload to a thread (same pattern as conftest.py).
     await asyncio.to_thread(command.downgrade, _alembic_config(), revision)
 
 
@@ -53,17 +53,17 @@ def _uname(tag: str) -> str:
 async def test_homeless_sso_accounts_healed_to_default_tenant(
     migrated_engine: AsyncEngine,
 ) -> None:
-    """`migrated_engine` (session-scoped) garantiert: PWNOTIFY_DATABASE_URL zeigt bereits
-    auf die Test-DB und die Settings-Cache ist entsprechend umgebogen -- die direkten
-    `command.downgrade`/`command.upgrade`-Aufrufe unten treffen also dieselbe DB."""
+    """`migrated_engine` (session-scoped) guarantees: PWNOTIFY_DATABASE_URL already points
+    at the test DB and the settings cache is redirected accordingly -- the direct
+    `command.downgrade`/`command.upgrade` calls below therefore hit the same DB."""
     seeded_users: list[str] = []
     default_tenant_id: int | None = None
     customer_tenant_id: int | None = None
     customer_slug = f"mig3-customer-{uuid.uuid4().hex[:8]}"
 
     try:
-        # 1. Auf den Vorgänger-Head zurück: der UPDATE dieser Migration hat noch nicht
-        #    gelaufen -- der Zustand vor dieser Migration (Prod-Altlast reproduziert).
+        # 1. Back to the predecessor head: this migration's UPDATE has not run yet --
+        #    the state before this migration (reproducing the prod legacy data).
         await _downgrade(PREV_REVISION)
 
         async with migrated_engine.begin() as conn:
@@ -98,15 +98,15 @@ async def test_homeless_sso_accounts_healed_to_default_tenant(
                     )
                 ).scalar_one()
 
-            # Genau der Prod-Befund: SSO-Konto ohne Heimat -- muss geheilt werden.
+            # Exactly the prod finding: SSO account without a home -- must be healed.
             homeless_sso_id = await _mk_user(homeless_sso, is_sso=True, tenant_id=None)
-            # SSO-Konto MIT Heimat (Kundentenant) -- muss unangetastet bleiben.
+            # SSO account WITH a home (customer tenant) -- must remain untouched.
             homed_sso_id = await _mk_user(homed_sso, is_sso=True, tenant_id=customer_tenant_id)
-            # NICHT-SSO-Konto ohne Heimat -- fällt nicht unter diese Migration, muss
-            # unangetastet bleiben (NULL bleibt NULL).
+            # NON-SSO account without a home -- not covered by this migration, must
+            # remain untouched (NULL stays NULL).
             homeless_local_id = await _mk_user(homeless_local, is_sso=False, tenant_id=None)
 
-        # 2. Die Migration selbst treiben: der Heal-UPDATE passiert genau hier.
+        # 2. Drive the migration itself: the heal UPDATE happens right here.
         await _upgrade(THIS_REVISION)
 
         async with migrated_engine.connect() as conn:
@@ -117,7 +117,7 @@ async def test_homeless_sso_accounts_healed_to_default_tenant(
                 )
             ).scalar_one()
             assert homeless_sso_tid == default_tenant_id, (
-                "homeloses SSO-Konto wurde nicht auf den Default-Tenant geheilt"
+                "homeless SSO account was not healed to the default tenant"
             )
 
             homed_sso_tid = (
@@ -125,9 +125,7 @@ async def test_homeless_sso_accounts_healed_to_default_tenant(
                     text("SELECT tenant_id FROM app_user WHERE id = :id"), {"id": homed_sso_id}
                 )
             ).scalar_one()
-            assert homed_sso_tid == customer_tenant_id, (
-                "bereits geheimatetes SSO-Konto darf sich nicht ändern"
-            )
+            assert homed_sso_tid == customer_tenant_id, "already-homed SSO account must not change"
 
             homeless_local_tid = (
                 await conn.execute(
@@ -136,12 +134,12 @@ async def test_homeless_sso_accounts_healed_to_default_tenant(
                 )
             ).scalar_one()
             assert homeless_local_tid is None, (
-                "NICHT-SSO-Konto ohne Heimat darf von dieser Migration nicht angefasst werden"
+                "NON-SSO account without a home must not be touched by this migration"
             )
     finally:
-        # Aufräumen: Test-Zeilen löschen, dann wieder upgrade auf `head` -- damit
-        # nachfolgende Tests im selben Lauf eine unveränderte, rückstandsfreie DB vorfinden.
-        # (Kein Downgrade nötig: `downgrade()` dieser Migration ist ein bewusster No-Op.)
+        # Cleanup: delete test rows, then upgrade back to `head` -- so subsequent tests in
+        # the same run find an unchanged, residue-free DB.
+        # (No downgrade needed: this migration's `downgrade()` is a deliberate no-op.)
         await _upgrade("head")
         async with migrated_engine.begin() as conn:
             if seeded_users:

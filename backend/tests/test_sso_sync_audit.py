@@ -1,21 +1,21 @@
-"""Audit + Lockout-Backstop des geplanten SSO-Syncs (Befunde M-02, L-03).
+"""Audit + lockout backstop of the scheduled SSO sync (findings M-02, L-03).
 
-Zwei Eigenschaften des `oidc.sync_sso_users`-Deprovision-Passes, die der frühere Code
-nicht hatte:
+Two properties of the `oidc.sync_sso_users` deprovision pass that the earlier code did
+not have:
 
-* **M-02 (Löschen ist nie leise):** Ein geplanter/direkter Sync, der ein SSO-Konto
-  entfernt, MUSS pro entferntem Konto einen `USER_DELETED`-Eintrag (actor_type `system`,
-  Ziel-UPN, Tenant des Syncs) schreiben und den Lauf insgesamt mit einem aggregierten
-  `SSO_SYNCED` protokollieren. Vorher schrieb nur die manuelle Route einen Sammel-Eintrag;
-  der geplante Runner-Pfad löschte still. Gegen den alten Code ist der USER_DELETED-Teil rot.
+* **M-02 (deletion is never silent):** a scheduled/direct sync that removes an SSO account
+  MUST write a `USER_DELETED` entry (actor_type `system`, target UPN, sync's tenant) per
+  removed account, and log the run overall with an aggregated `SSO_SYNCED`. Previously
+  only the manual route wrote a summary entry; the scheduled runner path deleted silently.
+  Against the old code, the USER_DELETED part is red.
 
-* **L-03 (Last-Admin-Backstop):** Fällt der EINZIGE Admin eines Tenants aus der Gruppe,
-  während die Löschquote (<=50 %) die Entfernung erlauben würde, darf er NICHT entfernt
-  werden -- konsistent mit dem A4-Backstop in `set_role`/`delete_user`. Gegen den alten
-  Code, der nur `removal_blocked_reason` kannte, wird der letzte Admin gelöscht (rot).
+* **L-03 (last-admin backstop):** if the SOLE admin of a tenant drops out of the group
+  while the removal ratio (<=50%) would allow the removal, it must NOT be removed --
+  consistent with the A4 backstop in `set_role`/`delete_user`. Against the old code, which
+  only knew `removal_blocked_reason`, the last admin gets deleted (red).
 
-Läuft auf echtem Postgres (Port 5433, siehe `conftest.py`); Microsoft Graph ist gemockt
-(`patch.object(oidc, "GraphClient", ...)`). Seed/Cleanup mit echten Commits.
+Runs against real Postgres (port 5433, see `conftest.py`); Microsoft Graph is mocked
+(`patch.object(oidc, "GraphClient", ...)`). Seed/cleanup with real commits.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ async def _create_tenant(engine: AsyncEngine, slug: str) -> int:
 
 async def _cleanup(engine: AsyncEngine, tenant_id: int, upn_like: str) -> None:
     async with engine.connect() as conn:
-        # audit_log.tenant_id + app_user.tenant_id sind FKs auf tenant -- vor dem Tenant löschen.
+        # audit_log.tenant_id + app_user.tenant_id are FKs to tenant -- delete before the tenant.
         await conn.execute(text("DELETE FROM audit_log WHERE tenant_id = :t"), {"t": tenant_id})
         await conn.execute(text("DELETE FROM app_user WHERE username LIKE :u"), {"u": upn_like})
         await conn.execute(text("DELETE FROM tenant WHERE id = :t"), {"t": tenant_id})
@@ -84,14 +84,14 @@ async def _audit_rows(tenant_id: int, action: str) -> list[AuditLog]:
 
 
 # --------------------------------------------------------------------------------------- #
-# M-02: eine Deprovision-Löschung wird auditiert (USER_DELETED je Konto + Aggregat).
+# M-02: a deprovision deletion is audited (USER_DELETED per account + aggregate).
 # --------------------------------------------------------------------------------------- #
 @pytest_asyncio.fixture
 async def tenant_with_stale_sso(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
-    """Ein Tenant mit einem bleibenden SSO-Admin und einem veralteten SSO-Auditor.
+    """A tenant with a remaining SSO admin and a stale SSO auditor.
 
-    Der Auditor (`stale`) fehlt in der simulierten Soll-Menge -> er muss entfernt und die
-    Entfernung auditiert werden. Der Admin bleibt (steht in der Admin-Gruppe)."""
+    The auditor (`stale`) is missing from the simulated desired set -> it must be removed
+    and the removal audited. The admin remains (is in the admin group)."""
     tid = await _create_tenant(migrated_engine, "ssoaudit-m02")
     async with get_session_factory()() as session:
         await user_repo.create(
@@ -139,31 +139,31 @@ async def test_deprovision_removal_is_audited(tenant_with_stale_sso: int) -> Non
     assert stats["removed"] == 1
     assert stats["synced"] == 1
 
-    # M-02: genau ein USER_DELETED, system-attributiert, Ziel-UPN, Tenant des Syncs.
+    # M-02: exactly one USER_DELETED, system-attributed, target UPN, sync's tenant.
     deleted = await _audit_rows(tid, USER_DELETED)
-    assert len(deleted) == 1, "Deprovision-Löschung muss genau einen USER_DELETED schreiben"
+    assert len(deleted) == 1, "deprovision deletion must write exactly one USER_DELETED"
     entry = deleted[0]
     assert entry.actor_type == "system"
     assert entry.target == "stale-auditor@ssoaudit.test"
     assert entry.tenant_id == tid
     assert entry.detail.get("reason") == "sso_sync_deprovision"
 
-    # M-02: ein Aggregat-SSO_SYNCED, damit auch ein GEPLANTER Lauf eine Spur hinterlässt.
+    # M-02: an aggregate SSO_SYNCED, so a SCHEDULED run also leaves a trace.
     synced = await _audit_rows(tid, SSO_SYNCED)
-    assert len(synced) == 1, "Auch ein geplanter Sync muss ein SSO_SYNCED-Aggregat schreiben"
+    assert len(synced) == 1, "even a scheduled sync must write an SSO_SYNCED aggregate"
     assert synced[0].detail.get("removed") == 1
 
 
 # --------------------------------------------------------------------------------------- #
-# L-03: der letzte Admin eines Tenants wird nie deprovisioniert (Backstop schlägt zu).
+# L-03: the last admin of a tenant is never deprovisioned (backstop kicks in).
 # --------------------------------------------------------------------------------------- #
 @pytest_asyncio.fixture
 async def tenant_with_one_admin(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
-    """Ein Tenant mit EINEM SSO-Admin und zwei SSO-Auditoren.
+    """A tenant with ONE SSO admin and two SSO auditors.
 
-    Der Admin fällt aus der Soll-Menge (nur die zwei Auditoren bleiben). Die Löschquote
-    (1 von 3, <=50 %) würde die Entfernung zulassen -- der Last-Admin-Backstop darf sie
-    trotzdem nicht ausführen."""
+    The admin drops out of the desired set (only the two auditors remain). The removal
+    ratio (1 of 3, <=50%) would allow the removal -- the last-admin backstop must still
+    not carry it out."""
     tid = await _create_tenant(migrated_engine, "ssoaudit-l03")
     async with get_session_factory()() as session:
         await user_repo.create(
@@ -198,7 +198,7 @@ def _graph_auditors_only() -> MagicMock:
                 {"userPrincipalName": "aud1@ssol03.test", "displayName": "Auditor 1"},
                 {"userPrincipalName": "aud2@ssol03.test", "displayName": "Auditor 2"},
             ]
-        return []  # Admin-Gruppe leer -> der Admin fällt aus der Soll-Menge.
+        return []  # admin group empty -> the admin drops out of the desired set.
 
     fake = MagicMock()
     fake.get_group_members = AsyncMock(side_effect=_members)
@@ -212,15 +212,15 @@ async def test_last_admin_is_not_deprovisioned(tenant_with_one_admin: int) -> No
         async with get_session_factory()() as session:
             stats = await oidc.sync_sso_users(session, SETTINGS, tenant_id=tid)
 
-    # L-03: der einzige Admin überlebt trotz erlaubter Quote.
+    # L-03: the sole admin survives despite the permitted ratio.
     async with get_session_factory()() as session:
         admin = await user_repo.get_by_username(session, "only-admin@ssol03.test")
-    assert admin is not None, "Der letzte Admin darf nie deprovisioniert werden"
+    assert admin is not None, "the last admin must never be deprovisioned"
     assert admin.role == "admin"
 
     assert stats["removed"] == 0
     assert stats.get("admin_protected") == 1
 
-    # Keine USER_DELETED-Spur für den geschützten Admin.
+    # No USER_DELETED trace for the protected admin.
     deleted = await _audit_rows(tid, USER_DELETED)
-    assert deleted == [], "Ein geschützter Admin darf keinen USER_DELETED-Eintrag erzeugen"
+    assert deleted == [], "a protected admin must not produce a USER_DELETED entry"

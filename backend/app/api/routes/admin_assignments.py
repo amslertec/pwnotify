@@ -1,66 +1,67 @@
-"""Zuweisungs-API (Access-Modell/Superadmin-Phase, Task 4): welchen (aktiven) Mandanten
-darf ein Admin/Auditor-Konto zusätzlich zu seinem Heim-Tenant verwalten/einsehen --
-SUPERADMIN-only auf ALLEN Routen (`SuperadminUser`, Design §4/§6). Seit Context-Gating v2
-(Matrix B) zusätzlich nur im DEFAULT-Kontext (`SuperadminDefaultContextUser`,
-`default_context_required`) -- die Zuweisungs-Konsole ist Provider-Ebene und aus einem
-Kunden-Kontext heraus gesperrt, genau wie die Instanz- und Mandanten-Konsole.
+"""Assignment API (access-model/superadmin phase, Task 4): which (active) tenants an
+admin/auditor account may additionally manage/view beyond its home tenant --
+SUPERADMIN-only on ALL routes (`SuperadminUser`, design §4/§6). Since context-gating v2
+(matrix B), additionally DEFAULT-context-only (`SuperadminDefaultContextUser`,
+`default_context_required`) -- the assignment console is provider-level and locked out
+from within a customer context, exactly like the instance and tenant consoles.
 
-**Kernentscheidung (bewusste Abweichung vom Task-4-Brief):** der Zuweisungstyp
-(`admin_tenant` vs. `auditor_tenant`) wird NICHT vom Aufrufer per Dual-Liste
-(`{admin:[...], auditor:[...]}`) gewählt, sondern strukturell aus der ROLLE des
-Zielkontos abgeleitet -- `role=='admin'` -> `admin_tenant` (Schreib-Kapazität),
-sonst (`auditor`) -> `auditor_tenant` (nur lesend). Ein frei wählbarer Grant-Typ hätte
-einem `role=='admin'`-Konto erlaubt, NUR eine `auditor_tenant`-Zuweisung zu erhalten --
-über das Rollen-Gate (`require_admin`) hätte es dort trotzdem SCHREIBEND agieren dürfen,
-obwohl die Zuweisung selbst nur Lesen hergeben sollte (dieselbe Fehlerklasse, die
-`admin_users.create_local`, Task 3, für die Kontoanlage bereits schliesst -- diese Route
-schliesst sie für die NACHTRÄGLICHE Zuweisung).
+**Core decision (deliberate deviation from the Task 4 brief):** the assignment kind
+(`admin_tenant` vs. `auditor_tenant`) is NOT chosen by the caller via a dual list
+(`{admin:[...], auditor:[...]}`), but is structurally derived from the target account's
+ROLE -- `role=='admin'` -> `admin_tenant` (write capacity), otherwise (`auditor`) ->
+`auditor_tenant` (read-only). A freely choosable grant type would have allowed a
+`role=='admin'` account to receive ONLY an `auditor_tenant` assignment -- via the role
+gate (`require_admin`) it would still have been allowed to act with WRITE access there,
+even though the assignment itself was only meant to grant read access (the same error
+class that `admin_users.create_local`, Task 3, already closes for account creation --
+this route closes it for the SUBSEQUENT assignment).
 
-Ein Superadmin-Zielkonto ist NIE zuweisbar (er sieht ohnehin alle aktiven Tenants,
-`tenant_repo.allowed_tenant_ids`) -- `PUT` lehnt das hart ab, `GET` liefert defensiv eine
-leere Liste statt eines Fehlers (reiner Lesezugriff, nichts, worüber man reconcilen müsste).
+A superadmin target account is NEVER assignable (it already sees all active tenants,
+`tenant_repo.allowed_tenant_ids`) -- `PUT` hard-rejects that, `GET` defensively returns
+an empty list instead of an error (pure read access, nothing that would need reconciling).
 
-**Cross-Grant-Lock (Task 2, Kronjuwel dieser Route):** `set_assignments` prüft zusätzlich
-`tenant_repo.is_provider_account(session, target)` -- ein Kunden-homed Konto (Heim-Tenant
-ist NICHT der Default-Tenant, oder `tenant_id is None`) darf NUR noch auf seinen EIGENEN
-Heim-Tenant berechtigt werden, niemals auf einen fremden. Bewusst geprüft wird der HEIM-
-Tenant (`AppUser.tenant_id`), NICHT die Rolle: die Rolle (`admin`/`auditor`) sagt nur, welche
-KAPAZITÄT eine Zuweisung verleiht (Schreiben vs. Lesen, s. `_grant_kind` oben) -- sie sagt
-nichts darüber aus, ob das Konto überhaupt ein Provider- oder ein Kunden-Konto ist. Ein
-Kunden-homed `admin` und ein Kunden-homed `auditor` sind gleichermassen cross-grant-gesperrt;
-nur die Heimat entscheidet, nicht die Rolle. Der Default-Tenant ist die bewusste Ausnahme:
-NUR seine (Provider-)Konten darf der Superadmin auf beliebige weitere aktive Tenants
-berechtigen -- das ist der eigentliche Zweck dieser Route (der IT-Dienstleister betreut
-mehrere Kunden). Jedes andere Konto ist strukturell un-cross-grantable, selbst durch den
-Superadmin -- RLS und `tenant_repo.is_allowed` bleiben die Backstop-Ebene, dieser Lock ist
-die API-seitige Durchsetzung, BEVOR überhaupt eine Zuweisungszeile geschrieben wird.
+**Cross-grant lock (Task 2, the crown jewel of this route):** `set_assignments`
+additionally checks `tenant_repo.is_provider_account(session, target)` -- a customer-homed
+account (home tenant is NOT the default tenant, or `tenant_id is None`) may ONLY ever be
+granted access to its OWN home tenant, never to a foreign one. What is deliberately
+checked is the HOME tenant (`AppUser.tenant_id`), NOT the role: the role (`admin`/
+`auditor`) only says which CAPACITY an assignment grants (write vs. read, see
+`_grant_kind` above) -- it says nothing about whether the account is a provider account
+or a customer account in the first place. A customer-homed `admin` and a customer-homed
+`auditor` are equally cross-grant-locked; only the home tenant decides, not the role. The
+default tenant is the deliberate exception: ONLY its (provider) accounts may the
+superadmin grant access to any number of further active tenants -- that is the actual
+purpose of this route (the IT service provider looks after several customers). Every
+other account is structurally un-cross-grantable, even by the superadmin -- RLS and
+`tenant_repo.is_allowed` remain the backstop layer, this lock is the API-side enforcement,
+BEFORE any assignment row is written at all.
 
-**Bulk-Zuweisung (`PUT /bulk`, Task 2 der Console+Groups+Invite-Phase):** `bulk_assign`
-wendet den Cross-Grant-Lock auf JEDES Konto der Charge über EXAKT denselben Codepfad an
-wie `set_assignments` (Provider-Prüfung, `requested <= allowed`) -- absichtlich NICHT
-dupliziert/neu geschrieben. Eine Sicherheitsinvariante, die nur an EINER Stelle geprüft
-wird, kann nicht durch zwei leicht abweichende Implementierungen auseinanderlaufen; ein
-zweiter, "ähnlicher" Lock-Check wäre genau die Art Duplikat, die künftige Änderungen an
-einer Stelle vergisst, an der anderen nachzuziehen.
+**Bulk assignment (`PUT /bulk`, Task 2 of the console+groups+invite phase):**
+`bulk_assign` applies the cross-grant lock to EVERY account in the batch via EXACTLY the
+same code path as `set_assignments` (provider check, `requested <= allowed`) --
+deliberately NOT duplicated/rewritten. A security invariant that is checked in only ONE
+place cannot drift apart via two slightly different implementations; a second, "similar"
+lock check would be exactly the kind of duplicate that a future change forgets to apply
+in the other place.
 
-Zwei UNTERSCHIEDLICHE Fehlerklassen, bewusst nicht symmetrisch behandelt:
-- Ein cross-grant-gesperrtes, ein unbekanntes (`user_not_found`) oder ein Superadmin-Ziel
-  (`cannot_assign_superadmin`) ist eine PRO-KONTO-Policy-Entscheidung -- die Charge enthält
-  typischerweise viele Konten, und ein einzelnes gesperrtes/falsches Konto soll die übrigen,
-  legitimen Reconciles nicht verhindern. Diese Konten werden übersprungen (`skipped`,
-  s. `schemas/assignment.py`), es wird für sie NICHTS geschrieben, der Rest der Charge läuft
-  normal durch.
-- Eine unbekannte/inaktive `tenant_id` in `body.tenant_ids` ist dagegen ein AUFRUFER-Fehler
-  (derselbe Fehlerfall wie `set_assignments`' `tenant_not_active`) -- er betrifft die ganze
-  Anfrage, nicht ein einzelnes Konto, und wird deshalb VORAB (vor jeder Iteration über
-  `user_ids`) hart geprüft: die gesamte Anfrage schlägt fehl, BEVOR irgendeine Zeile für
-  irgendein Konto geschrieben wurde. Alles andere würde einen Teil-Erfolg quer über die
-  Charge erzeugen, der von einem simplen Tippfehler in `tenant_ids` abhinge.
+Two DIFFERENT error classes, deliberately handled asymmetrically:
+- A cross-grant-locked, an unknown (`user_not_found`), or a superadmin target
+  (`cannot_assign_superadmin`) is a PER-ACCOUNT policy decision -- the batch typically
+  contains many accounts, and a single locked/invalid account should not prevent the
+  other, legitimate reconciles. These accounts are skipped (`skipped`, see
+  `schemas/assignment.py`), NOTHING is written for them, the rest of the batch proceeds
+  normally.
+- An unknown/inactive `tenant_id` in `body.tenant_ids`, by contrast, is a CALLER error
+  (the same error case as `set_assignments`'s `tenant_not_active`) -- it affects the
+  whole request, not a single account, and is therefore hard-checked UP FRONT (before any
+  iteration over `user_ids`): the entire request fails BEFORE any row for any account has
+  been written. Anything else would produce a partial success across the batch, dependent
+  on a simple typo in `tenant_ids`.
 
-`add_grant(..., source="manual")`: eine Bulk-Zuweisung ist eine explizite Admin-Aktion
-(genau wie die Einzel-Zuweisung über `set_assignments`) -- `"manual"` stellt sicher, dass
-ein künftiger Assignment-Group-Reconcile (`source="group"`) diese Zeile respektiert und
-nicht überschreibt/entfernt.
+`add_grant(..., source="manual")`: a bulk assignment is an explicit admin action (just
+like the single assignment via `set_assignments`) -- `"manual"` ensures that a future
+assignment-group reconcile (`source="group"`) respects this row and does not
+overwrite/remove it.
 """
 
 from __future__ import annotations
@@ -88,15 +89,14 @@ router = APIRouter(prefix="/admin/assignments", tags=["admin-assignments"])
 async def _cross_grant_lock_allows(
     session: AsyncSession, target: AppUser, requested: set[int]
 ) -> bool:
-    """DIE eine Stelle, an der der Cross-Grant-Lock ausgewertet wird -- von
-    `set_assignments` UND `bulk_assign` gerufen (Moduldoku "Bulk-Zuweisung"), damit die
-    Sicherheitsinvariante strukturell NICHT auseinanderlaufen kann (keine zwei parallelen
-    Kopien derselben Prüfung, die eine Änderung an der einen Stelle vergessen könnte, an
-    der anderen nachzuziehen).
+    """THE one place where the cross-grant lock is evaluated -- called by both
+    `set_assignments` AND `bulk_assign` (see module docstring "Bulk assignment"), so the
+    security invariant structurally CANNOT drift apart (no two parallel copies of the same
+    check, where a change in one place could be forgotten in the other).
 
-    Provider-Konto: uneingeschränkt (`True`). Kunden-homed Konto (oder `tenant_id is
-    None`): nur erlaubt, wenn `requested` Teilmenge des eigenen Heim-Tenants ist (leere
-    Menge, falls kein Heim-Tenant)."""
+    Provider account: unrestricted (`True`). Customer-homed account (or `tenant_id is
+    None`): only allowed if `requested` is a subset of the account's own home tenant
+    (empty set if no home tenant)."""
     if await tenant_repo.is_provider_account(session, target):
         return True
     allowed = {target.tenant_id} if target.tenant_id is not None else set()
@@ -104,20 +104,22 @@ async def _cross_grant_lock_allows(
 
 
 async def _would_lock_out_last_tenant_admin(session: AsyncSession, tid: int, kind: str) -> bool:
-    """L-01: DIE eine Stelle, an der der Lockout-Guard für einen Grant-Entzug ausgewertet wird
-    -- von `set_assignments` UND `bulk_assign` gerufen, damit die Invariante strukturell nicht
-    auseinanderlaufen kann (analog zu `_cross_grant_lock_allows`).
+    """L-01: THE one place where the lockout guard for a grant revocation is evaluated --
+    called by both `set_assignments` AND `bulk_assign`, so the invariant structurally
+    cannot drift apart (analogous to `_cross_grant_lock_allows`).
 
-    Ein Entzug lockt einen Kunden nur dann aus, wenn ALLE drei gelten:
-    - Es ist ein ADMIN-Grant (`kind == "admin"`): nur Schreib-Kapazität kann verloren gehen; ein
-      `auditor_tenant`-Entzug kann nie zum Lockout führen.
-    - Der Tenant ist AKTIV: ein deaktivierter Kunde braucht keinen Schreib-Admin, seine
-      Alt-Zuweisungen müssen aufräumbar bleiben (deshalb prüft auch `set_role`/`delete_user` nur
-      über `admin_tenants`, das aktiv-gejoint ist -- gleiche Semantik hier).
-    - Der Kunde hätte danach keinen Admin mehr: `count_tenant_admins` zählt das Ziel noch mit
-      (sein Grant ist an dieser Stelle intakt), `<= 1` heißt also genau "es ist der letzte".
+    A revocation only locks out a customer if ALL three hold:
+    - It is an ADMIN grant (`kind == "admin"`): only write capacity can be lost; an
+      `auditor_tenant` revocation can never cause a lockout.
+    - The tenant is ACTIVE: a deactivated customer doesn't need a write admin, its
+      stale assignments must remain cleanable (which is why `set_role`/`delete_user` also
+      only checks via `admin_tenants`, which is active-joined -- same semantics here).
+    - The customer would have no admin left afterwards: `count_tenant_admins` still counts
+      the target (its grant is still intact at this point), so `<= 1` means exactly "it is
+      the last one".
 
-    Rettungspfad bleibt der Superadmin -- dieser Guard schließt nur die Inkonsistenz zu A4."""
+    The superadmin remains the rescue path -- this guard only closes the inconsistency
+    relative to A4."""
     if kind != "admin":
         return False
     tenant = await tenant_repo.get(session, tid)
@@ -134,7 +136,7 @@ async def get_assignments(
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
     if target.role == "superadmin":
-        # Instanzweit, keine Zuweisungszeile relevant -- nichts anzuzeigen, kein Fehler.
+        # Instance-wide, no assignment row is relevant -- nothing to display, no error.
         return AssignmentOut(role=target.role, tenant_ids=[])
     kind = _grant_kind(target.role)
     ids = await tenant_repo.list_grant_tenant_ids(session, user_id, kind)
@@ -148,24 +150,23 @@ async def bulk_assign(
     body: BulkAssignmentUpdate,
     session: SessionDep,
 ) -> BulkAssignmentResult:
-    """Reconciled `body.tenant_ids` gegen JEDES Konto in `body.user_ids` -- pro Konto EXAKT
-    dieselbe Logik wie `set_assignments` (s. Moduldoku "Bulk-Zuweisung" oben für die
-    Skip-statt-Fehlschlag- vs. Hart-Fehlschlag-Abgrenzung).
+    """Reconciles `body.tenant_ids` against EVERY account in `body.user_ids` -- per account
+    EXACTLY the same logic as `set_assignments` (see module docstring "Bulk assignment"
+    above for the skip-instead-of-fail vs. hard-fail distinction).
 
-    **Route-Reihenfolge (Sicherheitsrelevant):** MUSS vor `set_assignments`
-    (`PUT /{user_id}`) registriert sein -- sonst versucht Starlette, das literale
-    Pfadsegment `"bulk"` als `{user_id}: int` zu parsen, und liefert 422 statt diese Route
-    zu erreichen."""
-    # Aufrufer-Fehler zuerst und VOLLSTÄNDIG vorab geprüft (s. Moduldoku): eine unbekannte/
-    # inaktive Tenant-Id lehnt die GESAMTE Anfrage ab, bevor auch nur ein Konto der Charge
-    # angefasst wird -- kein Teil-Schreiben quer über die Charge.
+    **Route ordering (security-relevant):** MUST be registered before `set_assignments`
+    (`PUT /{user_id}`) -- otherwise Starlette tries to parse the literal path segment
+    `"bulk"` as `{user_id}: int` and returns 422 instead of reaching this route."""
+    # Caller errors are checked first and COMPLETELY up front (see module docstring): an
+    # unknown/inactive tenant id rejects the ENTIRE request before even a single account of
+    # the batch is touched -- no partial writes across the batch.
     #
-    # NUR für `action in {"add", "set"}` -- diese Prüfung gilt ausschliesslich für Tenants,
-    # die tatsächlich HINZUGEFÜGT werden könnten. `action="remove"` entfernt ausschliesslich
-    # bestehende Zuweisungen; eine Zuweisung auf einen zwischenzeitlich DEAKTIVIERTEN Kunden
-    # muss weiterhin entfernbar bleiben (genau der Fall, den ein "Kunde deaktiviert" ohne
-    # vorheriges Aufräumen der Zuweisungen erzeugt) -- sonst würde dieser Check das genaue
-    # Gegenteil seines Zwecks bewirken und das Entfernen einer Alt-Zuweisung blockieren.
+    # ONLY for `action in {"add", "set"}` -- this check applies exclusively to tenants that
+    # could actually be ADDED. `action="remove"` only ever removes existing assignments; an
+    # assignment to a customer that was DEACTIVATED in the meantime must remain removable
+    # (exactly the case a "customer deactivated" without prior cleanup of assignments
+    # produces) -- otherwise this check would achieve the exact opposite of its purpose and
+    # block the removal of a stale assignment.
     if body.action in ("add", "set"):
         for tid in set(body.tenant_ids):
             tenant = await tenant_repo.get(session, tid)
@@ -196,9 +197,9 @@ async def bulk_assign(
             requested = set(tenant_ids)
 
         if not await _cross_grant_lock_allows(session, target, requested):
-            # `_cross_grant_lock_allows` ist DIESELBE Prüfung wie in `set_assignments` --
-            # s. Moduldoku, EIN Codepfad für die Invariante. Skip statt Fehlschlag: nur
-            # DIESES Konto bleibt unangetastet, der Rest der Charge läuft weiter.
+            # `_cross_grant_lock_allows` is the SAME check as in `set_assignments` -- see
+            # module docstring, ONE code path for the invariant. Skip instead of fail: only
+            # THIS account remains untouched, the rest of the batch continues.
             skipped.append(SkippedUser(user_id=user_id, reason="customer_account_not_grantable"))
             continue
 
@@ -252,9 +253,10 @@ async def set_assignments(
     body: AssignmentUpdate,
     session: SessionDep,
 ) -> AssignmentOut:
-    """Reconciled die Zuweisungen von `user_id` auf exakt `body.tenant_ids` -- Diff gegen
-    den aktuellen Bestand (`tenant_repo.list_grant_tenant_ids`), Add/Remove-Delta, jede
-    Änderung einzeln auditiert (Design: Nachvollziehbarkeit pro Tenant, nicht nur "geändert")."""
+    """Reconciles the assignments of `user_id` to exactly `body.tenant_ids` -- diffed
+    against the current state (`tenant_repo.list_grant_tenant_ids`), add/remove delta,
+    each change audited individually (design: per-tenant traceability, not just
+    "changed")."""
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -267,11 +269,11 @@ async def set_assignments(
     requested = set(body.tenant_ids)
 
     if not await _cross_grant_lock_allows(session, target, requested):
-        # Kunden-homed Konto (s. Moduldoku "Cross-Grant-Lock"): die einzig erlaubte
-        # Zuweisung ist der eigene Heim-Tenant -- jede Fremd-Id in `requested` lehnt die
-        # GESAMTE Anfrage ab, bevor irgendeine Zuweisungszeile geschrieben wird.
-        # `_cross_grant_lock_allows` ist dieselbe Prüfung, die `bulk_assign` pro Konto
-        # ruft (s. Moduldoku "Bulk-Zuweisung") -- EIN Codepfad für die Invariante.
+        # Customer-homed account (see module docstring "Cross-grant lock"): the only
+        # allowed assignment is its own home tenant -- any foreign id in `requested`
+        # rejects the ENTIRE request before any assignment row is written.
+        # `_cross_grant_lock_allows` is the same check that `bulk_assign` calls per account
+        # (see module docstring "Bulk assignment") -- ONE code path for the invariant.
         raise ForbiddenError(
             "Kunden-Konten können nicht auf fremde Mandanten berechtigt werden.",
             code="customer_account_not_grantable",
