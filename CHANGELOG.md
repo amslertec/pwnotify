@@ -4,6 +4,53 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] — 2026-07-20
+
+A hardening-and-fix release closing a third independent security-audit round, plus two production
+fixes and a new sync test mode.
+
+### Security
+
+- **SMTP host validation now recognizes internal targets given in legacy numeric IPv4 forms** (e.g.
+  `2130706433`, `0177.0.0.1`, `127.1`) — closing an SSRF / internal-port-probe bypass of the
+  internal-host block.
+- **Account deletion and its audit entry are written in one transaction** — a crash between them can
+  no longer leave a deletion without its "user deleted" audit record (admin delete, group
+  deprovision, and SSO sync).
+- **The scheduled SSO sync now audits every account it deletes** (previously only the manual sync
+  left a trace), and it will not deprovision the last admin of a customer.
+- **Revoking tenant assignments refuses to strip the last admin of a customer** (consistent with
+  role change / delete); the last-admin count no longer miscounts a demoted SSO account that still
+  holds a stale grant. Tenant-assignment audit entries are now attributed to the affected customer.
+- **The branding write endpoints carry the write authorization on the settings dependency itself**,
+  not only on a sibling session parameter.
+
+### Fixed
+
+- **A local account created or invited by a superadmin while managing a customer is now homed at that
+  customer** (with the matching admin/auditor grant), instead of silently landing on the provider
+  default tenant with no assignment. When the invited user logs in, they land in their customer's
+  context.
+- **SSO accounts left without a home tenant** (legacy data) are healed to the provider default
+  tenant on upgrade, so the sync reconciles them again instead of skipping them forever.
+- **Audit-log labels for the recently added actions** (user export, profile/language/avatar changes,
+  template reset, log purge) are translated (de/en) instead of showing the raw action key.
+- **The Access page tab bar scrolls horizontally on narrow screens**, like the Settings page.
+
+### Added
+
+- **Sync test mode** (Settings → General): when enabled, disabled and unlicensed accounts also
+  receive expiry reminders — for testing the notification flow. A prominent warning is shown, and the
+  mass-send brake stays active.
+
+### Changed — API contract (relevant to API clients)
+
+- `PUT /api/settings` rejects an internal `mail.smtp_host` given in numeric form (`400`). New setting
+  `sync.test_mode` (bool).
+- `PUT /api/admin/assignments/{id}` and `/bulk` may return `409 last_tenant_admin`.
+- `POST /api/admin/users`: a superadmin creating/inviting while switched into a customer now homes
+  and grants the account to that customer (response shape unchanged).
+
 ## [0.3.3] — 2026-07-20
 
 A follow-up security-hardening release. A second, independent audit wave (injection, authorization
@@ -944,6 +991,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.4
 [0.3.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.3
 [0.3.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.2
 [0.3.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.1
