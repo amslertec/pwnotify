@@ -478,6 +478,12 @@ async def _end_if_idle(
     if idle_min <= 0 or us.last_used_at >= now - dt.timedelta(minutes=idle_min):  # type: ignore[attr-defined]
         return False
     await user_repo.delete_session_by_jti(session, us.refresh_jti)  # type: ignore[attr-defined]
+    # Bump the generation so the already-issued access token dies WITH the session. Deleting
+    # the refresh row alone does not help: `get_current_user` never reads the session row, it
+    # gates on the `gen` claim vs `AppUser.token_generation`. Without this, a stolen access
+    # token would outlive the idle logout by up to `access_token_ttl_min` (analogous to the
+    # other revocation paths: logout/revoke_all/change_password all bump here too).
+    await user_repo.bump_token_generation(session, us.user_id)  # type: ignore[attr-defined]
     clear_auth_cookies(response)
     log.info("session_idle_timeout", user_id=us.user_id, idle_min=idle_min)  # type: ignore[attr-defined]
     # Sichtbar machen, dass es eine Abmeldung war — sonst fehlt sie im Protokoll.
@@ -1151,6 +1157,23 @@ async def oidc_callback(
             outcome="failure",
             request=request,
             detail={"sso": True, "reason": "local_account_exists"},
+        )
+        await session.commit()
+        return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
+    elif not user.is_active:
+        # Deny a disabled SSO account before mutating it / creating a session + LOGIN_SUCCESS.
+        # Its tokens would be inert anyway (get_current_user/refresh gate on `is_active`), but
+        # proceeding would leave an orphan session row and a misleading LOGIN_SUCCESS in the
+        # audit trail. Mirror the other SSO deny-paths (local_account_exists / not_in_group):
+        # no reactivation, just fail-closed.
+        log.warning("oidc_inactive_account", username=result.username)
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_username=result.username,
+            outcome="failure",
+            request=request,
+            detail={"sso": True, "reason": "inactive"},
         )
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
