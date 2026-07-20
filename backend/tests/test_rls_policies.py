@@ -50,6 +50,51 @@ async def _effective_privs(session, table: str) -> set[str]:
     return granted
 
 
+async def _sequence_owner_map(session) -> dict[str, str]:
+    """Map every sequence in schema `public` to the table that owns it (serial dependency)."""
+    rows = (
+        await session.execute(
+            text(
+                "SELECT c.relname AS seq, s.relname AS tbl "
+                "FROM pg_class c "
+                "JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a' "
+                "JOIN pg_class s ON s.oid = d.refobjid "
+                "WHERE c.relkind = 'S' AND c.relnamespace = 'public'::regnamespace "
+                "ORDER BY c.relname"
+            )
+        )
+    ).all()
+    return {r.seq: r.tbl for r in rows}
+
+
+async def test_app_role_sequence_usage_matches_table_grants(session):
+    """Sequence USAGE for `pwnotify_app` must mirror the owning table's INSERT grant: the role
+    may advance a table's id sequence exactly when it may INSERT into that table. Owner-only and
+    SELECT-only tables (no INSERT in GRANT_SOLL) must therefore expose no sequence USAGE, so a
+    compromised tenant-scoped path cannot even burn their id space. The blanket Phase-2
+    `GRANT USAGE, SELECT ON ALL SEQUENCES` left USAGE on owner-only sequences behind; F-04
+    revokes it. Every sequence must map to a table listed in GRANT_SOLL, so a new migration's
+    sequence cannot silently keep the old blanket grant."""
+    seq_owner = await _sequence_owner_map(session)
+    assert seq_owner, "no sequences discovered -- pg_depend query is wrong"
+    for seq, tbl in seq_owner.items():
+        assert tbl in GRANT_SOLL, (
+            f"sequence {seq!r} belongs to table {tbl!r} which is missing from GRANT_SOLL -- "
+            "record the table and decide its grants before shipping the migration"
+        )
+        has_usage = (
+            await session.execute(
+                text("SELECT has_sequence_privilege(:r, :s, 'USAGE')"),
+                {"r": APP_ROLE, "s": f"public.{seq}"},
+            )
+        ).scalar_one()
+        expected = "INSERT" in GRANT_SOLL[tbl]
+        assert has_usage == expected, (
+            f"sequence-grant drift on {seq} (table {tbl}): expected USAGE={expected} "
+            f"(table INSERT grant={'INSERT' in GRANT_SOLL[tbl]}), got USAGE={has_usage}"
+        )
+
+
 async def test_app_role_grants_match_expected_soll(session):
     """Every base table's `pwnotify_app` grants must match `GRANT_SOLL` exactly, and every
     table must be listed. Guards the whole default-privilege failure class: a new table that
