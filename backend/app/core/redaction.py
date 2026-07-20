@@ -8,6 +8,12 @@ or `"totp_secret"` therefore slipped past the audit redaction and landed in the
 admin-readable, exportable audit log. Both callers now share `is_secret_key`, which is the
 UNION of the two previous rule sets -- it redacts strictly MORE than either did alone, never
 less.
+
+CONVENTION (structural limit, finding F-05): redaction here is KEY-NAME based -- a secret
+placed under a neutral key (`detail={"value": <secret>}`, `"raw"`, `"data"`) is NOT detected.
+When you add an `audit.record(detail=...)` call or a log field, never pass a secret under a
+neutral name: name the key so `is_secret_key` catches it (contains `password`/`secret`/`token`
+or is in the exact set below), or do not put the secret in `detail`/the log at all.
 """
 
 from __future__ import annotations
