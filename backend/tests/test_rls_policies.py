@@ -2,6 +2,97 @@ import pytest
 from app.db.rls import APP_ROLE, RLS_TABLES
 from sqlalchemy import text
 
+# Expected effective privileges of the restricted `pwnotify_app` role, per table. This is the
+# authoritative allow-list: the grant model must hold by construction, not by manual audit.
+# Any base table in schema `public` that is NOT listed here fails the soll test below, forcing
+# the author of a new migration to make a deliberate decision (grant + RLS for tenant data, or
+# nothing for owner-only tables). See `backend/alembic/README.md`.
+GRANT_SOLL: dict[str, frozenset[str]] = {
+    # SELECT-only: instance-wide tables a future tenant switcher may need to read. They hold
+    # no secrets; INSERT/UPDATE/DELETE run exclusively on the owner session.
+    "tenant": frozenset({"SELECT"}),
+    "admin_tenant": frozenset({"SELECT"}),
+    "auditor_tenant": frozenset({"SELECT"}),
+    # CRUD + RLS policy: tenant-scoped data tables, isolated by the `tenant_isolation` policy.
+    "entra_user": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    "exclusion": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    "notification_log": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    "run": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    "setting": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    "audit_log": frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"}),
+    # No privileges: auth/session/token secrets, Entra group-mapping config + member PII, and
+    # migration bookkeeping. Every reader runs on the owner session; `pwnotify_app` never touches
+    # these, so a compromised tenant-scoped path cannot reach them.
+    "user_token": frozenset(),
+    "app_user": frozenset(),
+    "user_session": frozenset(),
+    "assignment_group": frozenset(),
+    "assignment_group_tenant": frozenset(),
+    "assignment_group_member": frozenset(),
+    "alembic_version": frozenset(),
+}
+
+_CRUD = ("SELECT", "INSERT", "UPDATE", "DELETE")
+
+
+async def _effective_privs(session, table: str) -> set[str]:
+    """Effective CRUD privileges of `pwnotify_app` on `table` (robust against inheritance)."""
+    granted: set[str] = set()
+    for priv in _CRUD:
+        ok = (
+            await session.execute(
+                text("SELECT has_table_privilege(:r, :t, :p)"),
+                {"r": APP_ROLE, "t": f"public.{table}", "p": priv},
+            )
+        ).scalar_one()
+        if ok:
+            granted.add(priv)
+    return granted
+
+
+async def test_app_role_grants_match_expected_soll(session):
+    """Every base table's `pwnotify_app` grants must match `GRANT_SOLL` exactly, and every
+    table must be listed. Guards the whole default-privilege failure class: a new table that
+    silently inherited grants (or was forgotten in the allow-list) turns this test red."""
+    tables = (
+        (
+            await session.execute(
+                text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                    "ORDER BY table_name"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for tbl in tables:
+        assert tbl in GRANT_SOLL, (
+            f"table {tbl!r} has no defined grant expectation -- after adding a new migration, "
+            f"record it in GRANT_SOLL and grant privileges to {APP_ROLE} explicitly "
+            "(GRANT + ENABLE RLS + policy for tenant data; nothing for owner-only tables)"
+        )
+        effective = await _effective_privs(session, tbl)
+        assert effective == set(GRANT_SOLL[tbl]), (
+            f"grant drift on {tbl}: expected {sorted(GRANT_SOLL[tbl])}, got {sorted(effective)}"
+        )
+
+
+async def test_new_table_inherits_no_app_role_privileges(session):
+    """S1 behavioural proof: a freshly created table must NOT inherit any `pwnotify_app`
+    privileges. Before the default-privileges revoke migration this was red -- `ALTER DEFAULT
+    PRIVILEGES ... GRANT` handed every new table full CRUD to `pwnotify_app` without an RLS
+    policy, so tenant isolation held only by manual per-table cleanup."""
+    async with session.begin_nested() as savepoint:
+        await session.execute(text("CREATE TABLE _grant_probe (id int)"))
+        effective = await _effective_privs(session, "_grant_probe")
+        await savepoint.rollback()  # never persist the probe table
+    assert effective == set(), (
+        f"new table _grant_probe inherited {sorted(effective)} for {APP_ROLE} -- default "
+        "privileges still leak grants to newly created tables"
+    )
+
 
 async def test_app_role_exists_and_is_restricted(session):
     row = (
