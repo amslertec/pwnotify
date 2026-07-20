@@ -27,6 +27,7 @@ Seed-/Cleanup-Muster wie in `test_route_tenant_scoping.py`: echte Superuser-Conn
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -239,3 +240,45 @@ async def test_run_reads_each_tenants_own_schedule(
         async with migrated_engine.connect() as conn:
             await conn.execute(text("DELETE FROM run WHERE id = :rid"), {"rid": run.id})
             await conn.commit()
+
+
+async def test_fanout_isolates_a_failing_tenant(
+    migrated_engine: AsyncEngine,
+    second_tenant_with_schedule: tuple[int, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A3: a single broken/misconfigured tenant must NEVER abort the run for the tenants
+    after it in the fan-out. With two active tenants the FIRST one's `execute_run` raises;
+    the SECOND one must still be executed and produce its own run.
+
+    Against the old code (no per-tenant try/except) the first exception propagates straight
+    out of the loop -> `trigger_now` raises and the second tenant is silently skipped.
+    """
+    second_tid, _, _ = second_tenant_with_schedule
+    assert second_tid  # two active tenants exist (default + this one)
+
+    from app.db.tenant_context import current_tenant_or_none
+
+    seen: list[int | None] = []
+
+    async def _fake_execute_run(
+        session_factory: Any, *, trigger: str, dry_run_override: bool | None, base_url: str
+    ) -> Any:
+        tid = current_tenant_or_none()
+        seen.append(tid)
+        # The FIRST tenant in the fan-out blows up (e.g. a DB error outside execute_run's
+        # inner handlers); every later tenant must still be processed.
+        if len(seen) == 1:
+            raise RuntimeError("first tenant blew up")
+        return SimpleNamespace(id=None, tenant_id=tid)
+
+    monkeypatch.setattr("app.services.scheduler.execute_run", _fake_execute_run)
+
+    service = SchedulerService(open_active_session, base_url="http://test.local")
+    run = await service.trigger_now(dry_run_override=True)
+
+    assert len(seen) == 2, f"Fan-out brach nach dem ersten Fehler ab: {seen}"
+    assert seen[0] != seen[1], f"Beide Iterationen liefen unter demselben Tenant: {seen}"
+    assert run is not None and run.tenant_id == seen[1], (
+        "Der zurückgegebene Lauf gehört nicht zum zweiten (erfolgreichen) Tenant"
+    )

@@ -141,24 +141,44 @@ class SchedulerService:
                         "Ausführen gefunden."
                     )
                 last_run: Run | None = None
+                errors = 0
                 for tenant_id in ids:
-                    # Jeder Kunde läuft isoliert unter seinem eigenen Tenant-Kontext --
-                    # die im Runner geöffnete Session wird dadurch automatisch
-                    # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
-                    async with use_tenant(tenant_id):
-                        # Eigenes Schedule dieses Kunden lesen (tenant-gescopt, s.
-                        # `_read_schedule`-Docstring) -- treibt aktuell nur Sichtbarkeit
-                        # (Log), noch keine gestaffelte Ausführungszeit pro Kunde (§8).
-                        async with self.session_factory() as tsession:
-                            cron, tz = await self._read_schedule(tsession)
-                        log.info("run_tenant_schedule", tenant_id=tenant_id, cron=cron, timezone=tz)
-                        last_run = await execute_run(
-                            self.session_factory,
-                            trigger=trigger,
-                            dry_run_override=dry_run_override,
-                            base_url=self.base_url,
-                        )
-                assert last_run is not None  # tenant_ids ist nicht leer (s. o.)
+                    # A3: isolate each tenant. A single broken/misconfigured customer must
+                    # never abort the run for the tenants AFTER it in the list -- errors that
+                    # escape execute_run's inner handlers (e.g. run_repo.create /
+                    # session.commit raising outside them) would otherwise break the loop and
+                    # silently skip every later customer's expiry notifications.
+                    try:
+                        # Jeder Kunde läuft isoliert unter seinem eigenen Tenant-Kontext --
+                        # die im Runner geöffnete Session wird dadurch automatisch
+                        # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
+                        async with use_tenant(tenant_id):
+                            # Eigenes Schedule dieses Kunden lesen (tenant-gescopt, s.
+                            # `_read_schedule`-Docstring) -- treibt aktuell nur Sichtbarkeit
+                            # (Log), noch keine gestaffelte Ausführungszeit pro Kunde (§8).
+                            async with self.session_factory() as tsession:
+                                cron, tz = await self._read_schedule(tsession)
+                            log.info(
+                                "run_tenant_schedule", tenant_id=tenant_id, cron=cron, timezone=tz
+                            )
+                            last_run = await execute_run(
+                                self.session_factory,
+                                trigger=trigger,
+                                dry_run_override=dry_run_override,
+                                base_url=self.base_url,
+                            )
+                    except Exception as exc:
+                        errors += 1
+                        log.error("tenant_run_failed", tenant_id=tenant_id, error=str(exc))
+                        continue  # next customer -- one broken tenant must not abort the rest
+                if last_run is None:
+                    # Every tenant in the fan-out failed (each already logged above). There is
+                    # no Run to return, so replace the old bare `assert last_run is not None`
+                    # (which hid *why* and how many) with a loud, explicit error.
+                    log.error("all_tenant_runs_failed", count=len(ids), errors=errors)
+                    raise RuntimeError(
+                        f"Alle {len(ids)} Kunden-Läufe sind fehlgeschlagen -- kein Lauf erstellt."
+                    )
                 return last_run
             finally:
                 self._running = False
