@@ -1,9 +1,9 @@
-"""Infrastruktur-Konfiguration aus ENV (pydantic-settings).
+"""Infrastructure configuration from ENV (pydantic-settings).
 
-Wichtig: Diese Settings sind die *Infrastruktur*-Konfiguration und der einmalige
-**Seed** beim allerersten Start. Die laufenden Anwendungs-Einstellungen (Graph,
-Mail, Schedule, Branding, Template) leben in der DB-Tabelle ``setting`` und werden
-über die Settings-UI verwaltet. ENV wird nach dem ersten Seed nicht mehr gelesen.
+Important: these settings are the *infrastructure* configuration and the one-time
+**seed** on the very first start. The running application settings (Graph, Mail,
+Schedule, Branding, Template) live in the DB table ``setting`` and are managed via
+the Settings UI. ENV is no longer read after the first seed.
 """
 
 from __future__ import annotations
@@ -22,37 +22,36 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ---- Infrastruktur ----
+    # ---- Infrastructure ----
     database_url: str = "postgresql+asyncpg://pwnotify:pwnotify@localhost:5432/pwnotify"
     # Password for the non-superuser `pwnotify_runtime` login role (tenant-scoped sessions
     # only; see `app/db/session.py::get_runtime_engine`). No default -- `runtime_database_url`
     # fails fast rather than silently falling back to the owner/superuser DSN.
     runtime_db_password: str | None = None
-    secret_key: str | None = None  # leer -> auto-generiert in {data_dir}/secret.key
+    secret_key: str | None = None  # empty -> auto-generated in {data_dir}/secret.key
     data_dir: str = "/data"
     static_dir: str = "/app/static"
     base_url: str = "http://localhost:8080"
-    # Sicher als Standard: Cookies nur über HTTPS. Wer die App bewusst über
-    # Klartext-HTTP betreibt (LAN-Test, Szenario A), muss das explizit abschalten —
-    # ein vergessener Wert darf nicht unbemerkt Tokens über HTTP zulassen.
+    # Secure by default: cookies only over HTTPS. Anyone deliberately running the app
+    # over plaintext HTTP (LAN test, scenario A) must disable this explicitly —
+    # a forgotten value must not silently allow tokens over HTTP.
     cookie_secure: bool = True
     log_level: str = "INFO"
     log_json: bool = True
     timezone: str = "Europe/Zurich"
     port: int = 8080
 
-    # Wem darf ``X-Forwarded-For`` geglaubt werden? Nur Requests von diesen Peers
-    # dürfen die Client-IP überschreiben. Der Wert ist sicherheitsrelevant: das
-    # Rate-Limit und der Login-Lockout schlüsseln auf die Client-IP auf — vertraut
-    # man dem Header pauschal ("*"), setzt ein Angreifer ihn selbst und umgeht
-    # beide Schutzmechanismen vollständig.
-    # Hinter einem Reverse-Proxy: dessen IP bzw. Netz eintragen (z. B. "172.18.0.0/16").
+    # Who is trusted to set ``X-Forwarded-For``? Only requests from these peers may
+    # override the client IP. This value is security-relevant: the rate limit and the
+    # login lockout key off the client IP — trusting the header unconditionally ("*")
+    # lets an attacker set it themselves and bypass both protections entirely.
+    # Behind a reverse proxy: enter its IP or network (e.g. "172.18.0.0/16").
     trusted_proxies: str = "127.0.0.1"
 
-    # Erlaubte Werte im Host-Header, kommagetrennt. Leer = keine Prüfung (Standard).
-    # Bewusst offen als Standard: Eine zu enge Liste macht die App unerreichbar, während
-    # der Gewinn hier klein ist — E-Mail-Links und Cookies stammen aus PWNOTIFY_BASE_URL,
-    # nicht aus dem Host-Header. Wer es eng haben will, trägt seine Domain(s) ein.
+    # Allowed values in the Host header, comma-separated. Empty = no check (default).
+    # Deliberately open by default: too tight a list makes the app unreachable, while
+    # the benefit here is small — email links and cookies come from PWNOTIFY_BASE_URL,
+    # not from the Host header. Anyone who wants it tight enters their domain(s).
     allowed_hosts: str = ""
 
     # Interactive OpenAPI docs (`/api/docs`) and the schema (`/api/openapi.json`). OFF by
@@ -74,12 +73,12 @@ class Settings(BaseSettings):
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 14
 
-    # Abmeldung bei Inaktivität. Der Refresh-Token allein hält eine Sitzung sonst
-    # `refresh_token_ttl_days` lang am Leben — auch wenn niemand mehr arbeitet.
-    # Greift, sobald `idle_timeout_min` ohne Aktivität vergangen sind; die Sitzung
-    # wird dann gelöscht, nicht nur widerrufen. 0 = deaktiviert.
-    # Das Frontend meldet zusätzlich bei echter Untätigkeit (Maus/Tastatur) aktiv ab —
-    # nur so greift es auch, wenn ein Tab offen bleibt und im Hintergrund pollt.
+    # Logout on inactivity. The refresh token alone would otherwise keep a session
+    # alive for `refresh_token_ttl_days` — even if nobody is working anymore.
+    # Kicks in once `idle_timeout_min` has passed without activity; the session is
+    # then deleted, not just revoked. 0 = disabled.
+    # The frontend additionally logs out actively on real inactivity (mouse/keyboard) —
+    # only that way does it also take effect when a tab stays open and polls in the background.
     idle_timeout_min: int = 30
     login_rate_limit: str = "10/minute"
     login_max_failures: int = 5
@@ -97,7 +96,7 @@ class Settings(BaseSettings):
     # while still capping the endpoints as a brute-force/abuse target.
     auth_refresh_rate_limit: str = "60/minute"
 
-    # ---- Erst-Seed (nur beim allerersten Start ausgewertet) ----
+    # ---- Initial seed (only evaluated on the very first start) ----
     admin_username: str | None = None
     admin_password: str | None = None
 
@@ -114,10 +113,10 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: str | None = None
     smtp_tls: str = "starttls"  # starttls | ssl | none
-    # A6: Kommagetrennte Allowlist von SMTP-Hosts (IP-Literale oder Hostnamen), die interne
-    # Ziele (Loopback/RFC1918/Link-Local) sein und/oder unverschlüsselt (tls=none) betrieben
-    # werden dürfen. Leer (Standard): ein interner SMTP-Host bzw. Klartext-Auth wird als
-    # SSRF-/Cleartext-Fehlkonfiguration abgelehnt, bis ein Relay hier bewusst freigegeben wird.
+    # A6: comma-separated allowlist of SMTP hosts (IP literals or hostnames) that are
+    # permitted to be internal targets (loopback/RFC1918/link-local) and/or run
+    # unencrypted (tls=none). Empty (default): an internal SMTP host or plaintext auth
+    # is rejected as an SSRF/cleartext misconfiguration until a relay is explicitly allowed here.
     smtp_allowed_hosts: str = ""
 
     schedule_cron: str = "0 8 * * *"
@@ -132,7 +131,7 @@ class Settings(BaseSettings):
 
     @property
     def sync_database_url(self) -> str:
-        """Alembic/psycopg-artige, synchrone URL (asyncpg -> psycopg-Treiber weg)."""
+        """Alembic/psycopg-style, synchronous URL (asyncpg -> psycopg driver removed)."""
         return self.database_url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
 
     @property

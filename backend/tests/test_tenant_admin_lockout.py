@@ -1,21 +1,21 @@
-"""TDD für den Schutz vor Aussperrung PRO MANDANT (A4).
+"""TDD for the per-tenant lockout protection (A4).
 
-**THE bug, den dieser Test beweist:** der Letzter-Admin-Guard in `set_role` zählt über
-`user_repo.count_admins` INSTANZWEIT -- er verhindert nur, dass die Instanz GAR keinen Admin
-mehr hat, nicht dass ein EINZELNER Kunde seinen letzten (Schreib-)Admin verliert. `delete_user`
-hatte gar keinen Admin-Zähl-Guard. Angriffskette: Kunde A hat zwei Admins a1/a2, ein Admin b1 in
-Kunde B hält die instanzweite Zahl > 1. a1 degradiert/löscht a2, dann sich selbst -> A hat null
-Schreib-Admins, nur der Provider-Superadmin kann noch retten.
+**THE bug this test proves:** the last-admin guard in `set_role` counts via
+`user_repo.count_admins` INSTANCE-WIDE -- it only prevents the instance from having NO
+admin left at all, not a SINGLE customer losing its last (write) admin. `delete_user`
+had no admin-count guard at all. Attack chain: customer A has two admins a1/a2, an admin b1
+in customer B holds the instance-wide count > 1. a1 demotes/deletes a2, then themselves ->
+A has zero write admins, only the provider superadmin can still rescue it.
 
-Der Fix zählt PRO TENANT (`user_repo.count_tenant_admins`) und blockiert die Degradierung/
-Löschung des letzten Admins eines Kunden mit `code="last_tenant_admin"` -- auch wenn instanzweit
-noch andere Admins existieren.
+The fix counts PER TENANT (`user_repo.count_tenant_admins`) and blocks demoting/
+deleting the last admin of a customer with `code="last_tenant_admin"` -- even if other
+admins still exist instance-wide.
 
-Treibt die Route-Funktionen direkt an (wie `test_admin_users_scoping.py`); die savepoint-
-isolierte `session`-Fixture (echtes Postgres) macht die Suite rückstandsfrei. Der Aufrufer ist
-durchweg ein Superadmin -- er überspringt die Scope-Prüfung, sodass der hier zu testende
-per-Tenant-Guard sauber erreicht wird (die Cross-Tenant-Scope-Prüfung selbst deckt
-`test_admin_users_scoping.py` ab)."""
+Drives the route functions directly (like `test_admin_users_scoping.py`); the savepoint-
+isolated `session` fixture (real Postgres) keeps the suite residue-free. The caller is
+consistently a superadmin -- it skips the scope check, so the per-tenant guard under
+test here is reached cleanly (the cross-tenant scope check itself is covered by
+`test_admin_users_scoping.py`)."""
 
 from __future__ import annotations
 
@@ -48,8 +48,8 @@ async def _mk_admin(
     is_active: bool = True,
     grant_tenant_id: int | None = None,
 ) -> AppUser:
-    """Lokaler (oder SSO-)Account, optional mit einer `admin_tenant`-Zuweisung. `grant_tenant_id`
-    steuert die Grant-Zeile; ohne sie (SSO-Heim-Admin) trägt der Account nur seine `tenant_id`."""
+    """Local (or SSO) account, optionally with an `admin_tenant` assignment. `grant_tenant_id`
+    controls the grant row; without it (SSO home admin) the account carries only its `tenant_id`."""
     u = AppUser(
         username=f"a4-{role}-{uuid.uuid4().hex[:8]}",
         password_hash="x",
@@ -80,43 +80,43 @@ async def _superadmin(session: AsyncSession) -> AppUser:
     return u
 
 
-# ---- count_tenant_admins: die Zähl-Semantik ---------------------------------------------- #
+# ---- count_tenant_admins: the counting semantics ------------------------------------------ #
 
 
 async def test_count_tenant_admins_counts_grants_and_sso_home_not_superadmin_not_inactive(
     session: AsyncSession,
 ) -> None:
-    """`count_tenant_admins(A)` zählt: lokale Admins mit `admin_tenant(A)`-Grant PLUS SSO-Admins
-    mit Heim-Tenant A -- aber NIE Superadmins (instanzweit, separat geschützt) und NIE inaktive/
-    pending Konten (die können niemanden verwalten). Non-vakuöser Beweis: jede ausgeschlossene
-    Kategorie ist tatsächlich befüllt."""
+    """`count_tenant_admins(A)` counts: local admins with an `admin_tenant(A)` grant PLUS SSO
+    admins with home tenant A -- but NEVER superadmins (instance-wide, separately protected) and
+    NEVER inactive/pending accounts (they can't manage anyone). Non-vacuous proof: every excluded
+    category is actually populated."""
     a = await _mk_tenant(session)
     assert a.id is not None
 
-    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id)  # lokaler Admin mit Grant
-    await _mk_admin(session, tenant_id=a.id, is_sso=True)  # SSO-Admin heim an A (kein Grant)
-    # Ausgeschlossen:
-    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id, is_active=False)  # inaktiv
-    sa = await _superadmin(session)  # Superadmin -- zählt nie
-    session.add(AdminTenant(user_id=sa.id, tenant_id=a.id))  # selbst mit Grant nicht mitzählen
+    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id)  # local admin with grant
+    await _mk_admin(session, tenant_id=a.id, is_sso=True)  # SSO admin homed at A (no grant)
+    # Excluded:
+    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id, is_active=False)  # inactive
+    sa = await _superadmin(session)  # superadmin -- never counted
+    session.add(AdminTenant(user_id=sa.id, tenant_id=a.id))  # not counted even with a grant
     await session.flush()
 
     assert await user_repo.count_tenant_admins(session, a.id) == 2
 
 
-# ---- set_role: per-Tenant-Letzter-Admin-Guard -------------------------------------------- #
+# ---- set_role: per-tenant last-admin guard ------------------------------------------------ #
 
 
 async def test_demote_last_tenant_admin_blocked_even_though_instance_count_gt_1(
     session: AsyncSession,
 ) -> None:
-    """A hat NUR a1, B hat b1 (instanzweite Admin-Zahl = 2 > 1, der alte Guard greift nicht).
-    Degradierung von a1 muss trotzdem mit `last_tenant_admin` scheitern."""
+    """A has ONLY a1, B has b1 (instance-wide admin count = 2 > 1, the old guard doesn't trigger).
+    Demoting a1 must still fail with `last_tenant_admin`."""
     a = await _mk_tenant(session)
     b = await _mk_tenant(session)
     assert a.id is not None and b.id is not None
     a1 = await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id)
-    await _mk_admin(session, tenant_id=b.id, grant_tenant_id=b.id)  # b1 hält instanzweite Zahl > 1
+    await _mk_admin(session, tenant_id=b.id, grant_tenant_id=b.id)  # b1 keeps instance count > 1
     caller = await _superadmin(session)
 
     with pytest.raises(ConflictError) as exc_info:
@@ -128,8 +128,8 @@ async def test_demote_last_tenant_admin_blocked_even_though_instance_count_gt_1(
 
 
 async def test_demote_one_of_two_then_last_is_blocked(session: AsyncSession) -> None:
-    """Positiv-Kontrolle + volle Angriffskette: solange A ZWEI Admins hat, ist die Degradierung
-    des EINEN erlaubt; die des dann verbliebenen letzten wird blockiert."""
+    """Positive control + full attack chain: as long as A has TWO admins, demoting
+    ONE of them is allowed; demoting the then-remaining last one is blocked."""
     a = await _mk_tenant(session)
     b = await _mk_tenant(session)
     assert a.id is not None and b.id is not None
@@ -138,11 +138,11 @@ async def test_demote_one_of_two_then_last_is_blocked(session: AsyncSession) -> 
     await _mk_admin(session, tenant_id=b.id, grant_tenant_id=b.id)
     caller = await _superadmin(session)
 
-    # Positiv: A hat zwei Admins -> a2 darf herabgestuft werden.
+    # Positive: A has two admins -> a2 may be demoted.
     out = await set_role(None, caller, a2.id, RoleUpdate(role="auditor"), session)  # type: ignore[arg-type]
     assert out.role == "auditor"
 
-    # Jetzt ist a1 der letzte Admin von A -> Degradierung blockiert.
+    # Now a1 is the last admin of A -> demotion blocked.
     with pytest.raises(ConflictError) as exc_info:
         await set_role(None, caller, a1.id, RoleUpdate(role="auditor"), session)  # type: ignore[arg-type]
     assert exc_info.value.code == "last_tenant_admin"
@@ -151,11 +151,11 @@ async def test_demote_one_of_two_then_last_is_blocked(session: AsyncSession) -> 
 async def test_demote_auditor_target_never_triggers_tenant_admin_guard(
     session: AsyncSession,
 ) -> None:
-    """Regressionsschutz: ein Auditor-Ziel hat keine `admin_tenant`-Grants -- die Beförderung/
-    Änderung eines Auditors darf nie am per-Tenant-Admin-Guard hängen bleiben."""
+    """Regression guard: an auditor target has no `admin_tenant` grants -- promoting/
+    changing an auditor must never get stuck on the per-tenant admin guard."""
     a = await _mk_tenant(session)
     assert a.id is not None
-    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id)  # A behält einen Admin
+    await _mk_admin(session, tenant_id=a.id, grant_tenant_id=a.id)  # A keeps one admin
     auditor = await _mk_admin(session, tenant_id=a.id, role="auditor")
     caller = await _superadmin(session)
 
@@ -163,14 +163,14 @@ async def test_demote_auditor_target_never_triggers_tenant_admin_guard(
     assert out.role == "admin"
 
 
-# ---- delete_user: per-Tenant-Letzter-Admin-Guard ----------------------------------------- #
+# ---- delete_user: per-tenant last-admin guard ---------------------------------------------- #
 
 
 async def test_delete_last_tenant_admin_blocked_even_though_instance_count_gt_1(
     session: AsyncSession,
 ) -> None:
-    """`delete_user` hatte gar keinen Admin-Zähl-Guard: die Löschung des letzten A-Admins muss
-    jetzt mit `last_tenant_admin` scheitern, obwohl instanzweit noch b1 existiert."""
+    """`delete_user` had no admin-count guard at all: deleting the last A admin must
+    now fail with `last_tenant_admin`, even though b1 still exists instance-wide."""
     a = await _mk_tenant(session)
     b = await _mk_tenant(session)
     assert a.id is not None and b.id is not None
@@ -185,8 +185,8 @@ async def test_delete_last_tenant_admin_blocked_even_though_instance_count_gt_1(
 
 
 async def test_delete_one_of_two_then_last_is_blocked(session: AsyncSession) -> None:
-    """Positiv-Kontrolle + Angriffskette für die Löschung: einer von zwei A-Admins darf gelöscht
-    werden, der dann verbliebene letzte nicht mehr."""
+    """Positive control + attack chain for deletion: one of two A admins may be deleted,
+    the then-remaining last one may not."""
     a = await _mk_tenant(session)
     b = await _mk_tenant(session)
     assert a.id is not None and b.id is not None

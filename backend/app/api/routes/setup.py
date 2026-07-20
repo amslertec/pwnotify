@@ -1,4 +1,4 @@
-"""First-Time-Setup-Wizard: DB -> Admin -> Graph -> Mail."""
+"""First-time setup wizard: DB -> admin -> Graph -> mail."""
 
 from __future__ import annotations
 
@@ -57,8 +57,8 @@ class AdminCreate(BaseModel):
     username: str = Field(min_length=3, max_length=150)
     password: str = Field(min_length=10, max_length=1024)
     display_name: str | None = Field(default=None, max_length=320)
-    # Optional: benennt den vom Phase-1-Migration bereits angelegten Default-Tenant
-    # (Slug 'default') auf den Firmennamen um -- Setup legt ihn NICHT neu an (Design §9.2).
+    # Optional: renames the default tenant already created by the phase-1 migration
+    # (slug 'default') to the company name -- setup does NOT create it anew (design §9.2).
     default_tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -129,7 +129,7 @@ async def database_test(request: Request, session: SessionDep, _: SetupGuard) ->
 @router.post("/database/migrate", response_model=DatabaseStatus)
 @limiter.limit(_settings.setup_rate_limit)
 async def database_migrate(request: Request, session: SessionDep) -> DatabaseStatus:
-    # Nur während des Setups (kein Admin) frei; danach laufen Migrationen beim Start.
+    # Only open during setup (no admin yet); afterwards migrations run at startup.
     if await _admin_count(session) > 0:
         raise ConflictError("Setup bereits abgeschlossen.", code="setup_done")
     try:
@@ -151,10 +151,10 @@ async def create_admin(
     # `min_length=10` on `AdminCreate.password` is only a floor, not the policy itself.
     if not password_meets_policy(body.password):
         raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
-    # Das erste Setup-Konto ist IMMER der (lokale) Superadmin -- instanzweit, nicht der
-    # alte "Drei-Wege"-Admin (Design §9.1). Multi-Tenant-Mode bleibt dabei AUS (in Task 1
-    # false geseedet) -- Setup schaltet ihn nicht ein, das macht der Superadmin bewusst
-    # später über Settings->General.
+    # The first setup account is ALWAYS the (local) superadmin -- instance-wide, not the
+    # old "three-way" admin (design §9.1). Multi-tenant mode stays OFF here (seeded false
+    # in task 1) -- setup does not enable it, the superadmin does that deliberately
+    # later via Settings->General.
     user = await user_repo.create(
         session,
         username=body.username,
@@ -164,8 +164,8 @@ async def create_admin(
         is_sso=False,
     )
     if body.default_tenant_name is not None:
-        # Der Default-Tenant existiert bereits (Phase-1-Migration) -- Setup NENNT ihn nur,
-        # legt ihn nicht an. Slug bleibt 'default' (kein Slug-Feld hier, wie in InstanceUpdate).
+        # The default tenant already exists (phase-1 migration) -- setup only NAMES it,
+        # it does not create it. Slug stays 'default' (no slug field here, as in InstanceUpdate).
         default = await tenant_repo.default_tenant(session)
         assert default.id is not None
         await tenant_repo.update(session, default.id, name=body.default_tenant_name)
@@ -181,7 +181,7 @@ async def create_admin(
         request=request,
         detail={"first_setup": True},
     )
-    # Auto-Login, damit der Wizard nahtlos mit Graph/Mail weitermacht.
+    # Auto-login so the wizard flows seamlessly into Graph/mail.
     pair = issue_token_pair(str(user.id))
     await user_repo.create_session(
         session,

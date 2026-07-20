@@ -1,11 +1,11 @@
-"""A8: SVG-Upload-Härtung von Denylist auf Allowlist-Parse.
+"""A8: SVG upload hardening from denylist to allowlist parse.
 
-SVG ist XML und darf Skripte, Event-Handler und externe Referenzen enthalten. Logo/Favicon
-werden unter der eigenen Domain und ohne Authentifizierung ausgeliefert -- ein Skript darin
-liefe im Origin der App. Die frühere Regex-Denylist war über Entity-/Zeichen-Kodierung, SMIL
-(<set>/<animate>) und <use href="http…"> umgehbar. Ersetzt durch einen Allowlist-Parse:
-Das SVG wird mit einem gehärteten XML-Parser (defusedxml, DTD/Entities/externe Refs aus)
-gelesen und nur eine konservative Allowlist harmloser Logo-Elemente/-Attribute durchgelassen.
+SVG is XML and may contain scripts, event handlers, and external references. Logo/favicon
+are served under the app's own domain and without authentication -- a script inside would
+run in the app's origin. The former regex denylist was bypassable via entity/character
+encoding, SMIL (<set>/<animate>), and <use href="http…">. Replaced by an allowlist parse:
+the SVG is read with a hardened XML parser (defusedxml, DTD/entities/external refs off)
+and only a conservative allowlist of harmless logo elements/attributes is let through.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ HARMLOSES_LOGO = b"""<svg xmlns="http://www.w3.org/2000/svg" width="100" height=
   <text x="50" y="55" text-anchor="middle" font-family="Inter">PW</text>
 </svg>"""
 
-# Ein echtes Logo mit internem Verlauf: fill=url(#id) + xlink:href="#id" sind zulässig.
+# A real logo with an internal gradient: fill=url(#id) + xlink:href="#id" are allowed.
 HARMLOSES_GRADIENT_LOGO = (
     b'<svg xmlns="http://www.w3.org/2000/svg" '
     b'xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="100">'
@@ -46,7 +46,7 @@ def test_harmless_gradient_logo_passes() -> None:
         (b"<svg><foreignObject><p>x</p></foreignObject></svg>", "foreignObject"),
         (b"<svg><iframe/></svg>", "iframe"),
         (b"<svg><SCRIPT>alert(1)</SCRIPT></svg>", "Grossschreibung"),
-        # Bypass-Payloads, die die alte Denylist NICHT erkannte:
+        # Bypass payloads that the old denylist did NOT catch:
         (
             b'<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg>&x;</svg>',
             "XXE-Entity",
@@ -88,7 +88,7 @@ def test_active_svg_is_rejected(payload: bytes, was: str) -> None:
 
 
 def test_delivery_headers_neutralise_active_content() -> None:
-    """Ausgelieferte Assets dürfen nicht als aktives Dokument interpretiert werden."""
+    """Delivered assets must not be interpretable as an active document."""
     csp = _ASSET_HEADERS["Content-Security-Policy"]
     assert "sandbox" in csp
     assert "default-src 'none'" in csp

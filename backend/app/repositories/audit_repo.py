@@ -1,4 +1,4 @@
-"""DB-Zugriff auf das Audit-Protokoll (Anlegen, Blättern, Aufräumen)."""
+"""DB access for the audit log (creating, paging, cleanup)."""
 
 from __future__ import annotations
 
@@ -115,7 +115,7 @@ async def list_paged(
 
 
 async def distinct_actions(session: AsyncSession) -> list[str]:
-    """Vorhandene Aktionsarten — speist den Filter in der Oberfläche."""
+    """Existing action types — feeds the filter in the UI."""
     res = await session.execute(select(AuditLog.action).distinct().order_by(AuditLog.action))
     return list(res.scalars().all())
 

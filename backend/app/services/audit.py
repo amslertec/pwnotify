@@ -1,11 +1,10 @@
-"""Audit-Protokoll: Aktionskennungen und das Schreiben von Einträgen.
+"""Audit log: action identifiers and writing entries.
 
-Alle Aufrufer gehen über :func:`record`, damit Format und Redaction an einer Stelle
-festgelegt sind. Der DB-Zugriff liegt in ``repositories/audit_repo.py``.
+All callers go through :func:`record`, so format and redaction are pinned down in one
+place. DB access lives in ``repositories/audit_repo.py``.
 
-Das Protokollieren darf die auslösende Aktion nie scheitern lassen: Ein Fehler beim
-Schreiben wird geloggt, aber nicht weitergereicht — ein kaputter Audit-Eintrag darf
-keine Anmeldung verhindern.
+Logging must never fail the triggering action: an error while writing is logged but not
+re-raised — a broken audit entry must not block a login.
 """
 
 from __future__ import annotations
@@ -23,11 +22,11 @@ from ..repositories import audit_repo
 
 log = get_logger("audit")
 
-# Stabile Kennungen. Sie sind Teil der API und werden im Frontend übersetzt — nicht
-# umbenennen, ohne die Übersetzungen und bestehende Einträge mitzudenken.
+# Stable identifiers. They are part of the API and get translated in the frontend — do not
+# rename without considering the translations and existing entries.
 LOGIN_SUCCESS = "auth.login_success"
 LOGIN_FAILED = "auth.login_failed"
-LOGIN_BLOCKED = "auth.login_blocked"  # gesperrtes Konto hat es erneut versucht
+LOGIN_BLOCKED = "auth.login_blocked"  # locked account tried again
 LOGOUT = "auth.logout"
 ACCOUNT_LOCKED = "auth.account_locked"
 PASSWORD_CHANGED = "auth.password_changed"
@@ -43,19 +42,19 @@ SECRET_CHANGED = "settings.secret_changed"
 TENANT_CREATED = "tenant.created"
 TENANT_UPDATED = "tenant.updated"
 TENANT_DELETED = "tenant.deleted"
-TENANT_ASSIGNED = "tenant.assigned"  # Zuweisung eines Kontos zu einem weiteren Mandanten
-TENANT_UNASSIGNED = "tenant.unassigned"  # Zuweisung entzogen (Task 4)
+TENANT_ASSIGNED = "tenant.assigned"  # account assigned to an additional tenant
+TENANT_UNASSIGNED = "tenant.unassigned"  # assignment revoked (Task 4)
 SUPERADMIN_CREATED = "user.superadmin_created"
-INSTANCE_MODE_CHANGED = "instance.mode_changed"  # Multi-Tenant-Mode umgeschaltet (Task 5)
-GROUP_CREATED = "group.created"  # Assignment-Group angelegt (Console+Groups+Invite Task 3)
-GROUP_UPDATED = "group.updated"  # Assignment-Group umbenannt
+INSTANCE_MODE_CHANGED = "instance.mode_changed"  # multi-tenant mode toggled (Task 5)
+GROUP_CREATED = "group.created"  # assignment group created (Console+Groups+Invite Task 3)
+GROUP_UPDATED = "group.updated"  # assignment group renamed
 GROUP_DELETED = "group.deleted"
-GROUP_TENANTS_SET = "group.tenants_set"  # Kunden-Mitgliedschaft einer Gruppe reconciled
-GROUP_SYNCED = "group.synced"  # Entra-Gruppen-Sync: Snapshot + Grant-Materialisierung (Task 3)
-USER_INVITED = "user.invited"  # Einladung verschickt (Console+Groups+Invite Task 5)
-INVITATION_ACCEPTED = "user.invitation_accepted"  # öffentlicher Accept-Endpunkt
-PASSWORD_RESET_SENT = "auth.password_reset_sent"  # Admin hat einen Reset-Link ausgelöst
-PASSWORD_RESET_DONE = "auth.password_reset_done"  # öffentlicher Reset-Endpunkt
+GROUP_TENANTS_SET = "group.tenants_set"  # customer membership of a group reconciled
+GROUP_SYNCED = "group.synced"  # Entra group sync: snapshot + grant materialization (Task 3)
+USER_INVITED = "user.invited"  # invitation sent (Console+Groups+Invite Task 5)
+INVITATION_ACCEPTED = "user.invitation_accepted"  # public accept endpoint
+PASSWORD_RESET_SENT = "auth.password_reset_sent"  # admin triggered a reset link
+PASSWORD_RESET_DONE = "auth.password_reset_done"  # public reset endpoint
 
 # Security Phase 5, Task 8 (M10): coverage for the remaining security-relevant routes that
 # previously wrote no audit entry at all.
@@ -115,10 +114,10 @@ async def record(
     detail: dict[str, Any] | None = None,
     tenant_id: int | None = None,
 ) -> None:
-    """Einen Eintrag vormerken. Committet NICHT — das übernimmt der Aufrufer.
+    """Stage an entry. Does NOT commit — that is the caller's responsibility.
 
-    ``actor_username`` erlaubt das Protokollieren fehlgeschlagener Anmeldungen, bei denen
-    kein Benutzerobjekt existiert (etwa ein durchprobierter, unbekannter Name).
+    ``actor_username`` allows logging failed logins where no user object exists (e.g. an
+    attempted, unknown username).
 
     ``tenant_id`` (Security Phase 5, Task 7/M11): explicit tenant attribution for
     OWNER-SESSION callers, where `AuditLog.tenant_id`'s `default_factory` (the active
@@ -153,5 +152,5 @@ async def record(
             stamp_tenant=tenant_id is not None,
         )
         session.add(entry)
-    except Exception as exc:  # pragma: no cover — Protokoll darf nie die Aktion kippen
+    except Exception as exc:  # pragma: no cover — logging must never tip over the action
         log.error("audit_record_failed", action=action, error=str(exc))

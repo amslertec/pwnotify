@@ -1,27 +1,27 @@
-"""Tests für Task 4: Hintergrund-Lauf pro Tenant (Scheduler + Runner).
+"""Tests for Task 4: per-tenant background run (scheduler + runner).
 
-Vor diesem Task schlug JEDER Lauf (Cron-Job wie manueller Trigger) fehl: `execute_run`
-öffnete eine reine Owner-Session (kein aktiver Tenant-Kontext), `run_repo.create` legt
-aber `Run(tenant_id=current_tenant_or_none())` an -- ohne Kontext resolvt das zu `None`,
-und `run.tenant_id` ist NOT NULL -> die INSERT schlug fehl. Jetzt liest `SchedulerService`
-die aktiven Kunden auf einer Owner-Session und führt `execute_run` je Kunde innerhalb
-`use_tenant(tenant_id)` aus -- die im Runner geöffnete Session wird dadurch automatisch
-tenant-gescopt (Begin-Listener), `run_repo.create` stempelt den aktiven Tenant korrekt.
+Before this task EVERY run (cron job as well as manual trigger) failed: `execute_run`
+opened a plain owner session (no active tenant context), but `run_repo.create` creates
+`Run(tenant_id=current_tenant_or_none())` -- without a context this resolves to `None`,
+and `run.tenant_id` is NOT NULL -> the INSERT failed. Now `SchedulerService` reads the
+active customers on an owner session and runs `execute_run` per customer inside
+`use_tenant(tenant_id)` -- the session opened in the runner thereby becomes automatically
+tenant-scoped (begin listener), so `run_repo.create` stamps the correct active tenant.
 
-`oidc.sync_sso_users` schreibt `app_user` (instanzweit, kein RLS) und muss deshalb auf
-einer separaten OWNER-Session laufen, auch während der umschliessende Lauf tenant-gescopt
-ist -- das wird hier direkt geprüft (`current_user`/GUC in der Session, die der Runner an
-den (gemockten) `sync_sso_users`-Aufruf übergibt).
+`oidc.sync_sso_users` writes `app_user` (instance-wide, no RLS) and must therefore run on
+a separate OWNER session, even while the enclosing run is tenant-scoped -- this is checked
+directly here (`current_user`/GUC in the session the runner passes to the (mocked)
+`sync_sso_users` call).
 
-Graph-/Mail-Aufrufe sind für einen echten End-to-End-Lauf zu schwer (echtes Netzwerk) --
-`sync_users`, `oidc.sync_sso_users`, `_resolve_excluded_ids` und der Admin-Alert werden
-daher gemockt. Das Ziel dieser Suite ist die Verdrahtung (Tenant-Schleife, Owner-Session
-für den SSO-Abgleich, Trigger-Pfad wirft nicht mehr), nicht der fachliche Sync selbst
-(der ist an anderer Stelle getestet).
+Graph/mail calls are too heavy for a real end-to-end run (real network) --
+`sync_users`, `oidc.sync_sso_users`, `_resolve_excluded_ids` and the admin alert are
+therefore mocked. The goal of this suite is the wiring (tenant loop, owner session
+for the SSO sync, trigger path no longer raises), not the domain sync logic itself
+(that is tested elsewhere).
 
-Seed-/Cleanup-Muster wie in `test_route_tenant_scoping.py`: echte Superuser-Connection auf
-`migrated_engine`, echt committet, Cleanup im `finally` (die savepoint-isolierte
-`session`-Fixture eignet sich hier nicht -- der Begin-Listener braucht ein echtes BEGIN).
+Seed/cleanup pattern as in `test_route_tenant_scoping.py`: real superuser connection on
+`migrated_engine`, really committed, cleanup in `finally` (the savepoint-isolated
+`session` fixture doesn't fit here -- the begin listener needs a real BEGIN).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
 async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
-    """Unabhängige Kontrollabfrage (nicht über einen Modul-Cache)."""
+    """Independent control query (not via a module cache)."""
     async with migrated_engine.connect() as conn:
         return int(
             (await conn.execute(text("SELECT id FROM tenant WHERE slug = 'default'"))).scalar_one()
@@ -50,11 +50,11 @@ async def _real_default_tenant_id(migrated_engine: AsyncEngine) -> int:
 async def second_tenant_with_schedule(
     migrated_engine: AsyncEngine,
 ) -> AsyncGenerator[tuple[int, str, str]]:
-    """Ein zweiter AKTIVER Tenant mit einem EIGENEN, exotischen `schedule.cron`/
-    `schedule.timezone` -- Beweis für Task 5's Fix: `_read_schedule` darf nicht mehr blind
-    über alle Tenants hinweg lesen (Phase-3-TODO: eine unscoped Owner-Session sah, weil RLS
-    für die Owner-Rolle nicht greift, ein undefiniertes Gemisch aus ALLEN `schedule.*`-
-    Zeilen, sobald ein zweiter Tenant existiert)."""
+    """A second ACTIVE tenant with its OWN, exotic `schedule.cron`/
+    `schedule.timezone` -- proof for Task 5's fix: `_read_schedule` must no longer read
+    blindly across all tenants (Phase-3 TODO: an unscoped owner session saw, because RLS
+    doesn't apply to the owner role, an undefined mix of ALL `schedule.*` rows once a
+    second tenant exists)."""
     cron, tz = "*/13 * * * *", "Pacific/Kiritimati"
     async with migrated_engine.connect() as conn:
         tid = int(
@@ -87,7 +87,7 @@ async def second_tenant_with_schedule(
 
 @pytest_asyncio.fixture
 async def inactive_tenant(migrated_engine: AsyncEngine) -> AsyncGenerator[int]:
-    """Ein zweiter, INAKTIVER Tenant -- die Lauf-Schleife darf ihn nicht anfassen."""
+    """A second, INACTIVE tenant -- the run loop must not touch it."""
     async with migrated_engine.connect() as conn:
         tid = int(
             (
@@ -114,9 +114,9 @@ def _patch_heavy_dependencies(monkeypatch: pytest.MonkeyPatch, captured: dict[st
     async def _fake_sso_sync(
         session: AsyncSession, settings: dict[str, Any], *, tenant_id: int
     ) -> dict[str, int]:
-        # Der eigentliche Beweis für Punkt 2 des Tasks: diese Funktion muss vom Runner mit
-        # einer OWNER-Session aufgerufen werden -- trotz eines aktiven use_tenant(...)
-        # rundherum. `app_user` ist instanzweit, kein Rollenwechsel/GUC hier erlaubt.
+        # The actual proof for point 2 of the task: this function must be called by the
+        # runner with an OWNER session -- despite an active use_tenant(...) wrapped
+        # around it. `app_user` is instance-wide, no role switch/GUC allowed here.
         captured["oidc_role"] = (await session.execute(text("SELECT current_user"))).scalar_one()
         captured["oidc_guc"] = (
             await session.execute(text("SELECT current_setting('app.current_tenant', true)"))
@@ -138,8 +138,8 @@ def _patch_heavy_dependencies(monkeypatch: pytest.MonkeyPatch, captured: dict[st
 async def test_trigger_now_creates_run_stamped_with_active_tenant_id(
     migrated_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Kernbeweis des Bugfixes: `trigger_now` wirft nicht mehr (NOT-NULL-Verletzung) und
-    der angelegte Lauf trägt die `tenant_id` des aktiven (Default-)Tenants."""
+    """Core proof of the bugfix: `trigger_now` no longer raises (NOT-NULL violation) and
+    the created run carries the `tenant_id` of the active (default) tenant."""
     dtid = await _real_default_tenant_id(migrated_engine)
     captured: dict[str, Any] = {}
     _patch_heavy_dependencies(monkeypatch, captured)
@@ -152,10 +152,10 @@ async def test_trigger_now_creates_run_stamped_with_active_tenant_id(
         assert captured["oidc_role"] == "pwnotify", (
             f"sync_sso_users lief nicht als Owner-Rolle: {captured['oidc_role']}"
         )
-        # NULL (nie gesetzt) ODER '' (Reset-Wert eines Custom-GUC auf einer wiederverwendeten
-        # Pool-Verbindung, siehe die gleiche Konvention in test_runtime_isolation.py) zählen
-        # beide als "kein Tenant" -- exakt die Fail-safe-Konvention der App selbst
-        # (`NULLIF(current_setting(...), '')` in der RLS-Policy, Migration `c4d5e6f7a8b9`).
+        # NULL (never set) OR '' (reset value of a custom GUC on a reused pool
+        # connection, see the same convention in test_runtime_isolation.py) both
+        # count as "no tenant" -- exactly the app's own fail-safe convention
+        # (`NULLIF(current_setting(...), '')` in the RLS policy, migration `c4d5e6f7a8b9`).
         assert not captured["oidc_guc"], (
             "Owner-Session darf kein Tenant-GUC gesetzt haben (SET LOCAL ist "
             f"transaktionsgebunden): {captured['oidc_guc']!r}"
@@ -169,8 +169,8 @@ async def test_trigger_now_creates_run_stamped_with_active_tenant_id(
 async def test_trigger_now_does_not_touch_inactive_tenant(
     migrated_engine: AsyncEngine, inactive_tenant: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Die Tenant-Schleife liest nur AKTIVE Kunden -- ein inaktiver Tenant bekommt keinen
-    eigenen Lauf, obwohl er in der `tenant`-Tabelle existiert."""
+    """The tenant loop only reads ACTIVE customers -- an inactive tenant gets no
+    run of its own, even though it exists in the `tenant` table."""
     dtid = await _real_default_tenant_id(migrated_engine)
     captured: dict[str, Any] = {}
     _patch_heavy_dependencies(monkeypatch, captured)
@@ -199,9 +199,9 @@ async def test_run_reads_each_tenants_own_schedule(
     second_tenant_with_schedule: tuple[int, str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Task 5: schliesst das Phase-3-TODO. `_read_schedule` wird jetzt innerhalb der
-    Tenant-Schleife aufgerufen (tenant-gescopte Session) -- jeder Kunde bekommt sein
-    EIGENES `schedule.cron`/`schedule.timezone` zurück, nicht ein Gemisch aus allen."""
+    """Task 5: closes the Phase-3 TODO. `_read_schedule` is now called inside the
+    tenant loop (tenant-scoped session) -- each customer gets back its OWN
+    `schedule.cron`/`schedule.timezone`, not a mix of all of them."""
     dtid = await _real_default_tenant_id(migrated_engine)
     second_tid, second_cron, second_tz = second_tenant_with_schedule
     captured: dict[str, Any] = {}
@@ -232,8 +232,8 @@ async def test_run_reads_each_tenants_own_schedule(
             f"Beide Tenants lieferten dasselbe Schedule -- Blend-Bug nicht behoben: {by_tenant}"
         )
 
-        # `_read_default_schedule` (treibt den EINEN globalen APScheduler-Job) ist
-        # deterministisch auf den Default-Tenant gescoped, nicht auf den zweiten Tenant.
+        # `_read_default_schedule` (drives the ONE global APScheduler job) is
+        # deterministically scoped to the default tenant, not to the second tenant.
         default_cron, default_tz = await service._read_default_schedule()
         assert (default_cron, default_tz) != (second_cron, second_tz)
     finally:

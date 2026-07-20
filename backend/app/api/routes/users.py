@@ -1,4 +1,4 @@
-"""Entra-User: Liste, Detail, Exclude, Sofort-Reminder, Export, Bulk."""
+"""Entra users: list, detail, exclude, immediate reminder, export, bulk."""
 
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 log = get_logger("users")
 
-# Obergrenze fuer einen Export. Darueber wird abgelehnt statt abgeschnitten —
-# ein unvollstaendiger Export, der vollstaendig aussieht, ist gefaehrlicher.
+# Upper bound for a single export. Above this it is rejected rather than truncated --
+# an incomplete export that looks complete is more dangerous.
 _EXPORT_MAX_ROWS = 100_000
 
 
@@ -92,8 +92,8 @@ async def export_users(
         session, search=search, status=status, page=1, page_size=_EXPORT_MAX_ROWS
     )
     if total > _EXPORT_MAX_ROWS:
-        # Nicht stillschweigend abschneiden: Ein Export, der so aussieht wie ein voller,
-        # aber Zeilen unterschlägt, ist schlimmer als eine klare Fehlermeldung.
+        # Do not silently truncate: an export that looks complete but drops rows
+        # is worse than a clear error message.
         raise PwNotifyError(
             f"Der Export umfasst {total} Benutzer, das Maximum sind {_EXPORT_MAX_ROWS}. "
             "Bitte über Suche oder Status filtern.",
@@ -144,9 +144,9 @@ async def export_users(
             u.excluded,
         ]
 
-    # Aufbereitung im Thread: openpyxl und csv sind reine CPU-Arbeit ohne I/O und würden
-    # den Event-Loop blockieren. Bei `workers=1` (der Scheduler läuft im selben Prozess)
-    # steht in der Zeit alles andere still — gemessen ~0,3 s je 10.000 Zeilen.
+    # Build in a thread: openpyxl and csv are pure CPU work with no I/O and would
+    # block the event loop. With `workers=1` (the scheduler runs in the same process),
+    # everything else would stall meanwhile -- measured ~0.3s per 10,000 rows.
     werte = [row_values(u) for u in rows]
 
     if fmt == "xlsx":

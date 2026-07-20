@@ -1,15 +1,15 @@
-"""Zentrale Konstanten für die Row-Level-Security-Isolation (Phase 2)."""
+"""Central constants for the row-level-security isolation (Phase 2)."""
 
 from __future__ import annotations
 
-# Eingeschränkte DB-Rolle, in die Runtime-Sessions per SET LOCAL ROLE wechseln.
-# NON-superuser, NON-BYPASSRLS — nur so greift RLS (der Owner/Superuser umgeht sie).
+# Restricted DB role that runtime sessions switch into via SET LOCAL ROLE.
+# NON-superuser, NON-BYPASSRLS — only that way does RLS take effect (owner/superuser bypasses it).
 APP_ROLE = "pwnotify_app"
 
-# Session-GUC, aus dem die RLS-Policies den aktiven Tenant lesen.
+# Session GUC from which the RLS policies read the active tenant.
 TENANT_GUC = "app.current_tenant"
 
-# Tabellen mit Mandanten-Isolation (alle tragen tenant_id).
+# Tables with tenant isolation (all carry tenant_id).
 RLS_TABLES = (
     "entra_user",
     "exclusion",

@@ -1,15 +1,15 @@
-"""A6 + A7: SMTP-Ziel-/URL-Härtung der Settings-Validierung.
+"""A6 + A7: SMTP target/URL hardening of settings validation.
 
-A7 -- ``app.public_url`` / ``branding.reset_url`` speisen die Einmal-Token-Links
-ausgehender Reset-/Invite-Mails. Ohne Validator kann ein Tenant-Admin sie auf einen
-Angreifer-Host / ein ``javascript:``-Schema / eine CRLF-Injektion setzen. ``url_setting``
-erzwingt https, verbietet gefährliche Schemata und Zeilenumbrüche (leer = "nicht gesetzt").
+A7 -- ``app.public_url`` / ``branding.reset_url`` feed the one-time token links of
+outgoing reset/invite mails. Without a validator a tenant admin can point them at an
+attacker host / a ``javascript:`` scheme / a CRLF injection. ``url_setting`` enforces
+https, forbids dangerous schemes and newlines (empty = "not set").
 
-A6 -- ``mail.smtp_host`` ohne Allowlist erlaubt blinde SSRF auf interne Ziele
-(169.254.169.254 / 127.0.0.1 / RFC1918); ``mail.smtp_tls=none`` sendet die SMTP-Credentials
-im Klartext an ein frei gewähltes externes Ziel. ``smtp_host`` lehnt interne Ziele ab (ausser
-per ``PWNOTIFY_SMTP_ALLOWED_HOSTS`` freigegeben); die tls=none-Kreuzprüfung im Set-Pfad
-lässt Klartext nur für interne Relays zu.
+A6 -- ``mail.smtp_host`` without an allowlist permits blind SSRF against internal targets
+(169.254.169.254 / 127.0.0.1 / RFC1918); ``mail.smtp_tls=none`` sends the SMTP credentials
+in cleartext to a freely chosen external target. ``smtp_host`` rejects internal targets
+(unless allowed via ``PWNOTIFY_SMTP_ALLOWED_HOSTS``); the tls=none cross-check in the set
+path permits cleartext only for internal relays.
 """
 
 from __future__ import annotations

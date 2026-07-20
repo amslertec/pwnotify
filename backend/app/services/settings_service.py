@@ -1,4 +1,4 @@
-"""Laden/Speichern der DB-Einstellungen inkl. Secret-Handling und Masking."""
+"""Loading/saving the DB settings incl. secret handling and masking."""
 
 from __future__ import annotations
 
@@ -22,18 +22,18 @@ log = get_logger("settings")
 
 
 def effective_base_url(settings: dict[str, Any]) -> str:
-    """Öffentliche Basis-URL: DB-Setting ``app.public_url`` vor ENV ``PWNOTIFY_BASE_URL``."""
+    """Public base URL: DB setting ``app.public_url`` before ENV ``PWNOTIFY_BASE_URL``."""
     return str(settings.get("app.public_url") or get_settings().base_url).rstrip("/")
 
 
 class SettingsService:
-    """Alle Zugriffe auf die laufende Konfiguration laufen hierüber."""
+    """All access to the running configuration goes through here."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_all(self) -> dict[str, Any]:
-        """Effektive Konfiguration: Defaults überlagert von DB-Werten (Secrets entschlüsselt).
+        """Effective configuration: defaults overlaid with DB values (secrets decrypted).
 
         Explicitly scoped to a single tenant -- the active one if the caller runs inside
         `tenant_scoped_session`/`use_tenant`, otherwise the default tenant (owner session
@@ -62,10 +62,10 @@ class SettingsService:
                 try:
                     value = decrypt(value)
                 except ValueError:
-                    # Nicht entschlüsselbar heisst fast immer: falscher oder verlorener
-                    # Fernet-Key (/data/secret.key weg, PWNOTIFY_SECRET_KEY geändert).
-                    # Der leere Wert lässt das Secret wie "nie konfiguriert" aussehen —
-                    # ohne diesen Log sucht man den Ausfall an der falschen Stelle.
+                    # Undecryptable almost always means: wrong or lost Fernet key
+                    # (/data/secret.key gone, PWNOTIFY_SECRET_KEY changed).
+                    # The empty value makes the secret look "never configured" —
+                    # without this log entry, the outage gets debugged in the wrong place.
                     log.error(
                         "secret_decrypt_failed",
                         key=row.key,
@@ -83,7 +83,7 @@ class SettingsService:
         return (await self.get_all()).get(key)
 
     async def get_public(self) -> dict[str, Any]:
-        """Wie get_all(), aber Secrets werden maskiert (nie im Klartext ans Frontend)."""
+        """Like get_all(), but secrets are masked (never sent to the frontend in plaintext)."""
         data = await self.get_all()
         for key in SECRET_KEYS:
             data[key] = MASK if data.get(key) else ""
@@ -101,7 +101,7 @@ class SettingsService:
                 continue
             spec = SETTINGS[key]
             if spec.secret and value in (MASK, None, ""):
-                # Masken-Marker oder None bedeutet: bestehenden Wert nicht überschreiben.
+                # Mask marker or None means: leave the existing value unchanged.
                 continue
             if spec.validate is not None:
                 value = spec.validate(value)
@@ -126,11 +126,11 @@ class SettingsService:
 
     async def _upsert(self, key: str, value: Any, is_secret: bool) -> None:
         now = utcnow()
-        # tenant_id explizit aus dem aktiven Tenant-Kontext: dies ist ein Core-`pg_insert`,
-        # das (anders als `session.add(Setting(...))`) den ORM-`default_factory` NICHT
-        # durchläuft -- ohne diesen Wert würde die NOT-NULL-Spalte seit dem Wegfall des
-        # Phase-1-server_default fehlschlagen. Volles Tenant-Scoping der Aufrufer (Routen,
-        # Scheduler) folgt in Task 3/4; dieser Fix hält den Writer selbst funktionsfähig.
+        # tenant_id explicitly from the active tenant context: this is a core `pg_insert`,
+        # which (unlike `session.add(Setting(...))`) does NOT go through the ORM
+        # `default_factory` -- without this value, the NOT-NULL column would fail since the
+        # Phase-1 server_default was dropped. Full tenant scoping of callers (routes,
+        # scheduler) follows in Task 3/4; this fix keeps the writer itself functional.
         stmt = (
             pg_insert(Setting)
             .values(
@@ -152,6 +152,6 @@ class SettingsService:
         return all(bool(data.get(k)) for k in keys)
 
     async def has_any(self) -> bool:
-        """True, sobald mindestens ein Setting-Row existiert (Seed bereits gelaufen)."""
+        """True as soon as at least one setting row exists (seed has already run)."""
         row = (await self.session.execute(select(Setting.key).limit(1))).first()
         return row is not None

@@ -41,25 +41,25 @@ router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
 # --------------------------------------------------------------------------- #
-# Profilbild-Pfad (Task B) -- eigene, minimale Kopie von `auth.py`s `_avatar_path`
-# (dort `_avatar_dir()` + `_avatar_path(user_id)`, Zeile 89/95), NICHT von dort
-# importiert: `auth.py` ist für diesen Task read-only (Referenz), ein Import würde
-# ausserdem unnötig an dessen Upload-/2FA-Import-Baum koppeln. `get_settings()` wird
-# bewusst PRO AUFRUF (nicht einmalig modulweit gecacht wie `auth.py`s `_settings`)
-# gelesen -- so greifen Tests, die `PWNOTIFY_DATA_DIR` + `get_settings.cache_clear()`
-# nutzen (Muster aus `test_branding_tenant_scope.py`), auch nach diesem Modul-Import.
-# Kein `mkdir` hier (anders als `auth.py`s `_avatar_dir`): diese Seite liest nur,
-# legt nie ab -- ein nicht existierendes Verzeichnis ist einfach "kein Avatar".
+# Avatar path (Task B) -- own, minimal copy of `auth.py`'s `_avatar_path`
+# (there `_avatar_dir()` + `_avatar_path(user_id)`, line 89/95), NOT imported from
+# there: `auth.py` is read-only (reference) for this task, and an import would
+# also needlessly couple this to its upload/2FA import tree. `get_settings()` is
+# read PER CALL on purpose (not cached module-wide once like `auth.py`'s `_settings`)
+# so that tests using `PWNOTIFY_DATA_DIR` + `get_settings.cache_clear()`
+# (pattern from `test_branding_tenant_scope.py`) still take effect after this module import.
+# No `mkdir` here (unlike `auth.py`'s `_avatar_dir`): this route only reads,
+# never writes -- a non-existent directory is simply "no avatar".
 def _avatar_path(user_id: int) -> Path:
     return Path(get_settings().data_dir) / "avatars" / f"{user_id}.png"
 
 
 def _avatar_mtime(user_id: int) -> int | None:
-    """mtime des Profilbilds als Cache-Buster, oder `None` wenn kein Bild existiert bzw. das
-    `data_dir` nicht lesbar ist. Jeder `OSError` (fehlende Datei, nicht erreichbares `/data`
-    -- z. B. frischer Deploy vor Volume-Mount oder CI ohne `/data`) -> "kein Avatar", damit
-    die Nutzer-Serialisierung nie an einem Dateisystemzustand 500t (`Path.exists()` würde ein
-    `EACCES` durchreichen statt es als "nein" zu werten)."""
+    """mtime of the profile picture as a cache buster, or `None` if no picture exists or
+    `data_dir` isn't readable. Any `OSError` (missing file, unreachable `/data`
+    -- e.g. a fresh deploy before the volume mount or CI without `/data`) -> "no avatar", so
+    user serialization never 500s on filesystem state (`Path.exists()` would let an
+    `EACCES` propagate instead of treating it as "no")."""
     try:
         return int(_avatar_path(user_id).stat().st_mtime)
     except OSError:
@@ -67,10 +67,10 @@ def _avatar_mtime(user_id: int) -> int | None:
 
 
 def _admin_user_out(user: AppUser) -> AdminUserOut:
-    """`AdminUserOut.model_validate(..., from_attributes=True)` + die dateibasierten
-    Avatar-Felder (Task B) -- die füllt `from_attributes` NICHT, `app_user` hat keine
-    entsprechenden Spalten. `avatar_version` ist die mtime als Cache-Buster, exakt wie
-    `auth.py`s `UserOut`-Aufbau es für das eigene Profilbild vormacht."""
+    """`AdminUserOut.model_validate(..., from_attributes=True)` + the file-based
+    avatar fields (Task B) -- `from_attributes` doesn't fill those, `app_user` has no
+    corresponding columns. `avatar_version` is the mtime as a cache buster, exactly the way
+    `auth.py`'s `UserOut` construction does it for the own profile picture."""
     out = AdminUserOut.model_validate(user, from_attributes=True)
     if user.id is not None:
         mtime = _avatar_mtime(user.id)
@@ -84,43 +84,42 @@ def _admin_user_out(user: AppUser) -> AdminUserOut:
 async def list_users(
     user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
 ) -> dict[str, list[AdminUserOut]]:
-    """Gescopte Kontoliste für die Access-Seite (Access-Rescope, Sicherheitsfix).
+    """Scoped account list for the Access page (Access rescope, security fix).
 
-    **Der Sicherheitsfix:** vormals sah ein Superadmin über `user_repo.list_all(session)`
-    IMMER die volle, instanzweite Kontoliste -- unabhängig vom aktiven Mandanten. Beim
-    Wechsel zwischen Kunden zeigte die Access-Seite also jedes Mal dieselbe globale Liste,
-    statt sich mitzuwechseln. Jetzt gilt für JEDEN Aufrufer (Superadmin eingeschlossen) das
-    bestätigte Modell: die Access-Seite zeigt ausschliesslich Konten, deren HEIMAT
-    (`app_user.tenant_id`) der AKTIVE Mandant ist.
+    **The security fix:** previously a superadmin, via `user_repo.list_all(session)`,
+    ALWAYS saw the full, instance-wide account list -- regardless of the active tenant.
+    When switching between customers, the Access page therefore showed the same global
+    list every time instead of switching along. Now the confirmed model applies to
+    EVERY caller (superadmin included): the Access page shows exclusively accounts whose
+    HOME (`app_user.tenant_id`) is the ACTIVE tenant.
 
-    **Aktiven Mandanten auflösen:** der rohe `active_tenant`-Claim (`ActiveTenantClaim`,
-    unautorisiert, s. `deps.py`) falls vorhanden, sonst der Default-Tenant
-    (`deps.default_tenant_id`) -- dieselbe Fallback-Regel wie beim Login/Tenant-Wechsel.
+    **Resolving the active tenant:** the raw `active_tenant` claim (`ActiveTenantClaim`,
+    unauthorized, see `deps.py`) if present, otherwise the default tenant
+    (`deps.default_tenant_id`) -- the same fallback rule as on login/tenant switch.
 
-    **Autorisierung:** der aufgelöste Tenant wird IMMER geprüft, bevor er etwas liefert.
-    Ein Superadmin darf jeden (aktiven) Tenant sehen -- keine zusätzliche Prüfung nötig.
-    Jeder andere Aufrufer muss `tenant_repo.is_allowed(session, user, tid)` bestehen; sonst
-    default-deny (leere Listen) -- das verhindert, dass ein lokaler Admin über einen
-    gefälschten/veralteten `active_tenant`-Claim einen Tenant auflistet, den er gar nicht
-    hält.
+    **Authorization:** the resolved tenant is ALWAYS checked before anything is returned.
+    A superadmin may see any (active) tenant -- no additional check needed.
+    Every other caller must pass `tenant_repo.is_allowed(session, user, tid)`; otherwise
+    default-deny (empty lists) -- this prevents a local admin from listing a tenant they
+    don't actually hold via a forged/stale `active_tenant` claim.
 
-    Ergebnis pro Rolle:
-    - **Superadmin** (`not is_sso and role=='superadmin'`): Heim-Konten des aktiven
-      Tenants (lokal + SSO). Zusätzlich die eigene `superadmins`-Liste (instanzweit, ALLE
-      Superadmins) -- aber NUR, wenn der aktive Tenant der DEFAULT-Tenant ist (Provider-
-      Kontext); in einem Kunden-Kontext fehlt der `superadmins`-Schlüssel komplett, auch
-      für den Superadmin. Provider-Personal (heim am Default-Tenant) erscheint deshalb nur
-      in der Default-Ansicht, nicht in irgendeiner Kunden-Ansicht -- Cross-Tenant-Zuweisungen
-      laufen über `/admin/assignments`, nicht über diese Seite.
-    - **Admin** (`role=='admin'`, LOKAL ODER SSO): Heim-Konten NUR des aktiven Tenants
-      (lokal + SSO), sofern er diesen Tenant hält (s. Autorisierung oben). Ein SSO-Admin
-      hält per Kern-Invariante sein Heim-Tenant (`admin_tenants` = `admin_tenant`-Grants
-      vereinigt mit dem SSO-Heim bei Admin-Rolle, Design §2) plus zugewiesene Kunden -- er
-      verwaltet die Access-Seite seines Kunden genau wie ein lokaler Admin. Nie Superadmins,
-      nie ein `superadmins`-Schlüssel.
-    - **Alles andere** (Auditor, unbekannter Zustand): default-deny -> leere Listen. Die
-      `/access`-Seite ist zwar admin-only im Frontend, dieses Gate gilt aber unabhängig
-      davon hier ebenfalls.
+    Result per role:
+    - **Superadmin** (`not is_sso and role=='superadmin'`): home accounts of the active
+      tenant (local + SSO). Plus their own `superadmins` list (instance-wide, ALL
+      superadmins) -- but ONLY if the active tenant is the DEFAULT tenant (provider
+      context); in a customer context the `superadmins` key is entirely absent, even
+      for the superadmin. Provider staff (homed at the default tenant) therefore only
+      appear in the default view, not in any customer view -- cross-tenant assignments
+      run through `/admin/assignments`, not through this route.
+    - **Admin** (`role=='admin'`, LOCAL OR SSO): home accounts ONLY of the active tenant
+      (local + SSO), provided they hold that tenant (see authorization above). An SSO
+      admin holds their home tenant by core invariant (`admin_tenants` = `admin_tenant`
+      grants merged with the SSO home for the admin role, design §2) plus any assigned
+      customers -- they manage their customer's Access page exactly like a local admin.
+      Never superadmins, never a `superadmins` key.
+    - **Everything else** (auditor, unknown state): default-deny -> empty lists. The
+      `/access` page is admin-only in the frontend, but this gate applies here
+      independently of that as well.
     """
     if user.role not in ("admin", "superadmin"):
         return {"local": [], "sso": []}
@@ -157,50 +156,49 @@ async def create_local(
     session: SessionDep,
     active_tenant: ActiveTenantClaim,
 ) -> AdminUserOut:
-    """Legt ein lokales Konto an -- gescopt nach Aufrufer (Task 3).
+    """Creates a local account -- scoped by caller (Task 3).
 
-    Superadmin: uneingeschränkt, KEINE automatische Zuweisung (Tenants weist der
-    Superadmin später gezielt zu, Task 4). Jeder andere Admin-Aufrufer (lokaler Admin
-    oder SSO-Admin): das neue Konto wird automatisch auf den AKTIVEN Tenant des
-    Aufrufers zugewiesen -- mit der zur neuen Rolle passenden Zuweisungsart
-    (`role=='admin'` -> `admin_tenant`, `role=='auditor'` -> `auditor_tenant`), damit ein
-    `role=='admin'`-Konto nie NUR eine `auditor_tenant`-Zuweisung hat (das würde ihm über
-    das Rollen-Gate Schreibzugriff verschaffen, den die Zuweisung selbst nicht hergibt).
+    Superadmin: unrestricted, NO automatic assignment (the superadmin assigns tenants
+    later, deliberately, Task 4). Every other admin caller (local admin or SSO admin):
+    the new account is automatically assigned to the caller's ACTIVE tenant -- with the
+    assignment kind matching the new role (`role=='admin'` -> `admin_tenant`,
+    `role=='auditor'` -> `auditor_tenant`), so a `role=='admin'` account never has ONLY an
+    `auditor_tenant` assignment (that would grant it write access via the role gate that
+    the assignment itself doesn't confer).
 
-    Der `active_tenant`-Claim wird NICHT blind übernommen (er ist laut `ActiveTenantClaim`
-    unautorisiert, nur zur Anzeige gedacht) -- stattdessen zusätzlich über
-    `tenant_repo.is_allowed(..., write=True)` geprüft. Fehlt der Claim oder besteht keine
-    Schreib-Mitgliedschaft, wird klar abgelehnt statt ein unsichtbares, nicht zugewiesenes
-    Konto anzulegen.
+    The `active_tenant` claim is NOT taken at face value (per `ActiveTenantClaim` it is
+    unauthorized, meant for display only) -- instead it's additionally checked via
+    `tenant_repo.is_allowed(..., write=True)`. If the claim is missing or there is no
+    write membership, the request is clearly rejected instead of creating an invisible,
+    unassigned account.
 
-    **Heim-Tenant setzen (Context-Gating v2, Task 3):** vormals bekam das neue Konto zwar
-    eine `admin_tenant`/`auditor_tenant`-Zeile, aber NIE einen `tenant_id` (Heimat) -- damit
-    hatte der Cross-Grant-Lock (Task 2, `tenant_repo.is_provider_account`,
-    `admin_assignments.set_assignments`) keine Grundlage: ein Konto ohne Heimat gilt dort
-    als Kunden-Konto mit LEERER erlaubter Menge (`tenant_id is None` -> kein Provider), also
-    über-restriktiv für ein vom Superadmin angelegtes Konto UND ohne echte Kundenheimat für
-    ein vom Kunden-Admin angelegtes Konto. Deshalb jetzt explizit:
-    - Nicht-Superadmin-Aufrufer (lokaler/SSO-Admin für seinen aktiven Kunden): Heimat =
-      `grant_tenant_id` (derselbe, bereits über `is_allowed(..., write=True)` geprüfte aktive
-      Tenant) -- das neue Konto ist also kunden-beheimatet UND passend zugewiesen, damit laut
-      Task 2 strukturell nicht auf einen fremden Tenant cross-grantbar.
-      -- ein reines Kundenstaff-Konto.
-    - Superadmin-Aufrufer: Heimat = der Default-Tenant (`deps.default_tenant_id`) -- Provider-
-      Personal ist default-beheimatet, ein so angelegtes Konto bleibt daher über die
-      Zuweisungs-API (Task 4/Cross-Grant-Lock Task 2) auf beliebige Kunden cross-grantbar.
-      (Superadmin-Anlage eines *Superadmin*-Kontos bleibt unverändert in `create_superadmin`
-      -- instanzweit, keine Heimat nötig.)
+    **Setting the home tenant (context gating v2, Task 3):** previously the new account
+    got an `admin_tenant`/`auditor_tenant` row, but NEVER a `tenant_id` (home) -- which
+    left the cross-grant lock (Task 2, `tenant_repo.is_provider_account`,
+    `admin_assignments.set_assignments`) without a basis: an account without a home counts
+    there as a customer account with an EMPTY allowed set (`tenant_id is None` -> not a
+    provider), so over-restrictive for an account created by a superadmin AND without a
+    real customer home for an account created by a customer admin. Hence now explicit:
+    - Non-superadmin caller (local/SSO admin for their active customer): home =
+      `grant_tenant_id` (the same active tenant already checked via
+      `is_allowed(..., write=True)`) -- the new account is thus customer-homed AND
+      correspondingly assigned, so per Task 2 it's structurally not cross-grantable to a
+      foreign tenant -- purely a customer-staff account.
+    - Superadmin caller: home = the default tenant (`deps.default_tenant_id`) -- provider
+      staff are default-homed, so an account created this way remains cross-grantable to
+      any customer via the assignment API (Task 4/cross-grant lock Task 2).
+      (A superadmin creating a *superadmin* account remains unchanged in
+      `create_superadmin` -- instance-wide, no home needed.)
 
-    **Einladungsmodus (Task 5, §7b):** `body.password` ABWESEND schaltet auf Einladung um --
-    `body.username` wird dabei bewusst NICHT vom Aufrufer übernommen, sondern die Route
-    vergibt einen garantiert eindeutigen, klar nicht einlogg-baren Platzhalter
-    (`pending:<uuid4>`) + einen unbrauchbaren Passwort-Hash (`hash_password(secrets.
-    token_hex(32))`, kein bekanntes Klartext-Passwort existiert dafür) + `is_active=False`.
-    Das vermeidet Schema-Churn (kein Nullable-`username`); der Accept-Endpunkt
-    (`api/routes/public_tokens.py`) überschreibt den Platzhalter beim Einlösen mit dem
-    echten, dort erst eindeutigkeitsgeprüften Namen. Heim-Tenant + Zuweisung laufen exakt
-    wie oben (unverändert nach Aufrufer-Rolle) -- der Einladungsmodus ändert NUR, WOHER die
-    Konto-Identität kommt, nie die Scoping-Regeln.
+    **Invitation mode (Task 5, §7b):** `body.password` ABSENT switches to invitation mode --
+    `body.username` is deliberately NOT taken from the caller here; instead the route
+    assigns a guaranteed-unique, clearly not-loggable-in placeholder (`pending:<uuid4>`) +
+    an unusable password hash (`hash_password(secrets.token_hex(32))`, no known plaintext
+    password exists for it) + `is_active=False`. This avoids schema churn (no nullable
+    `username`); the accept endpoint (`api/routes/public_tokens.py`) overwrites the
+    placeholder on redemption with the real name, uniqueness-checked only there. Home
+    tenant + assignment run exactly as above (unchanged by caller role) -- invitation mode
+    only changes WHERE the account identity comes from, never the scoping rules.
     """
     raw_password = body.password
     is_invite = raw_password is None
@@ -214,7 +212,7 @@ async def create_local(
                 code="email_required",
             )
         username = f"pending:{uuid.uuid4().hex}"
-        password_hash = hash_password(secrets.token_hex(32))  # nie einlösbar
+        password_hash = hash_password(secrets.token_hex(32))  # never redeemable
     else:
         if not body.username:
             raise ForbiddenError("Benutzername erforderlich.", code="username_required")
@@ -253,12 +251,12 @@ async def create_local(
         is_sso=False,
         tenant_id=home_tenant_id,
     )
-    assert user.id is not None  # gerade committet, hat also eine id
+    assert user.id is not None  # just committed, so it has an id
 
     if is_invite:
-        # Einladung: pending -- Konto existiert, ist aber bis zur Annahme (`public_tokens.
-        # accept_token`) nicht nutzbar. E-Mail wird hier gesetzt (Reset-Trigger-Anker §7c),
-        # nicht am `create()`-Aufruf oben (der bleibt unverändert für den Direktpfad).
+        # Invitation: pending -- account exists but is unusable until acceptance
+        # (`public_tokens.accept_token`). Email is set here (reset-trigger anchor §7c),
+        # not on the `create()` call above (which stays unchanged for the direct path).
         user.email = body.email
         user.is_active = False
         user.updated_at = utcnow()
@@ -299,22 +297,22 @@ async def create_local(
 async def send_reset(
     request: Request, admin: AdminUser, user_id: int, session: SessionDep
 ) -> Message:
-    """Löst einen Passwort-Reset-Link für ein BESTEHENDES lokales Konto aus (Task 5, §7c).
+    """Triggers a password-reset link for an EXISTING local account (Task 5, §7c).
 
-    **Autorisierung:** dieselbe Teilmengen-Regel wie `set_role`/`delete_user` (s. dort für
-    die ausführliche Begründung) -- ein Superadmin-Aufrufer überspringt sie (voller
-    Zugriff); jeder andere Aufrufer braucht die GESAMTE Tenant-Zugehörigkeit des Ziels
-    innerhalb seiner eigenen verwalteten Tenants (Teilmengen-, nicht Schnittmengen-Regel).
-    Ein Ziel ganz ohne Tenant-Zugehörigkeit ist NUR einem Superadmin zugänglich.
+    **Authorization:** the same subset rule as `set_role`/`delete_user` (see there for
+    the detailed rationale) -- a superadmin caller skips it (full access); every other
+    caller needs the target's ENTIRE tenant membership within their own managed tenants
+    (subset, not intersection rule). A target without any tenant membership is accessible
+    ONLY to a superadmin.
 
-    **Business-Guards danach** (Reihenfolge bewusst: erst autorisieren, dann validieren):
-    ein SSO-Ziel lehnt ab (`sso_no_reset` -- dessen Passwort lebt in Entra, ein lokaler
-    Reset-Link wäre wirkungslos/irreführend); ein Ziel ohne hinterlegte E-Mail lehnt
-    ebenfalls ab (`email_required` -- der Admin muss sie zuerst im Bearbeiten-Dialog
-    setzen, es gibt keine Adresse, an die der Link gehen könnte).
+    **Business guards after that** (order deliberate: authorize first, then validate):
+    an SSO target is rejected (`sso_no_reset` -- its password lives in Entra, a local
+    reset link would be ineffective/misleading); a target without an email on file is
+    also rejected (`email_required` -- the admin must set one in the edit dialog first,
+    there's no address for the link to go to).
 
-    Mint + Versand laufen über `services.user_token.issue_reset` (entwertet dabei
-    idempotent ältere, noch gültige Reset-Tokens desselben Kontos, s. dort)."""
+    Minting + sending run through `services.user_token.issue_reset` (which idempotently
+    invalidates older, still-valid reset tokens of the same account, see there)."""
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -365,30 +363,31 @@ async def set_role(
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
-    # Ein Superadmin-Ziel läuft NIE über diesen Pfad (Task 4, Access-Modell/Superadmin-
-    # Phase): dieses Gate ist `AdminUser`, nicht `SuperadminUser` -- ein PLAIN Admin
-    # könnte sonst über `RoleUpdate.role='admin'` (vom Schema erlaubt) den letzten
-    # Superadmin unbemerkt zu einem gewöhnlichen Admin herabstufen, ohne dass der
-    # Last-Superadmin-Schutz (der nur in `set_superadmin` sitzt) je greift. Der Wechsel
-    # zum/vom Superadmin läuft ausschliesslich über `set_superadmin` (superadmin-only).
+    # A superadmin target NEVER goes through this path (Task 4, access-model/superadmin
+    # phase): this gate is `AdminUser`, not `SuperadminUser` -- otherwise a PLAIN admin
+    # could demote the last superadmin to an ordinary admin unnoticed via
+    # `RoleUpdate.role='admin'` (allowed by the schema), without the last-superadmin
+    # protection (which only lives in `set_superadmin`) ever kicking in. The switch
+    # to/from superadmin runs exclusively through `set_superadmin` (superadmin-only).
     if target.role == "superadmin":
         raise ForbiddenError(
             "Superadmin-Rollenwechsel nur über die Superadmin-Verwaltung möglich.",
             code="superadmin_required",
         )
-    # Cross-Tenant-Fix (Sicherheitsreview, Whole-Branch-Review Access-Modell/Superadmin-
-    # Phase): Task 3 hat `list_users`/`create_local` gescopt, aber `set_role` blieb nur über
-    # `AdminUser` (jeder Admin/Superadmin JEDER Tenant) gegatet und löste `target` ohne RLS
-    # auf `app_user` (instanzweit) auf -- ein lokaler Admin von Tenant A konnte so die Rolle
-    # eines Kontos ändern, das AUSSCHLIESSLICH zu Tenant B gehört (IDs sind sequentiell
-    # enumerierbar). Ein Superadmin-Aufrufer überspringt diese Prüfung (voller Zugriff,
-    # bereits durch den obigen Guard beschränkt). Für jeden anderen Aufrufer muss die GESAMTE
-    # Tenant-Zugehörigkeit des Ziels innerhalb der vom Aufrufer VERWALTETEN Tenants liegen
-    # (Teilmengen-Regel, nicht bloss Schnittmenge) -- `app_user` ist instanzweit, ein Konto
-    # kann also zusätzlich einem Tenant angehören, den der Aufrufer nicht hält; ein reiner
-    # Schnittmengen-Test würde die Rollenänderung trotzdem durchlassen und so ungewollt auch
-    # den fremden Tenant treffen. Ein Ziel ganz ohne Tenant-Zugehörigkeit (leere Menge) darf
-    # NUR ein Superadmin anfassen -- daher `not target_scope` als eigener Ablehnungsgrund.
+    # Cross-tenant fix (security review, whole-branch review access-model/superadmin
+    # phase): Task 3 scoped `list_users`/`create_local`, but `set_role` remained gated
+    # only via `AdminUser` (any admin/superadmin of ANY tenant) and resolved `target`
+    # without RLS on `app_user` (instance-wide) -- so a local admin of tenant A could
+    # change the role of an account that belongs EXCLUSIVELY to tenant B (IDs are
+    # sequentially enumerable). A superadmin caller skips this check (full access,
+    # already constrained by the guard above). For every other caller, the target's
+    # ENTIRE tenant membership must lie within the tenants MANAGED by the caller
+    # (subset rule, not mere intersection) -- `app_user` is instance-wide, so an account
+    # can additionally belong to a tenant the caller doesn't hold; a pure intersection
+    # test would still let the role change through and thereby unintentionally hit the
+    # foreign tenant too. A target with no tenant membership at all (empty set) may
+    # ONLY be touched by a superadmin -- hence `not target_scope` as its own rejection
+    # reason.
     if admin.is_sso or admin.role != "superadmin":
         target_scope = await tenant_repo.allowed_tenant_ids(session, target)
         caller_admin_tenants = await tenant_repo.admin_tenants(session, admin)
@@ -396,8 +395,8 @@ async def set_role(
             raise ForbiddenError(
                 "Konto ausserhalb des eigenen Kundenbereichs.", code="user_not_in_scope"
             )
-    # Den letzten Administrator nicht herabstufen — sonst kann niemand mehr verwalten.
-    # Deckt auch den Selbstentzug ab, wenn man der einzige Admin ist.
+    # Don't demote the last administrator -- otherwise no one could manage the instance
+    # anymore. This also covers self-demotion when you're the only admin.
     if (
         target.role == "admin"
         and body.role != "admin"
@@ -407,17 +406,17 @@ async def set_role(
             "Der letzte Administrator kann nicht herabgestuft werden.",
             code="cannot_demote_last_admin",
         )
-    # Per-Tenant-Aussperr-Schutz (A4): der instanzweite `count_admins`-Guard oben stellt nur
-    # sicher, dass IRGENDWO noch ein Admin bleibt -- nicht, dass JEDER Kunde seinen letzten
-    # (Schreib-)Admin behält. Ein lokaler Admin von Kunde A könnte A sonst den letzten Admin
-    # entziehen, während ein Admin eines ANDEREN Tenants die instanzweite Zahl > 1 hält; nur
-    # der Provider-Superadmin könnte danach noch retten. Deshalb: wird ein Admin-Ziel
-    # herabgestuft, muss jeder Tenant, den es aktuell administriert (`admin_tenants` =
-    # `admin_tenant`-Grants vereinigt mit dem SSO-Heim), danach >= 1 Admin behalten.
-    # `count_tenant_admins` zählt das Ziel selbst noch mit (Grant/Heim bestehen zu diesem
-    # Zeitpunkt), also ist `<= 1` genau "das Ziel ist der letzte". Nur relevant, wenn das Ziel
-    # WIRKLICH Admin ist -- ein Auditor-Ziel hat keine `admin_tenant`-Grants, `admin_tenants`
-    # ist leer, die Schleife läuft nicht.
+    # Per-tenant lockout protection (A4): the instance-wide `count_admins` guard above only
+    # ensures that an admin remains SOMEWHERE -- not that EVERY customer keeps its last
+    # (write) admin. A local admin of customer A could otherwise strip A's last admin
+    # while an admin of ANOTHER tenant keeps the instance-wide count > 1; only the
+    # provider superadmin could then still rescue it. Hence: when an admin target is
+    # demoted, every tenant it currently administers (`admin_tenants` = `admin_tenant`
+    # grants merged with the SSO home) must retain >= 1 admin afterwards.
+    # `count_tenant_admins` still counts the target itself (grant/home exist at this
+    # point), so `<= 1` means exactly "the target is the last one". Only relevant if the
+    # target is REALLY an admin -- an auditor target has no `admin_tenant` grants,
+    # `admin_tenants` is empty, so the loop doesn't run.
     if target.role == "admin" and body.role != "admin":
         for tid in await tenant_repo.admin_tenants(session, target):
             if await user_repo.count_tenant_admins(session, tid) <= 1:
@@ -465,28 +464,28 @@ async def create_superadmin(
     body: SuperadminCreate,
     session: SessionDep,
 ) -> AdminUserOut:
-    """Legt einen LOKALEN Superadmin an -- superadmin-only (Design §11.3: Superadmin ist
-    IMMER ein lokales Konto, nie SSO). KEINE automatische Zuweisung: der Superadmin ist
-    instanzweit und braucht keine `admin_tenant`/`auditor_tenant`-Zeile (anders als
-    `create_local` für gewöhnliche Admin/Auditor-Konten, Task 3).
+    """Creates a LOCAL superadmin -- superadmin-only (design §11.3: superadmin is
+    ALWAYS a local account, never SSO). NO automatic assignment: the superadmin is
+    instance-wide and needs no `admin_tenant`/`auditor_tenant` row (unlike `create_local`
+    for ordinary admin/auditor accounts, Task 3).
 
-    Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
-    (`SuperadminDefaultContextUser`, `default_context_required`): die Superadmin-Verwaltung
-    ist Provider-Ebene (Design §4/§4-notes), genau wie Instanz-/Mandanten-/Zuweisungs-
-    Konsole -- aus einem Kunden-Kontext heraus gesperrt.
+    Since context gating v2 (matrix B) additionally only in the DEFAULT context
+    (`SuperadminDefaultContextUser`, `default_context_required`): superadmin management
+    is provider-level (design §4/§4-notes), just like the instance/tenant/assignment
+    console -- locked out from a customer context.
 
-    **Einladungsmodus (Task 10, Parität zu `create_local`s Einladungsmodus, Task 5, §7b):**
-    `body.password` ABWESEND schaltet auf Einladung um -- exaktes Muster wie dort (Platzhalter-
-    Benutzername `pending:<uuid4>`, unbrauchbarer Passwort-Hash, `is_active=False`), ABER
-    OHNE `add_grant` (Superadmin ist instanzweit, keine Tenant-Zuweisung nötig) und mit
-    `tenant_id = default_tenant_id(...)` als Heimat -- NICHT, weil der Superadmin irgendeinen
-    Tenant "gehört", sondern weil der Einladungsversand (`user_token._send`) in
-    `tenant_scoped_session(user.tenant_id)` läuft und so das Branding auflöst; ein heimatloses
-    Konto (`tenant_id=None`, wie im Direktpfad unten -- dort bewusst unverändert, kein
-    Mailversand nötig) hätte keinen Branding-Scope. Der Accept-Endpunkt
-    (`public_tokens.accept_token`) ist ROLLENAGNOSTISCH -- er fasst `target.role` nie an --,
-    daher aktiviert ein mit `role='superadmin'` angelegtes `pending`-Konto korrekt als
-    Superadmin, ganz ohne Änderung an `public_tokens.py`/`user_token*.py`."""
+    **Invitation mode (Task 10, parity with `create_local`'s invitation mode, Task 5, §7b):**
+    `body.password` ABSENT switches to invitation mode -- exact same pattern as there
+    (placeholder username `pending:<uuid4>`, unusable password hash, `is_active=False`), BUT
+    WITHOUT `add_grant` (superadmin is instance-wide, no tenant assignment needed) and with
+    `tenant_id = default_tenant_id(...)` as home -- NOT because the superadmin "belongs" to
+    any tenant, but because sending the invitation (`user_token._send`) runs inside
+    `tenant_scoped_session(user.tenant_id)` and thereby resolves branding; a homeless
+    account (`tenant_id=None`, as in the direct path below -- deliberately unchanged there,
+    no mail sending needed) would have no branding scope. The accept endpoint
+    (`public_tokens.accept_token`) is ROLE-AGNOSTIC -- it never touches `target.role` --
+    so a `pending` account created with `role='superadmin'` correctly activates as a
+    superadmin, with no change needed to `public_tokens.py`/`user_token*.py`."""
     if body.is_sso:
         raise ConflictError(
             "Ein Superadmin muss ein lokales Konto sein.", code="superadmin_must_be_local"
@@ -504,7 +503,7 @@ async def create_superadmin(
                 code="email_required",
             )
         username = f"pending:{uuid.uuid4().hex}"
-        password_hash = hash_password(secrets.token_hex(32))  # nie einlösbar
+        password_hash = hash_password(secrets.token_hex(32))  # never redeemable
     else:
         if not body.username:
             raise ForbiddenError("Benutzername erforderlich.", code="username_required")
@@ -528,13 +527,13 @@ async def create_superadmin(
         is_sso=False,
         tenant_id=await default_tenant_id(session) if is_invite else None,
     )
-    assert user.id is not None  # gerade committet, hat also eine id
+    assert user.id is not None  # just committed, so it has an id
 
     if is_invite:
-        # Einladung: pending -- Konto existiert, ist aber bis zur Annahme (`public_tokens.
-        # accept_token`) nicht nutzbar. E-Mail wird hier gesetzt (wie `create_local`s
-        # Einladungspfad), nicht am `create()`-Aufruf oben (der bleibt für den Direktpfad
-        # unverändert).
+        # Invitation: pending -- account exists but is unusable until acceptance
+        # (`public_tokens.accept_token`). Email is set here (like `create_local`'s
+        # invitation path), not on the `create()` call above (which stays unchanged for
+        # the direct path).
         user.email = body.email
         user.is_active = False
         user.updated_at = utcnow()
@@ -566,24 +565,23 @@ async def set_superadmin(
     body: SuperadminToggle,
     session: SessionDep,
 ) -> AdminUserOut:
-    """Befördert/degradiert zum/vom Superadmin -- der EINZIGE Pfad dafür (`set_role` lehnt
-    jeden Rollenwechsel eines Superadmin-Ziels hart ab, s.o.). Superadmin-only.
+    """Promotes/demotes to/from superadmin -- the ONLY path for that (`set_role` hard-rejects
+    any role change of a superadmin target, see above). Superadmin-only.
 
-    Seit Context-Gating v2 (Matrix B) zusätzlich nur im DEFAULT-Kontext
-    (`SuperadminDefaultContextUser`, `default_context_required`): dieselbe Provider-Ebene-
-    Begründung wie bei `create_superadmin` oben.
+    Since context gating v2 (matrix B) additionally only in the DEFAULT context
+    (`SuperadminDefaultContextUser`, `default_context_required`): same provider-level
+    rationale as `create_superadmin` above.
 
-    Befördern: nur ein LOKALES Ziel (`not is_sso`) darf Superadmin werden (Design §11.3,
-    `code="superadmin_must_be_local"`) -- seine bisherigen `admin_tenant`/
-    `auditor_tenant`-Zuweisungen werden dabei geräumt (bewusste Entscheidung: der
-    Superadmin sieht ohnehin alle aktiven Tenants, verwaiste Zuweisungszeilen wären reiner
-    Datenmüll und würden bei einer künftigen Rückstufung sonst überraschend wieder
-    aufleben).
+    Promoting: only a LOCAL target (`not is_sso`) may become superadmin (design §11.3,
+    `code="superadmin_must_be_local"`) -- its previous `admin_tenant`/
+    `auditor_tenant` assignments are cleared in the process (deliberate decision: the
+    superadmin sees all active tenants anyway, orphaned assignment rows would be pure
+    data clutter and would otherwise surprisingly come back to life on a future demotion).
 
-    Degradieren: der letzte AKTIVE Superadmin darf nicht herabgestuft werden (Design §11.4,
-    `code="cannot_demote_last_superadmin"`) -- sonst könnte sich niemand mehr instanzweit
-    verwalten. Das Ziel fällt dabei auf `role="admin"` zurück (keine feinere Rolle unterhalb
-    von Superadmin ist hier definiert)."""
+    Demoting: the last ACTIVE superadmin may not be demoted (design §11.4,
+    `code="cannot_demote_last_superadmin"`) -- otherwise no one could manage the instance
+    anymore. The target falls back to `role="admin"` in that case (no finer role below
+    superadmin is defined here)."""
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
@@ -642,33 +640,33 @@ async def delete_user(
     target = await user_repo.get(session, user_id)
     if target is None:
         raise NotFoundError("Benutzer nicht gefunden.", code="user_not_found")
-    # Löschen gesperrt, wenn es nur einen Benutzer gibt.
+    # Deletion is blocked when there is only a single user left.
     if await user_repo.count(session) <= 1:
         raise ConflictError("Der letzte Benutzer kann nicht gelöscht werden.", code="last_user")
     if target.id == user.id:
         raise ConflictError(
             "Sie können Ihr eigenes Konto nicht löschen.", code="cannot_delete_self"
         )
-    # Superadmin-Ziel: NIE über einen Nicht-Superadmin-Aufrufer löschbar (Task 4,
-    # Access-Modell/Superadmin-Phase -- Sicherheitsreview-Fix). Dieses Gate ist `AdminUser`,
-    # nicht `SuperadminUser` -- ohne diese Prüfung könnte ein PLAIN Admin oder ein SSO-Admin
-    # jeden NICHT-letzten Superadmin per Löschung entfernen, wiederholt bis zum letzten
-    # (der Last-Superadmin-Schutz unten greift erst BEIM letzten). Analog zu `set_role`s
-    # Schutz für den Rollenwechsel eines Superadmin-Ziels -- gleicher Fehlercode.
+    # Superadmin target: NEVER deletable by a non-superadmin caller (Task 4,
+    # access-model/superadmin phase -- security review fix). This gate is `AdminUser`,
+    # not `SuperadminUser` -- without this check a PLAIN admin or an SSO admin could
+    # remove every NON-last superadmin by deletion, repeatedly down to the last one
+    # (the last-superadmin protection below only kicks in AT the last one). Analogous to
+    # `set_role`'s protection for role changes of a superadmin target -- same error code.
     if target.role == "superadmin" and (user.is_sso or user.role != "superadmin"):
         raise ForbiddenError(
             "Superadmin-Löschung nur durch einen Superadmin möglich.",
             code="superadmin_required",
         )
-    # Cross-Tenant-Fix (Sicherheitsreview, Whole-Branch-Review Access-Modell/Superadmin-
-    # Phase) -- analog zum Scope-Check in `set_role` oben: `delete_user` war nur über
-    # `AdminUser` gegatet und löste `target` ohne RLS auf, ein lokaler Admin von Tenant A
-    # konnte so einen NUR zu Tenant B gehörenden Benutzer löschen. Ein Superadmin-Aufrufer
-    # überspringt diese Prüfung (voller Zugriff). Für jeden anderen Aufrufer muss die GESAMTE
-    # Tenant-Zugehörigkeit des Ziels innerhalb der vom Aufrufer VERWALTETEN Tenants liegen
-    # (Teilmengen-, nicht Schnittmengen-Regel -- sonst würde das Löschen eines auch-bei-B
-    # zugewiesenen Kontos ungewollt Tenant B mittreffen, da `app_user` instanzweit ist). Ein
-    # Ziel ganz ohne Tenant-Zugehörigkeit darf NUR ein Superadmin löschen.
+    # Cross-tenant fix (security review, whole-branch review access-model/superadmin
+    # phase) -- analogous to the scope check in `set_role` above: `delete_user` was only
+    # gated via `AdminUser` and resolved `target` without RLS, so a local admin of tenant A
+    # could delete a user that belongs ONLY to tenant B. A superadmin caller skips this
+    # check (full access). For every other caller, the target's ENTIRE tenant membership
+    # must lie within the tenants MANAGED by the caller (subset, not intersection rule --
+    # otherwise deleting an account also assigned to B would unintentionally hit tenant B
+    # too, since `app_user` is instance-wide). A target with no tenant membership at all
+    # may ONLY be deleted by a superadmin.
     if user.is_sso or user.role != "superadmin":
         target_scope = await tenant_repo.allowed_tenant_ids(session, target)
         caller_admin_tenants = await tenant_repo.admin_tenants(session, user)
@@ -676,21 +674,21 @@ async def delete_user(
             raise ForbiddenError(
                 "Konto ausserhalb des eigenen Kundenbereichs.", code="user_not_in_scope"
             )
-    # Last-Superadmin-Schutz (Design §11.4) -- analog zum Last-Admin-Schutz oben, aber für
-    # die instanzweite Rolle: ohne diese Prüfung könnte man den letzten Superadmin per
-    # Löschung aussperren.
+    # Last-superadmin protection (design §11.4) -- analogous to the last-admin protection
+    # above, but for the instance-wide role: without this check, someone could lock out
+    # the last superadmin by deleting them.
     if target.role == "superadmin" and await user_repo.count_superadmins(session) <= 1:
         raise ConflictError(
             "Der letzte Superadmin kann nicht gelöscht werden.",
             code="cannot_delete_last_superadmin",
         )
-    # Per-Tenant-Aussperr-Schutz (A4) -- Spiegel des `set_role`-Guards: `delete_user` hatte
-    # bisher GAR keinen Admin-Zähl-Guard (nur Letzter-Benutzer, Selbstlöschung, Letzter-
-    # Superadmin), ein Admin liess sich also selbst als letzter Admin eines Kunden löschen,
-    # solange ein anderer Tenant die instanzweite Zahl > 1 hielt. Vor der Löschung eines
-    # Admin-Ziels: jeder von ihm administrierte Tenant muss danach >= 1 Admin behalten
-    # (gleiche Zähl-/Randbedingungen wie in `set_role`; `count_tenant_admins` schliesst das
-    # noch existierende Ziel ein, `<= 1` heisst also "das Ziel ist der letzte").
+    # Per-tenant lockout protection (A4) -- mirror of the `set_role` guard: `delete_user`
+    # previously had NO admin-count guard at all (only last-user, self-deletion, last-
+    # superadmin), so an admin could delete themselves as the last admin of a customer as
+    # long as another tenant kept the instance-wide count > 1. Before deleting an admin
+    # target: every tenant it administers must retain >= 1 admin afterwards (same
+    # counting/edge conditions as in `set_role`; `count_tenant_admins` still includes the
+    # still-existing target, so `<= 1` means "the target is the last one").
     if target.role == "admin":
         for tid in await tenant_repo.admin_tenants(session, target):
             if await user_repo.count_tenant_admins(session, tid) <= 1:
@@ -712,13 +710,13 @@ async def delete_user(
         tenant_id=(target.tenant_id if target.role != "superadmin" else None),
     )
     await session.commit()
-    # Carry-forward-Fix aus Task 1: `user_token.created_by` hat KEIN `ON DELETE` (ein
-    # gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN Nutzers nicht
-    # mitreissen) -- ohne diesen Schritt VOR dem eigentlichen Löschen scheitert es mit
-    # einem `IntegrityError`, sobald `target` noch offene, selbst ausgestellte Tokens hat
-    # (z. B. eine von ihm verschickte Einladung/ein Reset-Link). Mirror der Sessions-
-    # Löschung, die `user_repo.delete` bereits intern für die Tokens des GELÖSCHTEN Kontos
-    # selbst übernimmt (kaskadiert über `app_user_id`, dafür nicht nötig).
+    # Carry-forward fix from Task 1: `user_token.created_by` has NO `ON DELETE` (a
+    # deleted creator account must not take down a still-valid token of ANOTHER user)
+    # -- without this step BEFORE the actual deletion, it fails with an `IntegrityError`
+    # as soon as `target` still has open, self-issued tokens (e.g. an invitation it sent
+    # or a reset link). Mirrors the session deletion that `user_repo.delete` already
+    # handles internally for the tokens of the DELETED account itself (cascaded via
+    # `app_user_id`, not needed for that).
     await user_token_repo.delete_created_by(session, user_id)
     await user_repo.delete(session, user_id)
     return Message(message="Benutzer gelöscht.")
@@ -750,7 +748,7 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
     synced = removed = 0
     blocked_count = 0
     for tenant in tenants:
-        assert tenant.id is not None  # persistierte Zeile aus der DB
+        assert tenant.id is not None  # persisted row from the DB
         async with tenant_scoped_session(tenant.id) as tsession:
             settings = await SettingsService(tsession).get_all()
         if not settings.get("oidc.enabled") or not settings.get("oidc.admin_group_id"):

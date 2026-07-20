@@ -1,4 +1,4 @@
-"""APScheduler-Anbindung: geplanter Lauf, manueller Trigger, Reschedule, Shutdown."""
+"""APScheduler integration: scheduled run, manual trigger, reschedule, shutdown."""
 
 from __future__ import annotations
 
@@ -39,30 +39,29 @@ class SchedulerService:
         log.info("scheduler_started", cron=cron, timezone=tz)
 
     async def shutdown(self) -> None:
-        # wait=True -> laufender Job wird sauber zu Ende geführt (graceful).
+        # wait=True -> the running job is allowed to finish cleanly (graceful).
         if self._scheduler.running:
             self._scheduler.shutdown(wait=True)
         log.info("scheduler_stopped")
 
-    # -- Konfiguration ------------------------------------------------------- #
+    # -- Configuration --------------------------------------------------------- #
     async def _read_schedule(self, session: AsyncSession) -> tuple[str, str]:
-        """Liest ``schedule.cron``/``schedule.timezone`` auf der ÜBERGEBENEN, bereits
-        passend gescopten Session. Vormals (Phase-3-TODO) lief das auf einer unscoped
-        Owner-Session -- weil RLS für die Owner-Rolle nicht greift, ergab `select(Setting)`
-        dort ein undefiniertes Gemisch aus den `schedule.*`-Zeilen ALLER Tenants, sobald ein
-        zweiter existierte (letzte gelesene Zeile gewinnt, keine Filterung). Aufrufer sind
-        jetzt immer eindeutig gescoped: `_read_default_schedule` (der EINE globale
-        APScheduler-Job -- echtes gestaffeltes Multi-Tenant-Scheduling mit eigenen
-        Job-Zeiten pro Kunde bleibt Design §8, ein eigener Folge-Task, siehe
-        `_active_tenant_ids`) und `_run` (jeder Kunde liest sein EIGENES Schedule innerhalb
-        seines eigenen `use_tenant`-Blocks)."""
+        """Reads ``schedule.cron``/``schedule.timezone`` on the PASSED-IN session, which is
+        already scoped appropriately. Previously (Phase-3 TODO) this ran on an unscoped
+        owner session -- since RLS doesn't apply to the owner role, `select(Setting)` there
+        produced an undefined mix of the `schedule.*` rows of ALL tenants once a second one
+        existed (last row read wins, no filtering). Callers are now always unambiguously
+        scoped: `_read_default_schedule` (the ONE global APScheduler job -- real staggered
+        multi-tenant scheduling with per-customer job times remains Design §8, its own
+        follow-up task, see `_active_tenant_ids`) and `_run` (each customer reads its OWN
+        schedule within its own `use_tenant` block)."""
         svc = SettingsService(session)
         data = await svc.get_all()
         return (data.get("schedule.cron") or "0 8 * * *", data.get("schedule.timezone") or "UTC")
 
     async def _read_default_schedule(self) -> tuple[str, str]:
-        """Treibt den EINEN globalen APScheduler-Job (`start`/`reschedule`) -- deterministisch
-        über den Default-Tenant gescoped statt blind über alle Tenants hinweg.
+        """Drives the ONE global APScheduler job (`start`/`reschedule`) -- deterministically
+        scoped to the default tenant instead of blindly across all tenants.
 
         `reschedule()` can run from a request route that is itself already under an active
         (non-default) tenant (`tenant_scoped_session`, see `api/routes/settings.py`).
@@ -76,7 +75,7 @@ class SchedulerService:
         with use_owner_context():
             async with self.session_factory() as owner:
                 tenant = await tenant_repo.default_tenant(owner)
-        assert tenant.id is not None  # persistierte Zeile aus der DB
+        assert tenant.id is not None  # persisted row from the DB
         async with tenant_scoped_session(tenant.id) as session:
             return await self._read_schedule(session)
 
@@ -97,7 +96,7 @@ class SchedulerService:
         self._add_job(cron, tz)
         log.info("scheduler_rescheduled", cron=cron, timezone=tz)
 
-    # -- Ausführung ---------------------------------------------------------- #
+    # -- Execution ------------------------------------------------------------- #
     async def _job(self) -> None:
         await self._run(trigger="schedule")
 
@@ -109,12 +108,12 @@ class SchedulerService:
         )
 
     async def _active_tenant_ids(self) -> list[int]:
-        """Aktive Kunden auf einer Owner-Session lesen (kein Tenant-Kontext aktiv).
+        """Reads active customers on an owner session (no tenant context active).
 
-        ÜBERGANG (Phase 3 -> Phase 4): heute existiert nur der eine Default-Tenant, die
-        Schleife unten läuft also faktisch einmal -- identisch zum bisherigen Verhalten.
-        Echte Mehrmandanten-Läufe (gestaffelte Startzeiten, Concurrency-Limit) sind
-        Design §8 und ein eigener Folge-Task.
+        TRANSITION (Phase 3 -> Phase 4): today only the one default tenant exists, so the
+        loop below effectively runs once -- identical to the previous behavior. Real
+        multi-tenant runs (staggered start times, concurrency limit) are Design §8 and a
+        separate follow-up task.
         """
         with use_owner_context():
             async with self.session_factory() as session:
@@ -129,7 +128,7 @@ class SchedulerService:
         dry_run_override: bool | None = None,
         tenant_ids: list[int] | None = None,
     ) -> Run:
-        async with self._lock:  # verhindert Überlappung manuell/geplant
+        async with self._lock:  # prevents overlap between manual and scheduled runs
             self._running = True
             try:
                 # None -> all active tenants (scheduled fan-out); an explicit list -> exactly
@@ -149,13 +148,13 @@ class SchedulerService:
                     # session.commit raising outside them) would otherwise break the loop and
                     # silently skip every later customer's expiry notifications.
                     try:
-                        # Jeder Kunde läuft isoliert unter seinem eigenen Tenant-Kontext --
-                        # die im Runner geöffnete Session wird dadurch automatisch
-                        # tenant-gescopt (RLS greift), siehe `apply_tenant_on_begin`.
+                        # Each customer runs isolated under its own tenant context -- the
+                        # session opened in the runner is thereby automatically
+                        # tenant-scoped (RLS applies), see `apply_tenant_on_begin`.
                         async with use_tenant(tenant_id):
-                            # Eigenes Schedule dieses Kunden lesen (tenant-gescopt, s.
-                            # `_read_schedule`-Docstring) -- treibt aktuell nur Sichtbarkeit
-                            # (Log), noch keine gestaffelte Ausführungszeit pro Kunde (§8).
+                            # Read this customer's own schedule (tenant-scoped, see
+                            # `_read_schedule` docstring) -- currently only drives
+                            # visibility (log), not yet a staggered per-customer run time (§8).
                             async with self.session_factory() as tsession:
                                 cron, tz = await self._read_schedule(tsession)
                             log.info(
@@ -208,7 +207,7 @@ class SchedulerService:
         return times[0] if times else None
 
 
-# Modul-Singleton (in main.py gesetzt)
+# Module-level singleton (set in main.py)
 _service: SchedulerService | None = None
 
 
@@ -224,7 +223,7 @@ def get_scheduler() -> SchedulerService:
 
 
 def compute_next_runs(cron: str, tz: str, count: int = 5) -> list[dt.datetime]:
-    """Standalone-Vorschau (für Settings-UI, ohne den laufenden Job zu berühren)."""
+    """Standalone preview (for the settings UI, without touching the running job)."""
     trigger = CronTrigger.from_crontab(cron, timezone=tz)
     times: list[dt.datetime] = []
     prev: dt.datetime | None = None

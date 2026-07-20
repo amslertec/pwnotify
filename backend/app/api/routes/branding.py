@@ -1,4 +1,4 @@
-"""Branding: öffentliches Theming + Logo/Favicon-Upload und -Auslieferung."""
+"""Branding: public theming + logo/favicon upload and delivery."""
 
 from __future__ import annotations
 
@@ -33,22 +33,22 @@ _ALLOWED = {
 }
 _MAX_BYTES = 2 * 1024 * 1024
 
-# SVG ist XML und darf Skripte, Event-Handler und externe Referenzen enthalten. Da die
-# Datei unter der eigenen Domain ausgeliefert wird, liefe solcher Code im App-Origin.
-# A8: Eine Regex-Denylist ist über Entity-/Zeichen-Kodierung, SMIL (<set>/<animate>) und
-# <use href="http…"> umgehbar. Stattdessen ALLOWLIST-Parse: das SVG mit einem gehärteten
-# XML-Parser lesen und nur eine konservative Menge harmloser Logo-Elemente/-Attribute
-# durchlassen; alles andere -> ablehnen. (Die Auslieferungs-CSP/nosniff trägt weiterhin.)
+# SVG is XML and may contain scripts, event handlers, and external references. Since the
+# file is served under our own domain, such code would run in the app's origin.
+# A8: a regex denylist is bypassable via entity/character encoding, SMIL (<set>/<animate>),
+# and <use href="http…">. Use an ALLOWLIST parse instead: read the SVG with a hardened
+# XML parser and only pass through a conservative set of harmless logo elements/attributes;
+# reject everything else. (The delivery-side CSP/nosniff still applies on top.)
 #
-# Nur Elemente, die ein statisches Logo tatsächlich braucht. Vergleich case-insensitiv über
-# den lokalen Namen (Namespace abgetrennt) -> ein SVG-Namespace-<script> heisst lokal
-# "script" und fällt durch; foreignObject/use/animate/set/handler stehen bewusst nicht drin.
+# Only elements an actual static logo needs. Compared case-insensitively on the local
+# name (namespace stripped) -> an SVG-namespaced <script> has local name "script" and
+# is rejected; foreignObject/use/animate/set/handler are deliberately not included.
 _SVG_ALLOWED_TAGS = {
     "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
     "text", "tspan", "defs", "lineargradient", "radialgradient", "stop", "title", "desc",
 }  # fmt: skip
 
-# Nur geometrische/Stil-Attribute. KEINE Event-Handler (on*), KEINE externen Referenzen.
+# Only geometry/style attributes. NO event handlers (on*), NO external references.
 _SVG_ALLOWED_ATTRS = {
     "id", "class", "style", "transform", "viewbox", "version", "preserveaspectratio", "space",
     "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height",
@@ -61,13 +61,13 @@ _SVG_ALLOWED_ATTRS = {
     "letter-spacing", "word-spacing",
 }  # fmt: skip
 
-# CSS/URL-Referenzen: nur interne Fragmente (url(#id)) sind zulässig; alles andere ist eine
-# externe Referenz und wird abgelehnt.
+# CSS/URL references: only internal fragments (url(#id)) are allowed; anything else is an
+# external reference and gets rejected.
 _URL_REF = re.compile(r"url\(\s*['\"]?([^'\")]+)", re.I)
 
 
 def _localname(tag: str) -> str:
-    """Lokaler Name ohne ``{namespace}``-Präfix (ElementTree-Notation)."""
+    """Local name without the ``{namespace}`` prefix (ElementTree notation)."""
     return tag.rsplit("}", 1)[-1]
 
 
@@ -80,7 +80,7 @@ def _reject_svg(reason: str, *, code: str = "svg_active_content") -> NoReturn:
 
 
 def _has_external_url_ref(value: str) -> bool:
-    """True, sobald ein ``url(...)`` auf etwas anderes als ein internes Fragment (#id) zeigt."""
+    """True as soon as a ``url(...)`` points at something other than an internal fragment (#id)."""
     return any(not m.group(1).strip().startswith("#") for m in _URL_REF.finditer(value))
 
 
@@ -92,7 +92,7 @@ def _check_svg_attr(attr: str, value: str) -> None:
         _reject_svg("javascript:-URL")
     if _has_external_url_ref(value):
         _reject_svg("externe Referenz (url())")
-    if local == "href":  # href / xlink:href -> nur interne Fragmente (#id)
+    if local == "href":  # href / xlink:href -> only internal fragments (#id)
         if not value.strip().startswith("#"):
             _reject_svg("externe href-Referenz")
         return
@@ -100,9 +100,9 @@ def _check_svg_attr(attr: str, value: str) -> None:
         _reject_svg(f"nicht erlaubtes Attribut ({local})")
 
 
-# Verhindert, dass ein Bild als aktives Dokument interpretiert wird. `sandbox` entzieht
-# der Antwort u. a. Skriptausführung und den eigenen Origin; als <img> eingebunden —
-# so nutzt das Frontend die Route — bleibt alles unverändert nutzbar.
+# Prevents an image from being interpreted as an active document. `sandbox` strips the
+# response of, among other things, script execution and its own origin; embedded as
+# an <img> — how the frontend uses this route — everything still works unchanged.
 _ASSET_HEADERS = {
     "Cache-Control": "no-cache",
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
@@ -111,12 +111,12 @@ _ASSET_HEADERS = {
 
 
 def _reject_active_svg(data: bytes) -> None:
-    """Allowlist-Parse eines hochgeladenen SVG (A8): mit gehärtetem Parser lesen und nur
-    harmlose Logo-Elemente/-Attribute durchlassen; alles andere -> ablehnen.
+    """Allowlist parse of an uploaded SVG (A8): read with a hardened parser and only pass
+    through harmless logo elements/attributes; reject everything else.
 
-    defused_fromstring liest mit deaktivierter DTD/Entity-Expansion und ohne externe Refs —
-    das schliesst XXE und entity-kodierte Payloads schon beim Parsen aus. Ein SVG, das sich
-    nicht sauber parsen lässt, wird abgelehnt (kein Fallback auf ungeprüfte Auslieferung).
+    defused_fromstring reads with DTD/entity expansion disabled and no external refs —
+    that already rules out XXE and entity-encoded payloads at parse time. An SVG that
+    doesn't parse cleanly is rejected (no fallback to unchecked delivery).
     """
     try:
         root = defused_fromstring(data, forbid_dtd=True)
@@ -127,7 +127,7 @@ def _reject_active_svg(data: bytes) -> None:
     for el in root.iter():
         tag = el.tag
         if not isinstance(tag, str):
-            continue  # Kommentare/PIs kommen als Callables -> überspringen
+            continue  # comments/PIs come through as callables -> skip
         local = _localname(tag).lower()
         if local not in _SVG_ALLOWED_TAGS:
             _reject_svg(f"nicht erlaubtes Element (<{local}>)")
@@ -180,7 +180,7 @@ def _safe_branding_file(path: str | None) -> Path | None:
 
 @router.get("")
 async def public_branding(svc: PublicTenantSettingsDep, response: Response) -> dict[str, Any]:
-    """Öffentlich (kein Auth) — für Login-/Setup-Seiten-Theming."""
+    """Public (no auth) — for login/setup page theming."""
     response.headers["Cache-Control"] = "no-store"
     s = await svc.get_all()
     return {
@@ -190,7 +190,7 @@ async def public_branding(svc: PublicTenantSettingsDep, response: Response) -> d
         "reset_url": s.get("branding.reset_url") or "",
         "has_logo": bool(s.get("branding.logo_path")),
         "has_favicon": bool(s.get("branding.favicon_path")),
-        # Datei-Änderungszeit als Cache-Buster -> neues Bild erscheint sofort.
+        # File modification time as cache buster -> new image shows up immediately.
         "logo_version": _file_version(s.get("branding.logo_path")),
         "favicon_version": _file_version(s.get("branding.favicon_path")),
     }
@@ -207,8 +207,8 @@ def _file_version(path: str | None) -> int:
     return int(real.stat().st_mtime)
 
 
-# Zielhöhe für gespeicherte Raster-Logos. Anzeige max. ~56px (Login) -> bei 3x-HiDPI
-# ~168px physisch; 192px hält alle Displays gestochen scharf bei kleiner Dateigrösse.
+# Target height for stored raster logos. Displayed at max ~56px (login) -> at 3x HiDPI
+# that's ~168px physical; 192px keeps every display pixel-sharp while staying small on disk.
 _LOGO_TARGET_HEIGHT = 192
 
 # M9: without a cap, Pillow decodes whatever pixel area a file declares -- a tiny file
@@ -220,10 +220,10 @@ _MAX_IMAGE_PIXELS = 24_000_000
 
 
 def _autotrim(data: bytes) -> bytes | None:
-    """Raster-Logo aufbereiten: transparente Ränder abschneiden, auf HiDPI-Höhe
-    normalisieren (Lanczos) und als optimiertes PNG zurückgeben.
+    """Prepare a raster logo: trim transparent borders, normalize to HiDPI height
+    (Lanczos), and return as an optimized PNG.
 
-    Gibt None zurück, wenn nicht verarbeitbar (z. B. SVG) -> Original wird behalten.
+    Returns None if not processable (e.g. SVG) -> original is kept.
     """
     try:
         from PIL import Image
@@ -234,8 +234,8 @@ def _autotrim(data: bytes) -> bytes | None:
         bbox = img.getchannel("A").getbbox()
         if bbox:
             img = img.crop(bbox)
-        # Auf einheitliche Höhe skalieren (hoch- oder runterskalieren) für gleichmässige
-        # Schärfe auf HiDPI-Displays. Lanczos = hochwertigste Resampling-Methode.
+        # Scale to a uniform height (up- or downscale) for consistent sharpness
+        # on HiDPI displays. Lanczos = highest-quality resampling method.
         w, h = img.size
         if h > 0 and w > 0 and h != _LOGO_TARGET_HEIGHT:
             new_w = max(1, round(w * _LOGO_TARGET_HEIGHT / h))
@@ -243,7 +243,7 @@ def _autotrim(data: bytes) -> bytes | None:
         out = io.BytesIO()
         img.save(out, format="PNG", optimize=True)
         return out.getvalue()
-    except Exception:  # bei Fehler unverändert speichern
+    except Exception:  # on error, save unchanged
         return None
 
 
@@ -256,16 +256,16 @@ async def _save_upload(file: UploadFile, stem: str, *, trim: bool = False) -> st
     data = await file.read()
     if len(data) > _MAX_BYTES:
         raise PwNotifyError("Datei zu gross (max. 2 MB).", code="file_too_large")
-    # Der Content-Type kommt vom Client — der Inhalt muss dazu passen. Sonst landete
-    # bei einem Pillow-Fehler (unten wird dann das Original behalten) beliebiges
-    # Material unter einer Bild-Endung im Auslieferungsverzeichnis.
+    # The content type comes from the client — the content must match it. Otherwise, on
+    # a Pillow error (the original is then kept below), arbitrary material could end up
+    # in the delivery directory under an image extension.
     if not imagetype.matches(data, file.content_type or ""):
         raise PwNotifyError(
             "Der Dateiinhalt passt nicht zum angegebenen Format.", code="content_type_mismatch"
         )
     if ext == ".svg":
         _reject_active_svg(data)
-    # Logo: transparente Ränder automatisch abschneiden (SVG bleibt unverändert).
+    # Logo: automatically trim transparent borders (SVG stays unchanged).
     if trim and ext != ".svg":
         trimmed = _autotrim(data)
         if trimmed is not None:

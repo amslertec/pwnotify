@@ -161,7 +161,7 @@ async def test_rls_enabled_on_all_tenant_tables(session):
 
 
 async def test_isolation_enforced_under_app_role(session):
-    # Zwei Tenants + je eine setting-Zeile anlegen (als Superuser, RLS umgangen).
+    # Create two tenants + one setting row each (as superuser, RLS bypassed).
     await session.execute(
         text(
             "INSERT INTO tenant (name, slug, is_active, created_at) VALUES "
@@ -187,7 +187,7 @@ async def test_isolation_enforced_under_app_role(session):
     )
     await session.flush()
 
-    # In die App-Rolle wechseln + Tenant A setzen → nur A-Zeile sichtbar.
+    # Switch into the app role + set tenant A -> only A's row should be visible.
     await session.execute(text(f"SET LOCAL ROLE {APP_ROLE}"))
     await session.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": str(a)})
     seen = (
@@ -195,7 +195,7 @@ async def test_isolation_enforced_under_app_role(session):
     )
     assert seen == [a], f"RLS-Leak: erwartet nur {a}, sah {seen}"
 
-    # Cross-Tenant-Write muss scheitern.
+    # Cross-tenant write must fail.
     with pytest.raises(Exception) as exc:
         await session.execute(
             text(

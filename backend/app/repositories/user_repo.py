@@ -1,4 +1,4 @@
-"""DB-Zugriff für lokale UI-Accounts und Refresh-Sessions."""
+"""DB access for local UI accounts and refresh sessions."""
 
 from __future__ import annotations
 
@@ -28,11 +28,11 @@ async def count(session: AsyncSession) -> int:
 
 
 async def count_admins(session: AsyncSession) -> int:
-    """Aktive Administratoren (lokal + SSO). Basis für den Schutz vor Aussperrung.
+    """Active administrators (local + SSO). Basis for the lockout protection.
 
-    Zählt bewusst NICHT die Rolle `superadmin` mit -- der Superadmin wird über
-    `count_superadmins` separat vor Aussperrung geschützt (Task 4: letzter Superadmin darf
-    weder gelöscht noch herabgestuft werden)."""
+    Deliberately does NOT count the `superadmin` role -- the superadmin is protected
+    from lockout separately via `count_superadmins` (Task 4: the last superadmin may
+    neither be deleted nor demoted)."""
     stmt = select(func.count(AppUser.id)).where(
         AppUser.role == "admin", AppUser.is_active.is_(True)
     )
@@ -40,26 +40,26 @@ async def count_admins(session: AsyncSession) -> int:
 
 
 async def count_tenant_admins(session: AsyncSession, tenant_id: int) -> int:
-    """Aktive Konten mit Admin-(Schreib-)Kapazität auf GENAU diesen Tenant -- Grundlage für den
-    Schutz vor Aussperrung PRO KUNDE (A4), das per-Tenant-Pendant zu `count_admins`.
+    """Active accounts with admin (write) capacity on EXACTLY this tenant -- basis for the
+    per-customer lockout protection (A4), the per-tenant counterpart to `count_admins`.
 
-    Zählt deckungsgleich mit `tenant_repo.admin_tenants(user)` (Design §2):
-    - Konten (lokal ODER SSO) mit einer `admin_tenant`-Grant-Zeile auf `tenant_id`; PLUS
-    - SSO-Konten, deren HEIM-Tenant (`AppUser.tenant_id`) exakt dieser ist UND deren Rolle
-      `admin` ist -- ihr Heim verleiht die Admin-Kapazität ohne eigene Grant-Zeile.
+    Counts congruently with `tenant_repo.admin_tenants(user)` (Design §2):
+    - Accounts (local OR SSO) with an `admin_tenant` grant row on `tenant_id`; PLUS
+    - SSO accounts whose HOME tenant (`AppUser.tenant_id`) is exactly this one AND whose role
+      is `admin` -- their home grants admin capacity without their own grant row.
 
-    Bewusst AUSGESCHLOSSEN:
-    - **Superadmins** (`role=='superadmin'`): instanzweit, verwalten ohnehin alle Tenants und
-      sind über `count_superadmins` separat vor Aussperrung geschützt -- ein (verwaister)
-      `admin_tenant`-Grant auf einen Superadmin darf den letzten Kunden-Admin nicht kaschieren.
-    - **inaktive/pending Konten** (`is_active=False`): ein deaktiviertes oder noch nicht
-      angenommenes (eingeladenes) Konto kann niemanden verwalten und zählt daher nicht als
-      verbliebener Admin.
+    Deliberately EXCLUDED:
+    - **Superadmins** (`role=='superadmin'`): instance-wide, they administer all tenants
+      anyway and are protected from lockout separately via `count_superadmins` -- a (stray)
+      `admin_tenant` grant on a superadmin must not mask the last customer admin.
+    - **Inactive/pending accounts** (`is_active=False`): a deactivated or not-yet-accepted
+      (invited) account cannot administer anyone and therefore does not count as a
+      remaining admin.
 
-    `func.distinct`, weil das LEFT JOIN auf `admin_tenant` sonst ein Konto mit mehreren
-    Grant-Zeilen mehrfach zählte (hier auf `tenant_id` gefiltert wäre es zwar höchstens eine
-    Zeile -- die Composite-PK garantiert das --, `distinct` bleibt aber der defensive Ausdruck
-    der Absicht "Konten, nicht Zeilen")."""
+    `func.distinct` because the LEFT JOIN on `admin_tenant` would otherwise count an account
+    with multiple grant rows more than once (filtered here on `tenant_id` it would be at most
+    one row -- the composite PK guarantees that -- but `distinct` remains the defensive
+    expression of the intent "accounts, not rows")."""
     stmt = (
         select(func.count(func.distinct(AppUser.id)))
         .select_from(AppUser)
@@ -81,9 +81,9 @@ async def count_tenant_admins(session: AsyncSession, tenant_id: int) -> int:
 
 
 async def count_superadmins(session: AsyncSession) -> int:
-    """Aktive Superadmins (immer lokal, `is_sso=False`). Grundlage für den
-    Last-Superadmin-Schutz (Task 4) -- analog zu `count_admins`, aber für die
-    instanzweite Rolle."""
+    """Active superadmins (always local, `is_sso=False`). Basis for the
+    last-superadmin protection (Task 4) -- analogous to `count_admins`, but for the
+    instance-wide role."""
     stmt = select(func.count(AppUser.id)).where(
         AppUser.role == "superadmin", AppUser.is_active.is_(True)
     )
@@ -120,13 +120,12 @@ async def list_all(session: AsyncSession) -> list[AppUser]:
 
 
 async def list_sso_for_tenant(session: AsyncSession, tenant_id: int) -> list[AppUser]:
-    """SSO-Benutzer NUR dieses Mandanten -- Grundlage für den Sync-Abgleich
+    """SSO users of ONLY this tenant -- basis for the sync reconciliation
 
-    (Sicherheitsfix: eine instanzweite SSO-Liste würde `sync_sso_users` dazu bringen, die
-    Entfernungsmenge über ALLE Kunden zu bilden, sodass SSO-Konten ANDERER Kunden --
-    inklusive deren Admins -- fälschlich als "in keiner Gruppe mehr" erschienen und
-    gelöscht würden, sobald ein zweiter SSO-Kunde existiert. Siehe `sync_sso_users` in
-    `services/oidc.py`).
+    (security fix: an instance-wide SSO list would make `sync_sso_users` build the
+    removal set across ALL customers, so SSO accounts of OTHER customers -- including
+    their admins -- would wrongly appear as "no longer in any group" and get deleted as
+    soon as a second SSO customer exists. See `sync_sso_users` in `services/oidc.py`).
     """
     res = await session.execute(
         select(AppUser).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tenant_id)
@@ -135,10 +134,10 @@ async def list_sso_for_tenant(session: AsyncSession, tenant_id: int) -> list[App
 
 
 async def list_sso_in_tenants(session: AsyncSession, tenant_ids: set[int]) -> list[AppUser]:
-    """SSO-Konten, deren Heim-`tenant_id` in `tenant_ids` liegt -- Grundlage für die
-    gescopte Access-Seite eines lokalen Admins (Task 3): er darf NUR SSO-Konten der
-    Kunden sehen, die er selbst hält (`tenant_repo.admin_tenants`), nie die volle,
-    instanzweite SSO-Liste."""
+    """SSO accounts whose home `tenant_id` is in `tenant_ids` -- basis for the
+    scoped access page of a local admin (Task 3): they may see ONLY SSO accounts of
+    the customers they themselves hold (`tenant_repo.admin_tenants`), never the full,
+    instance-wide SSO list."""
     if not tenant_ids:
         return []
     res = await session.execute(
@@ -150,14 +149,14 @@ async def list_sso_in_tenants(session: AsyncSession, tenant_ids: set[int]) -> li
 
 
 async def list_local_homed_in_tenant(session: AsyncSession, tenant_id: int) -> list[AppUser]:
-    """Lokale (nicht-SSO) Nicht-Superadmin-Konten, deren HEIMAT (`tenant_id`) exakt der
-    aktive Mandant ist -- Grundlage der Access-Rescope (Sicherheitsfix): die Access-Seite
-    zeigt jedem Aufrufer (Superadmin eingeschlossen) NUR die HEIM-Konten des jeweils
-    AKTIVEN Tenants, nie eine Zuweisungs-Vereinigung (`list_local_granted_to_tenants`, die
-    weiterhin für Grants gilt, s.u.) und nie eine instanzweite oder andere Tenant-Liste.
-    Schliesst Superadmins IMMER aus (`role != 'superadmin'`) -- sie sind instanzweit und
-    gehören keinem Kunden-Heim an; ihre eigene Liste liefert `list_users` separat nur im
-    DEFAULT-Kontext (`superadmins`-Schlüssel)."""
+    """Local (non-SSO) non-superadmin accounts whose HOME (`tenant_id`) is exactly the
+    active tenant -- basis for the access rescope (security fix): the access page
+    shows every caller (superadmin included) ONLY the HOME accounts of the respectively
+    ACTIVE tenant, never a union of assignments (`list_local_granted_to_tenants`, which
+    still applies for grants, see below) and never an instance-wide or other tenant's list.
+    ALWAYS excludes superadmins (`role != 'superadmin'`) -- they are instance-wide and
+    belong to no customer home; their own list is delivered separately by `list_users`
+    only in the DEFAULT context (`superadmins` key)."""
     res = await session.execute(
         select(AppUser)
         .where(
@@ -173,13 +172,13 @@ async def list_local_homed_in_tenant(session: AsyncSession, tenant_id: int) -> l
 async def list_local_granted_to_tenants(
     session: AsyncSession, tenant_ids: set[int]
 ) -> list[AppUser]:
-    """Lokale (nicht-SSO) Admins/Auditoren mit einer `admin_tenant`- ODER
-    `auditor_tenant`-Zuweisung auf einen der `tenant_ids` -- Pendant zu
-    `list_sso_in_tenants` für lokale Konten auf der gescopten Access-Seite (Task 3).
+    """Local (non-SSO) admins/auditors with an `admin_tenant` OR
+    `auditor_tenant` assignment on one of the `tenant_ids` -- counterpart to
+    `list_sso_in_tenants` for local accounts on the scoped access page (Task 3).
 
-    Schliesst Superadmins IMMER aus (`role != 'superadmin'`) -- sie sind instanzweit und
-    dürfen einem lokalen Admin nie angezeigt werden, selbst wenn (was nicht vorkommen
-    sollte) irgendeine Zuweisungszeile existierte."""
+    ALWAYS excludes superadmins (`role != 'superadmin'`) -- they are instance-wide and
+    must never be shown to a local admin, even if (which should not happen)
+    some assignment row existed."""
     if not tenant_ids:
         return []
     res = await session.execute(
@@ -204,37 +203,37 @@ async def list_local_granted_to_tenants(
 async def delete(session: AsyncSession, user_id: int) -> None:
     user = await session.get(AppUser, user_id)
     if user is not None:
-        # ALLE Sessions zuerst und explizit entfernen. Zwei Fallstricke:
-        # 1. `list_sessions` blendet widerrufene/abgelaufene Sessions aus, deren
-        #    Fremdschlüssel aber weiter auf den Benutzer zeigt — nach einem Logout
-        #    scheiterte das Löschen so an user_session_user_id_fkey.
-        # 2. Zwischen AppUser und UserSession ist keine Relationship definiert, der
-        #    ORM kennt die Abhängigkeit also nicht und würde die Reihenfolge frei
-        #    wählen. Ein direktes DELETE läuft sofort und damit garantiert zuerst.
+        # Remove ALL sessions first and explicitly. Two pitfalls:
+        # 1. `list_sessions` hides revoked/expired sessions whose foreign key still
+        #    points at the user -- after a logout, the delete would then fail on
+        #    user_session_user_id_fkey.
+        # 2. No relationship is defined between AppUser and UserSession, so the ORM
+        #    doesn't know about the dependency and would pick the order freely. A
+        #    direct DELETE runs immediately and is thus guaranteed to run first.
         await session.execute(sa_delete(UserSession).where(UserSession.user_id == user_id))
         await session.delete(user)
         await session.commit()
 
 
 async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:
-    """Alle PER SSO an diesen Tenant gebundenen Konten löschen (samt ihren Sitzungen) --
-    Teil der harten Tenant-Löschkaskade (`admin_tenants.delete_tenant`): der FK
-    `app_user.tenant_id` steht auf `ON DELETE SET NULL`, würde diese Konten beim Löschen
-    des Tenants also nicht mitnehmen, sondern zu instanzweit aussehenden Waisenkonten
-    machen. Sitzungen zuerst, aus demselben Grund wie in `delete()`: kein ORM-Relationship
-    zwischen `AppUser` und `UserSession`, ein direktes DELETE erzwingt die Reihenfolge.
+    """Delete all accounts bound to this tenant VIA SSO (together with their sessions) --
+    part of the hard tenant delete cascade (`admin_tenants.delete_tenant`): the FK
+    `app_user.tenant_id` is `ON DELETE SET NULL`, so it would not take these accounts
+    down with the tenant delete, but would instead turn them into orphan accounts that
+    look instance-wide. Sessions first, for the same reason as in `delete()`: no ORM
+    relationship between `AppUser` and `UserSession`, a direct DELETE enforces the order.
 
-    Carry-forward-Fix (Whole-Branch-Review, analog zu `delete_user`s
-    `user_token_repo.delete_created_by`-Aufruf): `user_token.created_by` hat KEIN
-    `ON DELETE` -- ein gelöschtes Erstellerkonto darf ein noch gültiges Token eines ANDEREN
-    Nutzers nicht mitreissen. War einer der hier gelöschten SSO-Admins Ersteller eines
-    Tokens (z. B. eine von ihm verschickte Einladung/ein Reset-Link), schlug das DELETE
-    unten bislang mit einem `IntegrityError` fehl -- dieser Pfad war der EINZIGE der beiden
-    Lösch-Kaskaden, der diesen Aufräumschritt nicht kannte. Die EIGENEN Tokens der Konten
-    (`app_user_id`) kaskadieren weiterhin automatisch (`ON DELETE CASCADE`), nur die
-    `created_by`-Seite muss hier explizit geräumt werden.
+    Carry-forward fix (whole-branch review, analogous to `delete_user`'s
+    `user_token_repo.delete_created_by` call): `user_token.created_by` has NO
+    `ON DELETE` -- a deleted creator account must not take down a still-valid token of
+    ANOTHER user with it. If one of the SSO admins deleted here was the creator of a
+    token (e.g. an invitation they sent, or a reset link), the DELETE below used to fail
+    with an `IntegrityError` -- this path was the ONLY one of the two delete cascades
+    that did not know about this cleanup step. The accounts' OWN tokens
+    (`app_user_id`) still cascade automatically (`ON DELETE CASCADE`), only the
+    `created_by` side needs to be cleared explicitly here.
 
-    Gibt die Anzahl gelöschter Konten zurück (für Audit-Details der aufrufenden Route).
+    Returns the number of deleted accounts (for the audit details of the calling route).
     """
     res = await session.execute(
         select(AppUser.id).where(AppUser.is_sso.is_(True), AppUser.tenant_id == tenant_id)
@@ -248,7 +247,7 @@ async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:
     return len(ids)
 
 
-# ---- Sessions (Refresh-Token-Rotation) ------------------------------------- #
+# ---- Sessions (refresh token rotation) ------------------------------------- #
 async def create_session(
     session: AsyncSession,
     *,
@@ -295,7 +294,7 @@ async def list_sessions(session: AsyncSession, user_id: int) -> list[UserSession
 
 
 async def revoke_others(session: AsyncSession, user_id: int, keep_jti: str | None) -> int:
-    """Alle aktiven Sitzungen des Users ausser der aktuellen abmelden."""
+    """Log out all active sessions of the user except the current one."""
     count = 0
     for us in await list_sessions(session, user_id):
         if us.refresh_jti != keep_jti:
@@ -306,7 +305,7 @@ async def revoke_others(session: AsyncSession, user_id: int, keep_jti: str | Non
 
 
 async def prune_sessions(session: AsyncSession, user_id: int) -> None:
-    """Abgelaufene/abgemeldete Sitzungs-Datensätze des Users entfernen (Aufräumen)."""
+    """Remove expired/logged-out session records of the user (cleanup)."""
     now = dt.datetime.now(dt.UTC)
     res = await session.execute(
         select(UserSession).where(
@@ -320,7 +319,7 @@ async def prune_sessions(session: AsyncSession, user_id: int) -> None:
 
 
 async def delete_session_by_jti(session: AsyncSession, jti: str) -> None:
-    """Sitzung vollständig entfernen (Abmeldung, Inaktivität) statt nur zu widerrufen."""
+    """Remove the session entirely (logout, inactivity) instead of just revoking it."""
     await session.execute(sa_delete(UserSession).where(UserSession.refresh_jti == jti))
     await session.commit()
 

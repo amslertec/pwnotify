@@ -1,10 +1,10 @@
-"""Microsoft-Graph-Client (App-Registration, Client-Credentials-Flow).
+"""Microsoft Graph client (app registration, client credentials flow).
 
-- Token via MSAL (blockierend -> in Thread ausgelagert), gecacht bis kurz vor Ablauf.
-- Pagination über ``@odata.nextLink``.
-- Throttling: 429 mit ``Retry-After`` wird respektiert (exponential backoff via tenacity).
-- ``$select`` für minimale Payloads.
-- Permission-Erkennung: der App-Token trägt die gewährten App-Rollen im ``roles``-Claim.
+- Token via MSAL (blocking -> offloaded to a thread), cached until shortly before expiry.
+- Pagination via ``@odata.nextLink``.
+- Throttling: 429 with ``Retry-After`` is honored (exponential backoff via tenacity).
+- ``$select`` for minimal payloads.
+- Permission detection: the app token carries the granted app roles in the ``roles`` claim.
 """
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ log = get_logger("graph")
 
 REQUIRED_PERMISSIONS = ["User.Read.All", "Domain.Read.All", "Mail.Send"]
 
-# Nur nötig, wenn eine Gruppe konfiguriert ist (gruppenbasierter Sync, SSO-Rollen).
-# Fehlt sie, scheitern die betroffenen Abfragen mit 403 — deshalb darf der
-# Verbindungstest sie nicht pauschal ignorieren, aber auch nicht pauschal verlangen.
+# Only needed when a group is configured (group-based sync, SSO roles).
+# Missing it fails the affected queries with 403 — so the connection test may
+# neither ignore it outright nor require it outright.
 GROUP_PERMISSION = "GroupMember.Read.All"
 
 # $top=999 -> ~1M rows per paginated call, comfortably above any real tenant/group size --
@@ -152,20 +152,19 @@ class GraphClient:
                 ) from exc
         return self._app
 
-    # -- HTTP-Verbindung ----------------------------------------------------- #
+    # -- HTTP connection ------------------------------------------------------ #
     def _shared_http(self) -> httpx.AsyncClient:
-        """Wiederverwendbarer Client — spart je Aufruf TCP- und TLS-Handshake.
+        """Reusable client — saves a TCP/TLS handshake per call.
 
-        Beim Massenversand fällt das ins Gewicht: gemessen rund 26 ms pro Mail, die
-        sonst nur für den Verbindungsaufbau draufgehen. Wird lazy erzeugt und über
-        :meth:`aclose` geschlossen.
+        This matters during mass sends: measured at roughly 26 ms per mail spent purely
+        on connection setup otherwise. Created lazily and closed via :meth:`aclose`.
         """
         if self._http is None or self._http.is_closed:
             self._http = httpx.AsyncClient(timeout=30)
         return self._http
 
     async def aclose(self) -> None:
-        """Offene Verbindungen schliessen. Mehrfach aufrufbar."""
+        """Close open connections. Safe to call more than once."""
         if self._http is not None and not self._http.is_closed:
             await self._http.aclose()
         self._http = None
@@ -266,12 +265,12 @@ class GraphClient:
     async def test_connection(
         self, *, extra_permissions: list[str] | None = None
     ) -> GraphConnectionResult:
-        """Prüft Token und Berechtigungen.
+        """Checks the token and permissions.
 
-        ``extra_permissions`` ergänzt die Basisrechte um solche, die nur für aktivierte
-        Funktionen nötig sind (z. B. ``GroupMember.Read.All``, sobald eine Gruppe
-        konfiguriert ist). Ohne das meldet der Test „alles vorhanden“, während der
-        gruppenbasierte Sync später mit 403 scheitert.
+        ``extra_permissions`` adds to the base permissions with ones only needed for
+        enabled features (e.g. ``GroupMember.Read.All`` once a group is configured).
+        Without this, the test would report "everything present" while the group-based
+        sync later fails with 403.
         """
         try:
             token = await self._acquire_token()
@@ -288,7 +287,7 @@ class GraphClient:
         )
 
     async def get_password_validity_map(self) -> tuple[int | None, dict[str, int]]:
-        """Liefert (default_validity, {domain_suffix: validity}) aus /domains."""
+        """Returns (default_validity, {domain_suffix: validity}) from /domains."""
         default_validity: int | None = None
         by_domain: dict[str, int] = {}
         async with httpx.AsyncClient(timeout=30) as client:
@@ -303,7 +302,7 @@ class GraphClient:
                     validity = dom.get("passwordValidityPeriodInDays")
                     if validity is None:
                         continue
-                    # 2147483647 = "läuft nie ab"
+                    # 2147483647 = "never expires"
                     v = None if validity >= 2147483647 else int(validity)
                     if v is not None:
                         by_domain[dom["id"].lower()] = v
@@ -317,7 +316,7 @@ class GraphClient:
         return default_validity, by_domain
 
     async def iter_users(self) -> AsyncIterator[dict[str, Any]]:
-        """Alle Benutzer (paginiert, minimales $select)."""
+        """All users (paginated, minimal $select)."""
         async with httpx.AsyncClient(timeout=60) as client:
             url = f"{self.config.base}/v1.0/users?$select={USER_SELECT}&$top=999"
             pages = 0
@@ -333,10 +332,10 @@ class GraphClient:
                 url = self._next_link(data)
 
     async def get_user_photo(self, user_id: str) -> bytes | None:
-        """Profilfoto eines Benutzers (Bytes) oder None, wenn keins vorhanden ist.
+        """A user's profile photo (bytes), or None if none exists.
 
-        Nutzt die bereits benötigte App-Berechtigung ``User.Read.All`` — keine
-        zusätzliche Permission nötig. Fehler/kein Foto -> None (Fallback Initialen).
+        Uses the already-required app permission ``User.Read.All`` — no
+        extra permission needed. Error/no photo -> None (falls back to initials).
         """
         try:
             token = await self._acquire_token()
@@ -353,10 +352,10 @@ class GraphClient:
         return None
 
     async def iter_group_users(self, group_id: str) -> AsyncIterator[dict[str, Any]]:
-        """Transitive Benutzer-Mitglieder einer Gruppe (voller $select, paginiert).
+        """Transitive user members of a group (full $select, paginated).
 
-        ``transitiveMembers`` löst auch verschachtelte Gruppen auf; der OData-Cast
-        ``microsoft.graph.user`` beschränkt auf echte Benutzerkonten (keine Geräte/SPs).
+        ``transitiveMembers`` also resolves nested groups; the OData cast
+        ``microsoft.graph.user`` restricts to actual user accounts (no devices/SPs).
         """
         async with httpx.AsyncClient(timeout=60) as client:
             url = (
@@ -376,7 +375,7 @@ class GraphClient:
                 url = self._next_link(data)
 
     async def get_group_members(self, group_id: str) -> list[dict[str, Any]]:
-        """Benutzer-Mitglieder einer Gruppe (id, upn, displayName, accountEnabled)."""
+        """User members of a group (id, upn, displayName, accountEnabled)."""
         members: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=30) as client:
             url = (
@@ -397,7 +396,7 @@ class GraphClient:
         return members
 
     async def get_group_member_ids(self, group_id: str) -> set[str]:
-        """Transitive Mitglieder-IDs einer Gruppe (für Exclude-Gruppen)."""
+        """Transitive member IDs of a group (for exclude groups)."""
         ids: set[str] = set()
         async with httpx.AsyncClient(timeout=30) as client:
             url = f"{self.config.base}/v1.0/groups/{group_id}/transitiveMembers?$select=id&$top=999"
@@ -416,15 +415,15 @@ class GraphClient:
         return ids
 
     async def check_member_groups(self, user_id: str, group_ids: list[str]) -> set[str]:
-        """Welche der genannten Gruppen enthalten den Benutzer (transitiv)?
+        """Which of the given groups contain the user (transitively)?
 
-        Nötig für grosse Tenants: Ist ein Benutzer in mehr als 200 Gruppen, liefert Entra
-        im Token keine Gruppenliste mehr, sondern nur einen Verweis ("Overage"). Ohne
-        Rückfrage wären dort ausgerechnet die Konten mit vielen Mitgliedschaften — meist
-        die Administratoren — von der Anmeldung ausgesperrt.
+        Needed for large tenants: if a user is in more than 200 groups, Entra no longer
+        returns a group list in the token, only a reference ("overage"). Without this
+        follow-up call, the very accounts with many memberships — usually the
+        administrators — would be locked out of login.
 
-        Braucht keine zusätzliche Berechtigung: ``GroupMember.Read.All`` ist bereits
-        gesetzt, sobald Gruppen konfiguriert sind.
+        Needs no extra permission: ``GroupMember.Read.All`` is already set once groups
+        are configured.
         """
         if not group_ids:
             return set()
@@ -442,7 +441,7 @@ class GraphClient:
         text_body: str | None = None,
         inline_images: list[tuple[str, bytes, str]] | None = None,
     ) -> None:
-        """Versand via Graph ``sendMail`` (Mail.Send, im Namen von ``sender``)."""
+        """Send via Graph ``sendMail`` (Mail.Send, on behalf of ``sender``)."""
         message: dict[str, Any] = {
             "message": {
                 "subject": subject,
@@ -463,7 +462,7 @@ class GraphClient:
                 }
                 for cid, content, mime in inline_images
             ]
-        # Bewusst der geteilte Client: sendMail ist der einzige Aufruf, der pro Lauf
-        # hundert- bis tausendfach vorkommt — hier zahlt sich Verbindungs-Pooling aus.
+        # Deliberately the shared client: sendMail is the one call that happens
+        # hundreds to thousands of times per run — connection pooling pays off here.
         url = f"{self.config.base}/v1.0/users/{sender}/sendMail"
         await self._request(self._shared_http(), "POST", url, json=message)

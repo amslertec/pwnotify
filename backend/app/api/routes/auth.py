@@ -1,4 +1,4 @@
-"""Lokale Authentifizierung (JWT-Cookies, Refresh-Rotation, Brute-Force-Schutz)."""
+"""Local authentication (JWT cookies, refresh rotation, brute-force protection)."""
 
 from __future__ import annotations
 
@@ -98,14 +98,14 @@ _DUMMY_HASH = hash_password(secrets.token_hex(16))
 
 
 # --------------------------------------------------------------------------- #
-# Profilbild (lokal hochgeladen oder aus Entra gecacht) — als quadratisches PNG
+# Avatar (locally uploaded or cached from Entra) -- as a square PNG
 # --------------------------------------------------------------------------- #
 def _avatar_dir() -> Path:
-    # Bewusst KEIN mkdir hier: diese Funktion wird auch auf reinen LESEpfaden benutzt
-    # (`_user_out`, GET /me/avatar). Ein mkdir auf einem nicht schreib-/erreichbaren
-    # `data_dir` (frischer Deploy vor Volume-Mount, Tests/CI ohne `/data`) würde sonst
-    # `PermissionError: '/data'` werfen und jede Nutzer-Serialisierung 500en. Das Verzeichnis
-    # wird ausschliesslich unmittelbar VOR einem Schreibzugriff angelegt (s. `_ensure_avatar_dir`).
+    # Deliberately NO mkdir here: this function is also used on pure READ paths
+    # (`_user_out`, GET /me/avatar). An mkdir on a non-writable/unreachable
+    # `data_dir` (fresh deploy before volume mount, tests/CI without `/data`) would otherwise
+    # raise `PermissionError: '/data'` and 500 every user serialization. The directory
+    # is created ONLY immediately before a write access (see `_ensure_avatar_dir`).
     return Path(_settings.data_dir) / "avatars"
 
 
@@ -120,9 +120,9 @@ def _avatar_path(user_id: int) -> Path:
 
 
 def _avatar_mtime(user_id: int) -> int | None:
-    """mtime des Profilbilds als Cache-Buster, oder `None` wenn kein Bild existiert bzw. das
-    `data_dir` nicht lesbar ist. Jeder `OSError` (fehlende Datei, nicht erreichbares `/data`)
-    -> "kein Avatar", damit die Nutzer-Serialisierung nie an einem Dateisystemzustand 500t."""
+    """Avatar mtime as a cache buster, or `None` if no image exists or the
+    `data_dir` is not readable. Every `OSError` (missing file, unreachable `/data`)
+    -> "no avatar", so user serialization never 500s on a filesystem state."""
     try:
         return int(_avatar_path(user_id).stat().st_mtime)
     except OSError:
@@ -138,7 +138,7 @@ _MAX_IMAGE_PIXELS = 24_000_000
 
 
 def _process_avatar(data: bytes) -> bytes | None:
-    """Bild zentriert quadratisch zuschneiden -> 256x256 PNG. None bei Fehler."""
+    """Crop image centered to a square -> 256x256 PNG. None on error."""
     try:
         from PIL import Image
 
@@ -154,12 +154,12 @@ def _process_avatar(data: bytes) -> bytes | None:
         out = io.BytesIO()
         img.save(out, format="PNG", optimize=True)
         return out.getvalue()
-    except Exception:  # ungültige/kaputte Bilddatei
+    except Exception:  # invalid/corrupt image file
         return None
 
 
 async def _cache_sso_avatar(user_id: int, upn: str, settings: dict[str, object]) -> None:
-    """Profilfoto des SSO-Benutzers aus Entra holen und als Avatar cachen (best effort)."""
+    """Fetch the SSO user's profile photo from Entra and cache it as an avatar (best effort)."""
     if not settings.get("graph.client_secret"):
         return
     graph = GraphClient(
@@ -180,18 +180,18 @@ async def _cache_sso_avatar(user_id: int, upn: str, settings: dict[str, object])
 
 
 async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | None) -> UserOut:
-    """UserOut inkl. Avatar-Status (Existenz + mtime als Cache-Buster) und Mandanten-Info
-    (Phase 4a Task 5): der aktive Mandant (aus Claim/Session, ungeprüft -- reine Anzeige,
-    siehe `ActiveTenantClaim`-Docstring) sowie die Liste der Mandanten, zu denen dieses
-    Konto umschalten darf (`tenant_repo.allowed_tenant_ids`: None -> alle aktiven, sonst
-    genau diese, jeweils weiter auf tatsächlich AKTIVE Tenants beschränkt). Der Default-
-    Tenant steht dabei IMMER an Position 0 von `switchable_tenants` (Rest nach Name, Design
-    §8) -- damit jeder Konsument dieselbe, deterministische Reihenfolge sieht. Zusätzlich
-    trägt `UserOut.multi_tenant_mode` (Task 5) den instanzweiten Schalterstand, gelesen über
-    `services.instance_settings.read_mode` (immer default-tenant-gescopt, siehe dort).
-    `UserOut.active_tenant_is_default` (Context-Gating v2, Matrix B) meldet, ob der aktive
-    Mandant der Default-Tenant ist -- reuse des `default` unten (bereits für den
-    switchable-first-Sort aufgelöst), keine zusätzliche Abfrage."""
+    """UserOut incl. avatar status (existence + mtime as cache buster) and tenant info
+    (Phase 4a Task 5): the active tenant (from claim/session, unverified -- display only,
+    see the `ActiveTenantClaim` docstring) plus the list of tenants this account is
+    allowed to switch to (`tenant_repo.allowed_tenant_ids`: None -> all active ones, otherwise
+    exactly these, further restricted to actually ACTIVE tenants). The default
+    tenant is ALWAYS at position 0 of `switchable_tenants` (rest sorted by name, Design
+    §8) -- so every consumer sees the same, deterministic order. `UserOut.multi_tenant_mode`
+    (Task 5) additionally carries the instance-wide switch state, read via
+    `services.instance_settings.read_mode` (always default-tenant-scoped, see there).
+    `UserOut.active_tenant_is_default` (Context-Gating v2, Matrix B) reports whether the active
+    tenant is the default tenant -- reuses `default` below (already resolved for the
+    switchable-first sort), no extra query."""
     avatar_mtime = _avatar_mtime(user.id) if user.id is not None else None
 
     active_tenant: TenantRef | None = None
@@ -232,13 +232,13 @@ async def _user_out(session: SessionDep, user: AppUser, active_tenant_id: int | 
 async def _complete_login(
     request: Request, response: Response, session: SessionDep, user: AppUser
 ) -> LoginResponse:
-    """Volltoken ausstellen + Sitzung anlegen (nach Passwort bzw. 2FA-Code)."""
-    # Aktiven Tenant fürs Login bestimmen -- IMMER gegen `is_allowed` gegenprüfen, nicht
-    # `resolve_initial_tenant` blind übernehmen: die Auflösung dort gated NICHT auf
-    # is_active (siehe deren Docstring), sonst käme z. B. ein inzwischen deaktivierter,
-    # eigener SSO-Tenant als aktiver Claim ins Token/`active_tenant_id` -- eine
-    # Verfügbarkeitslücke, kein Cross-Tenant-Leck, aber trotzdem falsch. Uniform für alle
-    # Kontoarten, kein Sonderfall.
+    """Issue full tokens + create a session (after password or 2FA code)."""
+    # Determine the active tenant for login -- ALWAYS re-check against `is_allowed`, don't
+    # blindly take `resolve_initial_tenant`: its resolution does NOT gate on
+    # is_active (see its docstring), otherwise e.g. a meanwhile deactivated,
+    # own SSO tenant would end up as the active claim in the token/`active_tenant_id` -- an
+    # availability gap, not a cross-tenant leak, but still wrong. Uniform for all
+    # account types, no special case.
     #
     # Resolved BEFORE the audit record below (Task 7/M11) so `LOGIN_SUCCESS` can be
     # tenant-attributed with the SAME `tid` the session actually logs into -- moved up from
@@ -308,8 +308,8 @@ async def login(
                     request=request,
                     detail={"factor": "password", "lockout_min": _settings.login_lockout_min},
                 )
-        # Auch der unbekannte Benutzername wird protokolliert — genau daran erkennt man
-        # später ein Durchprobieren von Konten.
+        # The unknown username is logged too -- that's exactly how account
+        # enumeration attempts are spotted later on.
         await audit.record(
             session,
             action=audit.LOGIN_FAILED,
@@ -342,16 +342,16 @@ async def login(
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
 
-    # 2FA aktiv -> Zwischenschritt: kurzlebiger 2fa-Cookie, noch keine volle Sitzung.
+    # 2FA active -> intermediate step: short-lived 2fa cookie, no full session yet.
     if user.totp_enabled and user.totp_secret:
         await session.commit()
         set_2fa_cookie(response, create_2fa_token(str(user.id)))
         return LoginResponse(two_factor_required=True)
 
-    # 2FA-Pflicht, aber noch nicht eingerichtet: ebenfalls keine volle Sitzung. Der
-    # 2fa-Cookie erlaubt genau zwei Dinge — einrichten und aktivieren. Erst danach gibt
-    # es Tokens. Eine Sitzung auszustellen und die Oberfläche hinterher zu sperren wäre
-    # schwächer: Das Access-Token wäre bereits gültig.
+    # 2FA required but not yet set up: also no full session. The
+    # 2fa cookie allows exactly two things -- setting up and activating. Only after that
+    # are tokens issued. Issuing a session and locking down the UI afterwards would be
+    # weaker: the access token would already be valid.
     if not user.is_sso:
         # `auth.require_2fa` is a PER-TENANT setting (no `instance.` prefix in
         # `settings_schema.py`): each customer governs its own requirement. Reading it on the
@@ -399,9 +399,9 @@ async def two_factor_verify(
         clear_2fa_cookie(response)
         raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
 
-    # Auch der zweite Faktor unterliegt der Kontosperre: Wer das Passwort bereits hat,
-    # könnte den sechsstelligen Code sonst unbegrenzt raten — das IP-Rate-Limit allein
-    # hält einen Angreifer mit mehreren Adressen nicht auf.
+    # The second factor is subject to the account lockout too: whoever already has the
+    # password could otherwise guess the six-digit code without limit -- the IP rate limit alone
+    # does not stop an attacker with multiple addresses.
     now = utcnow()
     if user.locked_until and user.locked_until > now:
         clear_2fa_cookie(response)
@@ -409,8 +409,8 @@ async def two_factor_verify(
             "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
         )
 
-    # Jeder TOTP-Code gilt nur einmal. Er ist rund 90 s gültig; ohne diese Sperre käme
-    # jemand, der ihn abfängt (Schulterblick, Mitschnitt), damit ein zweites Mal hinein.
+    # Every TOTP code is valid only once. It is valid for roughly 90 s; without this lock,
+    # someone who intercepts it (shoulder surfing, capture) could get in a second time with it.
     schritt = matching_step(decrypt(user.totp_secret), body.code)
     ok = schritt is not None and schritt != user.totp_last_step
     if schritt is not None and schritt == user.totp_last_step:
@@ -426,7 +426,7 @@ async def two_factor_verify(
     if ok:
         user.totp_last_step = schritt
     else:
-        # Recovery-Code als Fallback (verbraucht ihn).
+        # Recovery code as fallback (consumes it).
         hashes: list[str] = json.loads(user.recovery_codes or "[]")
         matched = match_recovery_code(body.code, hashes)
         if matched:
@@ -470,12 +470,12 @@ async def two_factor_verify(
 async def _end_if_idle(
     session: SessionDep, response: Response, us: object, now: dt.datetime
 ) -> bool:
-    """Beendet die Sitzung, wenn seit ``last_used_at`` zu lange nichts passiert ist.
+    """Ends the session if nothing has happened since ``last_used_at`` for too long.
 
-    Fängt den geschlossenen Browser und gestohlene Tokens. ``last_used_at`` wird sowohl
-    beim Token-Refresh als auch durch den Aktivitäts-Ping des Frontends aktualisiert —
-    so bleibt ein aktiv arbeitender Benutzer angemeldet, auch wenn er gerade keine
-    API-Aufrufe auslöst. Gibt True zurück, wenn abgemeldet wurde.
+    Catches the closed browser and stolen tokens. ``last_used_at`` is updated both
+    on token refresh and by the frontend's activity ping -- so an actively
+    working user stays logged in even while not currently triggering
+    API calls. Returns True if the session was ended.
     """
     idle_min = _settings.idle_timeout_min
     if idle_min <= 0 or us.last_used_at >= now - dt.timedelta(minutes=idle_min):  # type: ignore[attr-defined]
@@ -489,7 +489,7 @@ async def _end_if_idle(
     await user_repo.bump_token_generation(session, us.user_id)  # type: ignore[attr-defined]
     clear_auth_cookies(response)
     log.info("session_idle_timeout", user_id=us.user_id, idle_min=idle_min)  # type: ignore[attr-defined]
-    # Sichtbar machen, dass es eine Abmeldung war — sonst fehlt sie im Protokoll.
+    # Make it visible that this was a logout -- otherwise it's missing from the audit trail.
     actor = await user_repo.get(session, us.user_id)  # type: ignore[attr-defined]
     await audit.record(session, action=audit.LOGOUT, actor=actor, detail={"reason": "idle_timeout"})
     await session.commit()
@@ -499,12 +499,12 @@ async def _end_if_idle(
 @router.post("/activity", status_code=204)
 @limiter.limit(_settings.auth_refresh_rate_limit)
 async def activity(request: Request, response: Response, session: SessionDep) -> Response:
-    """Aktivitäts-Ping des Frontends: hält ``last_used_at`` an echter Nutzeraktivität aktuell.
+    """Frontend activity ping: keeps ``last_used_at`` current with real user activity.
 
-    Ohne diesen Ping würde ``last_used_at`` nur beim Token-Refresh vorrücken. Wer aktiv
-    liest oder scrollt, ohne API-Aufrufe auszulösen (z. B. auf einer Seite ohne Polling),
-    liefe sonst trotz Aktivität in den Idle-Timeout. Bewusst schlank: keine Token-Rotation,
-    kein Body. Ist die Sitzung bereits abgelaufen (z. B. nach Standby), wird sie beendet.
+    Without this ping, ``last_used_at`` would only advance on token refresh. Someone actively
+    reading or scrolling without triggering API calls (e.g. on a page without polling)
+    would otherwise hit the idle timeout despite being active. Deliberately lean: no token
+    rotation, no body. If the session has already expired (e.g. after standby), it is ended.
     """
     token = request.cookies.get(REFRESH_COOKIE)
     if not token:
@@ -540,7 +540,7 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
 
     us = await user_repo.get_session_by_jti(session, payload["jti"])
     now = utcnow()
-    # Reuse-/Diebstahl-Erkennung: bekanntes, aber revoked/abweichendes Token -> alles sperren.
+    # Reuse/theft detection: known but revoked/mismatched token -> lock everything down.
     if us is None or us.revoked or us.token_hash != hash_token(token) or us.expires_at < now:
         if us is not None:
             await user_repo.revoke_all(session, us.user_id)
@@ -558,12 +558,12 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
         clear_auth_cookies(response)
         raise AuthError("Konto nicht verfügbar.", code="account_unavailable")
 
-    # Rotation in-place: dieselbe Sitzung behält eine Zeile, Token wird ausgetauscht. Der
-    # aktive Tenant MUSS erhalten bleiben (`us.active_tenant_id` selbst bleibt unverändert --
-    # dieselbe Zeile, kein Reset) -- ohne `active_tenant=` hier verlöre das neue Access-Token
-    # den Claim bei JEDEM Refresh (alle `access_token_ttl_min`), und `get_tenant_session`
-    # würde den Tenant über `resolve_initial_tenant` neu auflösen statt den zuvor über
-    # `/auth/switch-tenant` gewählten aktiven Tenant beizubehalten.
+    # In-place rotation: the same session keeps one row, the token gets swapped out. The
+    # active tenant MUST be preserved (`us.active_tenant_id` itself stays unchanged --
+    # same row, no reset) -- without `active_tenant=` here, the new access token would lose
+    # the claim on EVERY refresh (every `access_token_ttl_min`), and `get_tenant_session`
+    # would re-resolve the tenant via `resolve_initial_tenant` instead of keeping the active
+    # tenant previously chosen via `/auth/switch-tenant`.
     pair = issue_token_pair(
         str(user.id), active_tenant=us.active_tenant_id, generation=user.token_generation
     )
@@ -584,8 +584,8 @@ async def logout(request: Request, response: Response, session: SessionDep) -> M
     if token:
         try:
             payload = decode_token(token, expected_type="refresh")
-            # Beim Abmelden die Sitzung entfernen, nicht nur widerrufen: sie soll weder
-            # in der Sitzungsliste noch als Datensatz zurückbleiben.
+            # On logout, remove the session rather than just revoking it: it should remain
+            # neither in the session list nor as a record.
             await user_repo.delete_session_by_jti(session, payload["jti"])
             actor = await user_repo.get(session, int(payload["sub"]))
             if actor is not None and actor.id is not None:
@@ -614,11 +614,11 @@ async def switch_tenant(
     user: CurrentUser,
     session: SessionDep,
 ) -> UserOut:
-    """Mandanten-Umschalter (Phase 4a Task 5): setzt den aktiven Mandanten der LAUFENDEN
-    Sitzung (nicht bloss den Anzeige-Claim) -- über `is_allowed` gegengeprüft, sonst 403,
-    bevor irgendetwas geändert wird. Erst danach: `user_session.active_tenant_id`
-    aktualisieren + Token-Paar mit dem neuen Claim neu ausstellen (gleiche Zeile, neue
-    `jti`, exakt das Rotationsmuster aus `refresh`/`_complete_login`) + Cookies setzen.
+    """Tenant switcher (Phase 4a Task 5): sets the active tenant of the CURRENT
+    session (not just the display claim) -- re-checked against `is_allowed`, otherwise 403,
+    before anything is changed. Only then: update `user_session.active_tenant_id`
+    + reissue the token pair with the new claim (same row, new
+    `jti`, exactly the rotation pattern from `refresh`/`_complete_login`) + set cookies.
     """
     if not await tenant_repo.is_allowed(session, user, body.tenant_id):
         raise ForbiddenError("Kein Zugriff auf diesen Mandanten.", code="tenant_forbidden")
@@ -642,9 +642,9 @@ async def switch_tenant(
     ):
         raise AuthError("Sitzung ungültig. Bitte erneut anmelden.", code="session_invalid")
 
-    # Wie `refresh`: ohne diese Prüfung könnte man den Idle-Timeout umgehen, indem man
-    # statt `refresh` einfach `switch-tenant` aufruft -- die Sitzung bliebe dann unbegrenzt
-    # am Leben, obwohl niemand mehr aktiv ist.
+    # Like `refresh`: without this check, the idle timeout could be bypassed by simply
+    # calling `switch-tenant` instead of `refresh` -- the session would then stay alive
+    # indefinitely even though no one is active anymore.
     if await _end_if_idle(session, response, us, now):
         raise AuthError(
             "Sitzung wegen Inaktivität beendet. Bitte erneut anmelden.",
@@ -679,11 +679,11 @@ async def update_profile(
     session: SessionDep,
     active_tenant: ActiveTenantClaim,
 ) -> UserOut:
-    """Task 5, §7d: `email` ist NUR für lokale Konten editierbar -- ein SSO-Konto bezieht
-    seine Adresse aus Entra, ein hier eingetragener Wert würde sie nur verdecken, ohne am
-    tatsächlichen Entra-Konto etwas zu ändern. Das Feld wird für ein SSO-Konto deshalb
-    stillschweigend IGNORIERT (kein Fehler -- das Frontend blendet es dort ohnehin aus).
-    Diese Adresse ist zugleich der Anker, an den der Admin-Reset-Trigger (§7c) sendet."""
+    """Task 5, §7d: `email` is editable ONLY for local accounts -- an SSO account gets
+    its address from Entra, a value entered here would only mask it without changing
+    the actual Entra account. The field is therefore silently IGNORED for an SSO
+    account (no error -- the frontend hides it there anyway).
+    This address is also the anchor the admin reset trigger (§7c) sends to."""
     user.display_name = (body.display_name or "").strip() or None
     if not user.is_sso:
         user.email = (body.email or "").strip() or None
@@ -747,9 +747,9 @@ async def upload_my_avatar(
     data = await file.read()
     if len(data) > _AVATAR_MAX_BYTES:
         raise PwNotifyError("Datei zu gross (max. 5 MB).", code="file_too_large")
-    # Inhalt muss zum behaupteten Typ passen. Pillow würde Fremdes zwar ohnehin ablehnen,
-    # aber eine klare Meldung ist besser als ein generisches "Ungültige Bilddatei" —
-    # und die Prüfung greift, bevor eine Bibliothek überhaupt an die Bytes geht.
+    # Content must match the claimed type. Pillow would reject something bogus anyway,
+    # but a clear message is better than a generic "invalid image file" --
+    # and the check kicks in before any library even touches the bytes.
     if not imagetype.matches(data, file.content_type or ""):
         raise PwNotifyError(
             "Der Dateiinhalt passt nicht zum angegebenen Format.", code="content_type_mismatch"
@@ -824,12 +824,12 @@ async def revoke_other_sessions(
             current_jti = decode_token(token, expected_type="refresh").get("jti")
     n = await user_repo.revoke_others(session, user.id, current_jti)  # type: ignore[arg-type]
 
-    # Wie change_password: die widerrufenen Sitzungen dürfen nicht bis zu 15 Minuten
-    # lang noch gültige Access-Tokens behalten -- ein verlorenes/gestohlenes Gerät muss
-    # SOFORT abgeschnitten sein. Generation bumpen invalidiert ALLE Access-Tokens des
-    # Users (auch die eigene, aktuell gehaltene); die eigene Sitzung wird daher direkt
-    # im Anschluss mit der neuen Generation neu ausgestellt, damit der Aufrufer selbst
-    # nicht ausgesperrt wird.
+    # Like change_password: the revoked sessions must not keep still-valid access tokens
+    # for up to 15 minutes -- a lost/stolen device must be cut off
+    # IMMEDIATELY. Bumping the generation invalidates ALL of the user's access tokens
+    # (including their own, currently held one); the caller's own session is therefore
+    # immediately reissued afterwards with the new generation so the caller
+    # doesn't get locked out themselves.
     await user_repo.bump_token_generation(session, user.id)  # type: ignore[arg-type]
     await session.refresh(user)
     if current_jti is not None:
@@ -908,10 +908,10 @@ async def change_password(
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
 
-    # Ein Passwortwechsel muss fremde Sitzungen beenden. Sonst behält ein gestohlener
-    # Refresh-Token vollen Zugriff (bis zu `refresh_token_ttl_days`), obwohl der
-    # Benutzer glaubt, ihn mit dem neuen Passwort gerade entzogen zu haben.
-    # Die eigene Sitzung bleibt bestehen — sonst meldet der Wechsel einen selbst ab.
+    # A password change must end other sessions. Otherwise a stolen
+    # refresh token keeps full access (for up to `refresh_token_ttl_days`), even though the
+    # user believes they just revoked it with the new password.
+    # The caller's own session stays alive -- otherwise the change would log them out too.
     current_jti: str | None = None
     token = request.cookies.get(REFRESH_COOKIE)
     if token:
@@ -952,7 +952,7 @@ async def change_password(
 
 
 # --------------------------------------------------------------------------- #
-# 2FA (TOTP) — Verwaltung (nur lokale Konten)
+# 2FA (TOTP) -- management (local accounts only)
 # --------------------------------------------------------------------------- #
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)
 @limiter.limit(_settings.login_rate_limit)
@@ -970,7 +970,7 @@ async def two_factor_setup(
             code="twofa_already_enabled",
         )
     secret = generate_secret()
-    user.totp_secret = encrypt(secret)  # gespeichert, aber noch nicht aktiv
+    user.totp_secret = encrypt(secret)  # stored, but not yet active
     user.totp_enabled = False
     # Security Phase 5, Task 8/M10: issuing a fresh TOTP secret/QR is itself security-
     # relevant (an account takeover of the enrollment step could plant an attacker's own
@@ -1010,8 +1010,8 @@ async def two_factor_enable(
     user.updated_at = utcnow()
     await audit.record(session, action=audit.TWOFA_ENABLED, actor=user, request=request)
 
-    # Kam der Aufruf über den 2FA-Zwischentoken (erzwungene Einrichtung), fehlt noch die
-    # Sitzung — jetzt ist sie verdient. Der Zwischentoken wird ungültig.
+    # If the call came in via the 2FA interim token (forced setup), the session is
+    # still missing -- it's now earned. The interim token becomes invalid.
     if not request.cookies.get(ACCESS_COOKIE):
         clear_2fa_cookie(response)
         await _complete_login(request, response, session, user)
@@ -1093,7 +1093,7 @@ async def two_factor_disable(
     user.totp_secret = None
     user.recovery_codes = None
     user.updated_at = utcnow()
-    # Das Abschalten des zweiten Faktors ist ein Angriffsziel — es muss nachvollziehbar sein.
+    # Disabling the second factor is an attack target -- it must be traceable.
     await audit.record(session, action=audit.TWOFA_DISABLED, actor=user, request=request)
     await session.commit()
     await session.refresh(user)
@@ -1105,7 +1105,7 @@ async def two_factor_disable(
 # --------------------------------------------------------------------------- #
 @router.get("/config")
 async def auth_config(session: SessionDep) -> dict[str, object]:
-    """Öffentlich: teilt der Login-Seite mit, ob SSO verfügbar ist (+ Button-Text)."""
+    """Public: tells the login page whether SSO is available (+ button text)."""
     settings = await SettingsService(session).get_all()
     return {
         "oidc_enabled": oidc.is_configured(settings),
@@ -1162,18 +1162,18 @@ async def oidc_callback(
         result = await oidc.exchange_and_verify(settings, flow, {"code": code, "state": state})
     except AuthError, PwNotifyError:
         return RedirectResponse(f"{base}/login?sso_error=1", status_code=302)
-    # Sicherheitsfix (Phase 4c Task 4): `result.allowed`/`result.role` sind gegen die
-    # OWNER-Session berechnet -- `SettingsService(session).get_all()` oben liest ohne
-    # RLS-Filterung ein undefiniertes Gemisch der `oidc.*`-Zeilen ALLER Kunden, sobald ein
-    # zweiter SSO-Kunde existiert. Diese Werte dürfen deshalb HIER NICHT über Zulassung
-    # entscheiden -- die massgebliche Prüfung erfolgt weiter unten, NACH der `tid`-Auflösung,
-    # gegen die Settings DES tatsächlich gefundenen Kunden. Hier wird nur abgelehnt, was
-    # unabhängig vom Kunden gar nicht erst auflösbar ist: kein Benutzername im Token, oder
-    # keine Gruppeninformation ermittelbar (`result.groups is None` -- weder Token-Claim
-    # noch Graph-Rückfrage) -- ohne Gruppen lässt sich in KEINEM Kunden eine Rolle bestimmen.
+    # Security fix (Phase 4c Task 4): `result.allowed`/`result.role` are computed against the
+    # OWNER session -- `SettingsService(session).get_all()` above reads an undefined mix of
+    # the `oidc.*` rows of ALL customers without RLS filtering, once a
+    # second SSO customer exists. These values must therefore NOT decide admission
+    # HERE -- the authoritative check happens further below, AFTER the `tid` resolution,
+    # against the settings OF the customer actually found. Only what is not resolvable
+    # regardless of customer is rejected here: no username in the token, or
+    # no group information determinable (`result.groups is None` -- neither token claim
+    # nor Graph lookup) -- without groups, no role can be determined for ANY customer.
     if not result.username or result.groups is None:
-        # Abgelehnte SSO-Anmeldung protokollieren: Wer vergeblich versucht hereinzukommen,
-        # gehört ins Protokoll — sonst sieht man einen Angriff auf die Gruppenzuordnung nie.
+        # Log the rejected SSO login attempt: anyone who fails to get in
+        # belongs in the audit trail -- otherwise an attack on group mapping would never be seen.
         await audit.record(
             session,
             action=audit.LOGIN_FAILED,
@@ -1185,27 +1185,27 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
-    # Tenant-Mapping (Phase 4a Task 4): der `tid`-Claim bestimmt den GENAU EINEN Tenant,
-    # an den dieses SSO-Konto gebunden wird -- kein stiller Fallback auf "irgendeinen"
-    # Tenant, sonst könnte ein fremder Entra-Tenant Zugriff auf falsche Kundendaten
-    # bekommen (die Tenant-Isolation greift erst über `active_tenant`, siehe Task 3).
+    # Tenant mapping (Phase 4a Task 4): the `tid` claim determines the ONE EXACT tenant
+    # this SSO account gets bound to -- no silent fallback to "some"
+    # tenant, otherwise a foreign Entra tenant could gain access to the wrong customer's data
+    # (tenant isolation only kicks in via `active_tenant`, see Task 3).
     tenant = await tenant_repo.get_by_entra_tid(session, result.tid) if result.tid else None
     configured_tid = str(settings.get("graph.tenant_id") or "")
     if tenant is None and result.tid and configured_tid and result.tid == configured_tid:
-        # Übergangs-Fallback: die bestehende Single-Tenant-Instanz hat auf ihrem
-        # Default-Tenant noch keinen `entra_tenant_id` gesetzt (nullable bis SSO für
-        # Multi-Tenant konfiguriert ist). Kommt der Benutzer aus GENAU DEM Entra-Tenant,
-        # der für DIESE Instanz konfiguriert ist, bleibt SSO ohne Migrationsschritt
-        # funktionsfähig -- und der Default-Tenant wird für künftige Logins direkt an
-        # diesen `tid` gebunden (Bootstrap, nur einmal nötig).
+        # Transitional fallback: the existing single-tenant instance has not yet set an
+        # `entra_tenant_id` on its default tenant (nullable until SSO is
+        # configured for multi-tenant). If the user comes from EXACTLY the Entra tenant
+        # configured for THIS instance, SSO keeps working without a migration
+        # step -- and the default tenant is bound directly to this `tid` for future
+        # logins (bootstrap, only needed once).
         tenant = await tenant_repo.default_tenant(session)
         if tenant.entra_tenant_id is None:
             tenant.entra_tenant_id = result.tid
 
     if tenant is None:
-        # Unbekannter/fremder `tid`: nicht anmelden. Ein Angreifer aus einem fremden
-        # Entra-Tenant, der zufällig in einer gleichnamigen Gruppen-ID landet, darf sich
-        # so nicht in eine bestehende Instanz einklinken.
+        # Unknown/foreign `tid`: do not log in. An attacker from a foreign
+        # Entra tenant who happens to land in a same-named group ID must not
+        # be able to piggyback into an existing instance this way.
         log.warning("oidc_unknown_tenant", tid=result.tid, username=result.username)
         await audit.record(
             session,
@@ -1218,37 +1218,37 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
-    # Rolle + Zulassung AUTORITATIV bestimmen (Sicherheitsfix, Phase 4c Task 4; Provider-only
-    # SSO, Tenant-Refinements Task 4) -- NICHT `result.role`/`result.allowed`, die oben gegen
-    # die Owner-Session-Gemisch-Settings berechnet wurden. Zwei disjunkte Pfade, allein durch
-    # den Instanz-Modus getrennt: Im MULTI-TENANT-Mode ist SSO ausschliesslich ein Provider-
-    # Personal-Login -- JEDER SSO-Login (auch mit Kunden-`tid`) autorisiert über die TEAM-
-    # Mitgliedschaft (`AssignmentGroup`) und wird auf dem Default-Tenant beheimatet (siehe
-    # `home_tenant_id` unten). Nur der SINGLE-TENANT-Mode bleibt byte-genau bei den per-Kunde-
-    # Rollen-Gruppen-Settings.
-    assert tenant.id is not None  # persistierte Zeile aus der DB
+    # Determine role + admission AUTHORITATIVELY (security fix, Phase 4c Task 4; provider-only
+    # SSO, Tenant Refinements Task 4) -- NOT `result.role`/`result.allowed`, which were computed
+    # above against the owner-session settings mix. Two disjoint paths, separated solely by
+    # the instance mode: in MULTI-TENANT mode, SSO is exclusively a provider
+    # staff login -- EVERY SSO login (even with a customer `tid`) authorizes via TEAM
+    # membership (`AssignmentGroup`) and is homed on the default tenant (see
+    # `home_tenant_id` below). Only SINGLE-TENANT mode stays byte-exact with the per-customer
+    # role-group settings.
+    assert tenant.id is not None  # persisted row from the DB
     multi_tenant = await instance_settings.read_mode(session)
     if multi_tenant:
-        # Provider-Personal (Multi-Tenant-Mode, unabhängig vom gematchten `tid`): Zulassung +
-        # Rolle kommen aus der TEAM-Mitgliedschaft (`AssignmentGroup`), NICHT aus den
-        # Rollen-Gruppen-Settings irgendeines Tenants -- fail-closed ohne Settings-Fallback.
+        # Provider staff (multi-tenant mode, regardless of the matched `tid`): admission +
+        # role come from TEAM membership (`AssignmentGroup`), NOT from any tenant's
+        # role-group settings -- fail-closed with no settings fallback.
         role, allowed = await oidc.resolve_group_role(session, result.groups)
         reason = None if allowed else "not_in_any_team"
     else:
-        # UNVERÄNDERT (Single-Tenant-Mode): per-Kunde-Settings-Rollen-Gruppen.
-        # `tenant_scoped_session` liest über die App-Rolle + RLS-GUC, sieht also GARANTIERT nur
-        # die `oidc.*`-Zeilen dieses einen Tenants. Im Single-Tenant-/Übergangsfall (Bootstrap
-        # oben) sind Kunden- und Owner-Settings identisch -- gleiches Ergebnis wie zuvor, keine
-        # Verhaltensänderung.
+        # UNCHANGED (single-tenant mode): per-customer settings role groups.
+        # `tenant_scoped_session` reads via the app role + RLS GUC, so it is GUARANTEED to see
+        # only this one tenant's `oidc.*` rows. In the single-tenant/transitional case (bootstrap
+        # above), customer and owner settings are identical -- same result as before, no
+        # behavior change.
         async with tenant_scoped_session(tenant.id) as tsession:
             tenant_settings = await SettingsService(tsession).get_all()
         role, allowed, reason = oidc.resolve_role(result.groups, tenant_settings)
     if not allowed:
-        # Der Benutzer ist zwar aus einem bekannten Entra-Tenant, aber in KEINER der
-        # berechtigten Gruppen DIESES Kunden -- z. B. Mitglied von Kunde A's Admin-Gruppe,
-        # aber nicht in Kunde B's Gruppen. Genau das ist die geschlossene Lücke: ohne diese
-        # Neuauflösung hätte `result.role`/`result.allowed` (Instanz-Gemisch) fälschlich
-        # Zugriff gewährt oder verweigert.
+        # The user is from a known Entra tenant, but in NONE of THIS customer's
+        # eligible groups -- e.g. a member of customer A's admin group,
+        # but not of customer B's groups. This is exactly the closed gap: without this
+        # re-resolution, `result.role`/`result.allowed` (instance mix) would incorrectly
+        # have granted or denied access.
         log.warning(
             "oidc_role_denied_for_tenant",
             tid=result.tid,
@@ -1266,18 +1266,18 @@ async def oidc_callback(
         await session.commit()
         return RedirectResponse(f"{base}/login?sso_denied=1", status_code=302)
 
-    # Heim-Tenant EINMAL bestimmen (Provider-only SSO, Task 4): im Multi-Tenant-Mode wird JEDES
-    # SSO-Konto auf dem Default-Tenant (dem Provider) beheimatet -- unabhängig vom gematchten
-    # `tid`. Im Single-Tenant-Mode ist der gematchte Tenant ohnehin der Default (Bootstrap oben),
-    # also ein No-op. Heimat und initialer `active_tenant` der Sitzung MÜSSEN übereinstimmen:
-    # `resolve_initial_tenant` liefert für SSO-Konten `AppUser.tenant_id`, ein Kunden-`active_
-    # tenant` bei Default-Heimat würde das Konto in einen Kunden-Kontext booten, für den es ggf.
-    # keinen Grant hält.
+    # Determine home tenant ONCE (provider-only SSO, Task 4): in multi-tenant mode, EVERY
+    # SSO account is homed on the default tenant (the provider) -- regardless of the matched
+    # `tid`. In single-tenant mode, the matched tenant is the default anyway (bootstrap above),
+    # so this is a no-op. Home and the session's initial `active_tenant` MUST match:
+    # `resolve_initial_tenant` returns `AppUser.tenant_id` for SSO accounts; a customer
+    # `active_tenant` with a default home would boot the account into a customer context it may
+    # hold no grant for.
     home_tenant_id = (await tenant_repo.default_tenant(session)).id if multi_tenant else tenant.id
 
     user = await user_repo.get_by_username(session, result.username)
     if user is None:
-        # SSO-Nutzer ohne lokales Passwort (unbrauchbarer Zufalls-Hash).
+        # SSO user with no local password (unusable random hash).
         user = await user_repo.create(
             session,
             username=result.username,
@@ -1321,25 +1321,25 @@ async def oidc_callback(
     else:
         user.is_sso = True
         user.display_name = result.display_name
-        user.role = role  # Rolle folgt der Entra-Gruppenmitgliedschaft DES gefundenen Kunden
+        user.role = role  # role follows the Entra group membership OF the matched customer
 
-    # SSO-Konto ist an genau seinen Heim-Tenant gebunden (Task 4) -- `tenant_repo`
-    # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) liest ausschliesslich
-    # `AppUser.tenant_id` für SSO-Konten.
+    # SSO account is bound to exactly its home tenant (Task 4) -- `tenant_repo`
+    # (`allowed_tenant_ids`/`is_allowed`/`resolve_initial_tenant`) reads exclusively
+    # `AppUser.tenant_id` for SSO accounts.
     user.tenant_id = home_tenant_id
 
-    # Gruppen-Reconcile (SICHERHEITSKRITISCH, Console+Groups+Invite Task 4): materialisiert
-    # `source='group'`-Grants aus den Team-Mitgliedschaften (`result.groups`) dieses Logins.
-    # Läuft bei JEDEM SSO-Login; die `is_provider_account`-Gate in `reconcile_group_grants`
-    # (erste Zeile, fail-closed) macht es für ein KUNDEN-homed Konto zum No-op -- dessen
-    # Heim-Tenant ist sein Kunde, nicht der Default-Tenant. Kein Gruppen-Grant für Kunden-
-    # Konten, keine Berührung manueller Grants. Bewusst NICHT im Passwort-Login-Pfad
-    # (lokale Konten sind nie in Entra-Gruppen).
+    # Group reconcile (SECURITY-CRITICAL, Console+Groups+Invite Task 4): materializes
+    # `source='group'` grants from this login's team memberships (`result.groups`).
+    # Runs on EVERY SSO login; the `is_provider_account` gate in `reconcile_group_grants`
+    # (first line, fail-closed) turns it into a no-op for a CUSTOMER-homed account -- its
+    # home tenant is its customer, not the default tenant. No group grant for customer
+    # accounts, no touching manual grants. Deliberately NOT in the password login path
+    # (local accounts are never in Entra groups).
     await assignment_group_repo.reconcile_group_grants(session, user, result.groups)
 
-    # Muss hier stehen, weil dieser Pfad bewusst nicht über `_complete_login` läuft
-    # (Redirect statt JSON-Antwort). Ohne diesen Eintrag fehlten ausgerechnet die
-    # SSO-Anmeldungen im Protokoll — bei aktiviertem SSO also praktisch alle.
+    # Must be here because this path deliberately does not go through `_complete_login`
+    # (redirect instead of JSON response). Without this entry, of all things SSO logins
+    # would be missing from the audit trail -- with SSO enabled, that's practically all of them.
     await audit.record(
         session,
         action=audit.LOGIN_SUCCESS,
@@ -1351,9 +1351,9 @@ async def oidc_callback(
         tenant_id=home_tenant_id,
     )
     user.last_login_at = utcnow()
-    # `active_tenant` schliesst den Task-3-Defer: die SSO-Sitzung trägt den Tenant-Claim
-    # direkt ab dem Login, statt ihn bei jedem Request über `resolve_initial_tenant` neu
-    # aufzulösen.
+    # `active_tenant` closes the Task 3 defer: the SSO session carries the tenant claim
+    # right from login, instead of re-resolving it via `resolve_initial_tenant` on
+    # every request.
     pair = issue_token_pair(
         str(user.id), active_tenant=home_tenant_id, generation=user.token_generation
     )
@@ -1368,7 +1368,7 @@ async def oidc_callback(
         active_tenant_id=home_tenant_id,
     )
     await session.commit()
-    # Profilfoto aus Entra holen und cachen (best effort; blockiert Login nicht bei Fehler).
+    # Fetch profile photo from Entra and cache it (best effort; does not block login on failure).
     if user.id is not None:
         with contextlib.suppress(Exception):
             await _cache_sso_avatar(user.id, result.username, settings)
