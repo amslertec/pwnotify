@@ -4,6 +4,63 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] — 2026-07-20
+
+A follow-up security-hardening release. A second, independent audit wave (injection, authorization
+completeness, Graph/MSAL, CI/container) plus a passive live test confirmed tenant isolation still
+holds, and surfaced a set of mostly low-severity issues; this release remediates them.
+
+### Security
+
+- **The lockout/audit hardening now also covers the client IP and SSO name fields.** An overlong
+  `X-Forwarded-For` behind a trusted proxy (or an oversized SSO name claim) can no longer roll back
+  the shared failed-login-counter + audit transaction — extending the 0.3.2 User-Agent fix to the
+  remaining request-fed fields.
+- **Re-authentication failures on "change password" and "disable two-factor" now count toward the
+  account lockout and are audited** (previously only rate-limited per IP).
+- **The CSV/XLSX user export neutralizes spreadsheet formula injection** — a synced Entra display
+  name starting with `=`/`+`/`-`/`@` can no longer become a live formula in Excel.
+- **Microsoft Graph pagination follows a `@odata.nextLink` only over HTTPS to the same host and
+  aborts hard on a mismatch**, so the app's bearer token can never be sent over cleartext or to a
+  foreign host.
+- **The scheduled run is isolated per customer** — one broken or partially configured tenant no
+  longer stops the notification run for the tenants after it.
+- **A customer can no longer lock itself out of its own administration** — demoting or deleting the
+  last admin of a tenant is refused.
+- **SMTP targets are restricted:** internal/link-local/private addresses are rejected unless
+  allow-listed (`PWNOTIFY_SMTP_ALLOWED_HOSTS`), and unencrypted SMTP (`tls=none`) is only permitted
+  to internal relays — closing an SSRF / credential-in-cleartext vector.
+- **The base-URL and reset-URL settings are validated** (HTTPS only, no `javascript:`/`data:`/CRLF),
+  so a tenant admin cannot redirect password-reset/invite mail links — which carry one-time tokens —
+  to a foreign host.
+- **Uploaded branding SVGs are parsed against a strict element/attribute allow-list** (DTD and
+  entities forbidden) instead of a bypassable deny-list.
+- **The Graph client fails fast with a clear "not configured" error** on an incomplete
+  configuration, removing a per-recipient network-roundtrip amplification.
+- **The restricted database role no longer holds `USAGE` on the sequences of tables it cannot
+  write.**
+- **Deployment/CI hardening:** the database container is isolated on an internal-only network (the
+  app keeps outbound access on a separate network), and CI shell steps bind workflow expressions
+  via `env:`.
+
+### Changed — API contract (relevant to API clients)
+
+- `PUT /api/settings` now returns `400` for an invalid `app.public_url`/`branding.reset_url`
+  (non-HTTPS, dangerous scheme, CRLF), for an internal `mail.smtp_host` (unless allow-listed), and
+  for `mail.smtp_tls=none` to an external host. A branding SVG upload may return `4xx` for a
+  non-allow-listed SVG.
+- `POST /api/auth/2fa/disable` and `POST /api/auth/password` may now return `account_locked` after
+  repeated wrong passwords.
+- `POST /api/admin/users/{id}/role` and `DELETE /api/admin/users/{id}` may now return `409
+  last_tenant_admin` when the action would leave a customer without an admin.
+- New optional env var `PWNOTIFY_SMTP_ALLOWED_HOSTS`.
+
+### Upgrade note
+
+- `app.public_url`/`branding.reset_url` stored as database settings must now be HTTPS. An internal
+  plain-HTTP deployment should set the base URL via the `PWNOTIFY_BASE_URL` environment variable
+  instead (it is unaffected).
+
 ## [0.3.2] — 2026-07-20
 
 A second, independent red-team audit of 0.3.1 confirmed that tenant isolation holds and surfaced a
@@ -887,6 +944,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.3
 [0.3.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.2
 [0.3.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.1
 [0.3.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.0

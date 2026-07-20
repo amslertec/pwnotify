@@ -141,7 +141,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.3.2`.
+`amslertec/pwnotify:0.3.3`.
 
 ### Building the image yourself
 
@@ -173,6 +173,17 @@ docker compose -f docker-compose-prod.yml up -d
 (or plain `docker compose pull && docker compose up -d` if you renamed the file to
 `docker-compose.yml`, as in the installation steps above). Migrations run automatically on
 container start.
+
+### 0.3.2 → 0.3.3: stricter settings validation
+
+Security-hardening release, no data migration. Two settings are now validated more strictly:
+
+- **The base URL and reset URL must be HTTPS.** If you stored a plain-`http` `app.public_url` /
+  `branding.reset_url` in Settings, set the base URL via the `PWNOTIFY_BASE_URL` environment
+  variable instead (unvalidated, for internal HTTP deployments).
+- **SMTP is restricted:** `mail.smtp_host` may no longer point at an internal/link-local/private
+  address unless you allow-list it via `PWNOTIFY_SMTP_ALLOWED_HOSTS`, and unencrypted SMTP
+  (`mail.smtp_tls=none`) is only accepted for internal relays.
 
 ### 0.3.1 → 0.3.2: SSO is now HTTPS-only, API docs off by default
 
