@@ -268,8 +268,10 @@ EXPECTED: Final = {
     # Pure cron-expression computation, no tenant data touched -- CurrentUser only, no
     # tenant-session gate needed.
     ("POST", "/api/settings/schedule/preview"): frozenset({deps.get_current_user}),
+    # M4: raised from CurrentUser to AdminUser -- an auditor no longer gets a template preview
+    # (reduced attack surface for the one route that renders an untrusted template string).
     ("POST", "/api/settings/template/preview"): frozenset(
-        {deps.get_current_user, deps.get_tenant_session}
+        {deps.get_current_user, deps.get_tenant_session, deps.require_admin}
     ),
     ("POST", "/api/settings/template/reset"): frozenset(
         {deps.get_current_user, deps.get_tenant_session_write, deps.require_admin}

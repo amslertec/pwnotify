@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -54,3 +54,16 @@ class TemplatePreviewRequest(BaseModel):
 class TemplatePreviewResult(BaseModel):
     subject: str
     html: str
+
+
+class ExclusionCreate(BaseModel):
+    """Body for `POST /settings/exclusions` (L10). Previously an untyped `dict[str, str]`,
+    which turned a missing `value` into a `KeyError`/500 and accepted any `kind` string.
+
+    `kind` is pinned to the two values the `Exclusion` model recognises ("user" | "group",
+    see `models/entra.py`), defaulting to "user" (the old `body.get("kind", "user")`
+    semantics). `value`/`label` are length-capped to the DB columns (`String(320)`)."""
+
+    kind: Literal["user", "group"] = "user"
+    value: str = Field(min_length=1, max_length=320)
+    label: str | None = Field(default=None, max_length=320)

@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     login_lockout_min: int = 15
     setup_rate_limit: str = "30/minute"
 
+    # Test mails (M7) go out over the customer's own mail identity to an arbitrary recipient.
+    # They are rare in normal operation, so a tight limit caps abuse (unbounded external
+    # send) without hindering legitimate connection testing.
+    mail_test_rate_limit: str = "5/minute"
+
     # Shared by `/auth/refresh` and `/auth/activity` (L7): both are normal, frequent
     # requests during an active session (refresh roughly every `access_token_ttl_min`,
     # activity pings sparser) -- generous headroom so ordinary usage is never affected,

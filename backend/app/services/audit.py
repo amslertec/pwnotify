@@ -70,6 +70,10 @@ TWOFA_SETUP_STARTED = "auth.2fa_setup_started"  # secret/QR issued, not yet conf
 # be silent. Written by the runner with the deleted count in `detail`.
 AUDIT_PURGED = "audit.purged"
 
+# M7: a test mail dispatched via `/settings/mail/test` over the customer's own mail identity
+# to an arbitrary recipient -- previously left no trace at all. Recipient goes into `detail`.
+MAIL_TEST_SENT = "settings.mail_test_sent"
+
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.
 _NEVER_LOG = frozenset({"password", "secret", "client_secret", "smtp_password", "token", "code"})

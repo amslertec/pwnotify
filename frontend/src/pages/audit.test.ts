@@ -25,6 +25,7 @@ const ALLE_AKTIONEN = [
   'user.role_changed',
   'settings.changed',
   'settings.secret_changed',
+  'settings.mail_test_sent',
   'tenant.created',
   'tenant.updated',
   'tenant.deleted',
@@ -51,8 +52,8 @@ const ALLE_AKTIONEN = [
 ]
 
 describe('audit.actions i18n', () => {
-  it('hat genau 38 bekannte Aktionskennungen (Ground Truth aus audit.py)', () => {
-    expect(ALLE_AKTIONEN).toHaveLength(38)
+  it('hat genau 39 bekannte Aktionskennungen (Ground Truth aus audit.py)', () => {
+    expect(ALLE_AKTIONEN).toHaveLength(39)
   })
 
   const tDe = i18n.getFixedT('de')

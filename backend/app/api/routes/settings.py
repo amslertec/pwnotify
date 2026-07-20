@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import functools
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ...core.errors import ForbiddenError
+from ...core.config import get_settings
+from ...core.errors import ForbiddenError, PwNotifyError
 from ...models.entra import Exclusion
 from ...repositories import exclusion_repo
 from ...schemas.common import Message
@@ -15,6 +18,7 @@ from ...schemas.entities import ExclusionOut
 from ...schemas.settings import (
     CronPreviewRequest,
     CronPreviewResult,
+    ExclusionCreate,
     GraphTestRequest,
     GraphTestResult,
     MailTestRequest,
@@ -35,9 +39,52 @@ from ..deps import (
     TenantSettingsDep,
     TenantWriteSessionDep,
     TenantWriteSettingsDep,
+    limiter,
 )
 
+_settings = get_settings()
+
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+# Template-preview resource guards (M4). The Jinja sandbox itself already blocks every escape
+# attempt; these two limits address resource exhaustion ONLY -- an authenticated admin
+# submitting a deeply nested loop (CPU/wall-clock) or a huge-output expression (memory).
+# Wall-clock budget for a single render. A real reminder renders in single-digit ms.
+_PREVIEW_TIMEOUT_S = 3.0
+# Rendered-output ceiling (256 KiB). A real reminder e-mail is a few KiB; anything past this
+# is abuse, not a legitimate preview.
+_MAX_PREVIEW_OUTPUT = 256 * 1024
+
+
+async def _render_guarded(template_str: str, context: dict[str, Any], *, html: bool) -> str:
+    """Render one template under a wall-clock timeout AND an output-size ceiling (M4).
+
+    The timeout lives here in the route, not in `render`: the service stays synchronous and
+    directly unit-testable, and the route is the only caller that accepts untrusted template
+    strings. Python threads cannot be force-killed, so on a timeout the executor thread keeps
+    running until the render finishes on its own -- acceptable because (a) this route is now
+    admin-only (see `template_preview`) and (b) the request returns to the client immediately
+    with a 4xx instead of blocking the event loop.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, functools.partial(render, template_str, context, html=html)),
+            timeout=_PREVIEW_TIMEOUT_S,
+        )
+    except TimeoutError as exc:
+        raise PwNotifyError(
+            "Vorschau abgebrochen: Template zu aufwendig.",
+            code="template_preview_too_expensive",
+        ) from exc
+    if len(result) > _MAX_PREVIEW_OUTPUT:
+        # Reject rather than truncate -- an honest error beats a silently mangled preview.
+        raise PwNotifyError(
+            "Vorschau abgebrochen: Template zu aufwendig.",
+            code="template_preview_too_expensive",
+        )
+    return result
+
 
 # `instance.*` (aktuell nur `instance.multi_tenant_mode`, Task 5) ist zwar in `SETTINGS`
 # registriert wie jeder andere Key -- aber ausschliesslich über die superadmin-gegatete
@@ -123,11 +170,29 @@ async def graph_test(
 
 
 @router.post("/mail/test", response_model=Message)
-async def mail_test(_: AdminUser, body: MailTestRequest, svc: TenantWriteSettingsDep) -> Message:
+@limiter.limit(_settings.mail_test_rate_limit)
+async def mail_test(
+    request: Request,
+    admin: AdminUser,
+    body: MailTestRequest,
+    svc: TenantWriteSettingsDep,
+    session: TenantWriteSessionDep,
+) -> Message:
     settings = await svc.get_all()
     await send_test_mail(
         settings, to=body.to, locale=body.locale, base_url=effective_base_url(settings)
     )
+    # Audit trail (M7): a test mail leaves over the customer's own mail identity to a freely
+    # chosen recipient -- record who sent it and to whom so the send is never traceless.
+    await audit.record(
+        session,
+        action=audit.MAIL_TEST_SENT,
+        actor=admin,
+        request=request,
+        target=body.to,
+        detail={"to": body.to, "locale": body.locale},
+    )
+    await session.commit()
     return Message(message=f"Test-Mail an {body.to} versendet.")
 
 
@@ -142,14 +207,16 @@ async def schedule_preview(_: CurrentUser, body: CronPreviewRequest) -> CronPrev
 
 @router.post("/template/preview", response_model=TemplatePreviewResult)
 async def template_preview(
-    _: CurrentUser, body: TemplatePreviewRequest, svc: TenantSettingsDep
+    _: AdminUser, body: TemplatePreviewRequest, svc: TenantSettingsDep
 ) -> TemplatePreviewResult:
+    # Admin-only (M4): a reduced attack surface -- an auditor has no need for a template
+    # preview, and the preview is the one route that renders an untrusted template string.
     settings = await svc.get_all()
     locale = "en" if body.locale.lower().startswith("en") else "de"
     context = sample_context(settings, effective_base_url(settings), locale)
     return TemplatePreviewResult(
-        subject=render(body.subject, context, html=False),
-        html=render(body.html, context, html=True),
+        subject=await _render_guarded(body.subject, context, html=False),
+        html=await _render_guarded(body.html, context, html=True),
     )
 
 
@@ -169,19 +236,17 @@ async def list_exclusions(_: CurrentUser, session: TenantSessionDep) -> list[Exc
 
 @router.post("/exclusions", response_model=ExclusionOut)
 async def add_exclusion(
-    request: Request, admin: AdminUser, body: dict[str, str], session: TenantWriteSessionDep
+    request: Request, admin: AdminUser, body: ExclusionCreate, session: TenantWriteSessionDep
 ) -> ExclusionOut:
-    kind = body.get("kind", "user")
-    value = body["value"]
     await audit.record(
         session,
         action=audit.USER_EXCLUDED,
         actor=admin,
         request=request,
-        target=value,
-        detail={"excluded": True, "count": 1, "kind": kind},
+        target=body.value,
+        detail={"excluded": True, "count": 1, "kind": body.kind},
     )
-    exc = await exclusion_repo.add(session, kind=kind, value=value, label=body.get("label"))
+    exc = await exclusion_repo.add(session, kind=body.kind, value=body.value, label=body.label)
     return ExclusionOut.model_validate(exc, from_attributes=True)
 
 

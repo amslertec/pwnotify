@@ -147,6 +147,7 @@
       "user.role_changed": "Role changed",
       "settings.changed": "Settings changed",
       "settings.secret_changed": "Secret changed",
+      "settings.mail_test_sent": "Test email sent",
       "tenant.created": "Customer created",
       "tenant.updated": "Customer updated",
       "tenant.deleted": "Customer deleted",

@@ -42,6 +42,7 @@ from app.db.tenant_context import open_active_session, tenant_scoped_session
 from app.models.entra import EntraUser
 from app.models.notification import NotificationLog
 from app.repositories import tenant_repo, user_repo
+from app.schemas.settings import ExclusionCreate
 from app.services.notifier import NotifyOutcome
 from app.services.scheduler import SchedulerService, set_scheduler
 from app.services.settings_service import SettingsService
@@ -340,7 +341,7 @@ async def test_settings_add_and_delete_exclusion_record_user_excluded(
         exc = await settings.add_exclusion(
             None,
             admin,
-            {"kind": "user", "value": "excluded@example.com"},
+            ExclusionCreate(kind="user", value="excluded@example.com"),
             session,  # type: ignore[arg-type]
         )
         add_row = await _latest_action_row(
