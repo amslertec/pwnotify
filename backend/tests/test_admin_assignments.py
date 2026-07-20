@@ -83,6 +83,14 @@ async def test_put_assigns_admin_tenants_and_grants_write_access(session: AsyncS
     tenant_a = await _mk_tenant(session)
     tenant_b = await _mk_tenant(session)
     assert local_admin.id is not None and tenant_a.id is not None and tenant_b.id is not None
+    # Resident admins on A and B so the revoke below is not blocked by the last-tenant-admin
+    # lockout guard (L-01) -- this test exercises the reconcile diff, not the lockout.
+    resident_a = await _mk_user(session, role="admin", tenant_id=tenant_a.id)
+    resident_b = await _mk_user(session, role="admin", tenant_id=tenant_b.id)
+    assert resident_a.id is not None and resident_b.id is not None
+    session.add(AdminTenant(user_id=resident_a.id, tenant_id=tenant_a.id))
+    session.add(AdminTenant(user_id=resident_b.id, tenant_id=tenant_b.id))
+    await session.flush()
 
     out = await set_assignments(
         None,  # type: ignore[arg-type]

@@ -49,9 +49,13 @@ async def count_tenant_admins(session: AsyncSession, tenant_id: int) -> int:
       is `admin` -- their home grants admin capacity without their own grant row.
 
     Deliberately EXCLUDED:
-    - **Superadmins** (`role=='superadmin'`): instance-wide, they administer all tenants
-      anyway and are protected from lockout separately via `count_superadmins` -- a (stray)
-      `admin_tenant` grant on a superadmin must not mask the last customer admin.
+    - **Non-admins** (`role != 'admin'`): only an `admin`-role account carries WRITE capacity.
+      This filter is factored out of the OR below (both branches require it) and also subsumes
+      the superadmin exclusion -- `role == 'admin'` is never `'superadmin'`. Crucial for L-02:
+      `set_role` skips the grant migration for SSO targets (`if not target.is_sso`), so an SSO
+      account demoted to `auditor` KEEPS its stale `admin_tenant` grant rows. Without the
+      role filter on the grant branch, such a phantom admin would inflate the count and mask
+      the last real admin of the customer from the lockout guards.
     - **Inactive/pending accounts** (`is_active=False`): a deactivated or not-yet-accepted
       (invited) account cannot administer anyone and therefore does not count as a
       remaining admin.
@@ -66,12 +70,11 @@ async def count_tenant_admins(session: AsyncSession, tenant_id: int) -> int:
         .outerjoin(AdminTenant, AdminTenant.user_id == AppUser.id)
         .where(
             AppUser.is_active.is_(True),
-            AppUser.role != "superadmin",
+            AppUser.role == "admin",
             or_(
                 AdminTenant.tenant_id == tenant_id,
                 and_(
                     AppUser.is_sso.is_(True),
-                    AppUser.role == "admin",
                     AppUser.tenant_id == tenant_id,
                 ),
             ),

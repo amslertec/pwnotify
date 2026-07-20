@@ -103,6 +103,29 @@ async def _cross_grant_lock_allows(
     return requested <= allowed
 
 
+async def _would_lock_out_last_tenant_admin(session: AsyncSession, tid: int, kind: str) -> bool:
+    """L-01: DIE eine Stelle, an der der Lockout-Guard für einen Grant-Entzug ausgewertet wird
+    -- von `set_assignments` UND `bulk_assign` gerufen, damit die Invariante strukturell nicht
+    auseinanderlaufen kann (analog zu `_cross_grant_lock_allows`).
+
+    Ein Entzug lockt einen Kunden nur dann aus, wenn ALLE drei gelten:
+    - Es ist ein ADMIN-Grant (`kind == "admin"`): nur Schreib-Kapazität kann verloren gehen; ein
+      `auditor_tenant`-Entzug kann nie zum Lockout führen.
+    - Der Tenant ist AKTIV: ein deaktivierter Kunde braucht keinen Schreib-Admin, seine
+      Alt-Zuweisungen müssen aufräumbar bleiben (deshalb prüft auch `set_role`/`delete_user` nur
+      über `admin_tenants`, das aktiv-gejoint ist -- gleiche Semantik hier).
+    - Der Kunde hätte danach keinen Admin mehr: `count_tenant_admins` zählt das Ziel noch mit
+      (sein Grant ist an dieser Stelle intakt), `<= 1` heißt also genau "es ist der letzte".
+
+    Rettungspfad bleibt der Superadmin -- dieser Guard schließt nur die Inkonsistenz zu A4."""
+    if kind != "admin":
+        return False
+    tenant = await tenant_repo.get(session, tid)
+    if tenant is None or not tenant.is_active:
+        return False
+    return await user_repo.count_tenant_admins(session, tid) <= 1
+
+
 @router.get("/{user_id}", response_model=AssignmentOut)
 async def get_assignments(
     _: SuperadminDefaultContextUser, user_id: int, session: SessionDep
@@ -192,8 +215,19 @@ async def bulk_assign(
                 target=target.username,
                 request=request,
                 detail={"tenant_id": tid, "kind": kind},
+                # L-05: attribute to the affected tenant (see `set_assignments`), otherwise the
+                # owner-session default_factory stamps NULL and the customer never sees it.
+                tenant_id=tid,
             )
         for tid in sorted(to_remove):
+            # L-01: same last-tenant-admin guard as `set_assignments`. Hard-fails the request
+            # rather than skipping the account -- a last-admin revoke is a lockout, not a
+            # per-account policy skip like the cross-grant lock above.
+            if await _would_lock_out_last_tenant_admin(session, tid, kind):
+                raise ConflictError(
+                    "Der letzte Admin dieses Kunden kann nicht entzogen werden.",
+                    code="last_tenant_admin",
+                )
             await tenant_repo.remove_grant(session, user_id=user_id, tenant_id=tid, kind=kind)
             await audit.record(
                 session,
@@ -202,6 +236,7 @@ async def bulk_assign(
                 target=target.username,
                 request=request,
                 detail={"tenant_id": tid, "kind": kind},
+                tenant_id=tid,  # L-05: attribute to the affected tenant (see to_add above).
             )
         updated.append(user_id)
 
@@ -262,8 +297,17 @@ async def set_assignments(
             target=target.username,
             request=request,
             detail={"tenant_id": tid, "kind": kind},
+            # L-05: attribute to the affected tenant so the customer sees the grant in its own
+            # (tenant-scoped) log. On this owner session the ContextVar default_factory would
+            # otherwise stamp NULL -- only superadmin-visible.
+            tenant_id=tid,
         )
     for tid in sorted(to_remove):
+        if await _would_lock_out_last_tenant_admin(session, tid, kind):
+            raise ConflictError(
+                "Der letzte Admin dieses Kunden kann nicht entzogen werden.",
+                code="last_tenant_admin",
+            )
         await tenant_repo.remove_grant(session, user_id=user_id, tenant_id=tid, kind=kind)
         await audit.record(
             session,
@@ -272,6 +316,7 @@ async def set_assignments(
             target=target.username,
             request=request,
             detail={"tenant_id": tid, "kind": kind},
+            tenant_id=tid,  # L-05: attribute to the affected tenant (see to_add above).
         )
     await session.commit()
 
