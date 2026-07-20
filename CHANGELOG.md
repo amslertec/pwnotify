@@ -4,6 +4,70 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-07-20
+
+A second, independent red-team audit of 0.3.1 confirmed that tenant isolation holds and surfaced a
+set of edge-of-isolation issues — abuse limits, account lifecycle, availability, and deployment
+defaults. This release remediates all of them, plus two operational bugs found in production logs.
+
+### Security
+
+- **Overlong `User-Agent` headers can no longer suppress account lockout or the audit trail.** The
+  header is truncated to the stored width instead of failing the transaction that also carries the
+  failed-login counter and the audit record.
+- **Bulk reminder sending is bounded.** It now passes through the same absolute mass-send ceiling as
+  scheduled runs, and the request is hard-validated (1–2000 ids, fixed action set).
+- **A password reset now revokes all of the account's existing sessions and access tokens.**
+- **The restricted database role no longer inherits privileges on newly created tables** (default
+  privileges were revoked); a schema test enforces the per-table grant policy going forward.
+- **The two-factor requirement is read from the account's home tenant**, not the default tenant.
+- **Disabling two-factor now requires the account password and is replay-safe.**
+- **The idle timeout immediately invalidates the access token**, not just the refresh session.
+- **SSO group sync no longer touches accounts homed in a different tenant** and no longer
+  force-reactivates a disabled account.
+- **Audit-log retention has a floor that cannot be undercut, and every purge is itself audited.**
+- **Template preview is admin-only, wall-clock-bounded, and output-capped.**
+- **Request bodies over 10 MB are rejected before they are read; `/ready` is rate-limited; the
+  OpenAPI/docs endpoints are off by default** (`PWNOTIFY_ENABLE_DOCS=true` to enable).
+- **Graph pagination follows only same-host links; `/admin/instance` no longer exposes the
+  provider's default-tenant name to customer accounts.**
+- **OIDC now uses `response_mode=form_post` (RFC 9700)** — the authorization code is no longer
+  carried in the callback URL. **This makes SSO HTTPS-only.**
+- **Log and audit redaction rules are unified** so a future secret-bearing field cannot slip into
+  either, and **sensitive/self-service actions are now audited** (user export, template reset,
+  profile/language/avatar changes).
+- **A database CHECK constraint enforces valid assignment-group roles.**
+- **Deployment defaults hardened:** `example.env` no longer ships working placeholder passwords or
+  insecure network defaults; the database container drops all Linux capabilities except the minimal
+  set it needs; CI now scans and ships the identical image bytes (build once, scan, promote by
+  digest).
+
+### Fixed
+
+- **A tenant with incomplete Graph/OIDC configuration no longer fails its scheduled run** — the
+  Graph client is now built lazily, so constructing a mail sender for a partially configured tenant
+  no longer raises.
+- **The web UI detects an expired session when you return to the browser tab** and routes to the
+  login page, instead of showing a stale dashboard until a manual reload.
+- **Startup fails fast when the runtime database password is missing**, instead of serving a
+  healthy-looking container whose tenant-scoped requests all error.
+- Unhandled server errors now carry the security headers; the deprecated ORJSON response class was
+  removed; the runtime timezone is set explicitly (removes a startup warning).
+
+### Changed — API contract (relevant to API clients)
+
+- `POST /api/auth/oidc/callback` (was `GET`); Entra delivers the callback via `form_post`. **SSO
+  requires HTTPS.** Both OIDC routes are now rate-limited.
+- `POST /api/auth/2fa/disable` now requires a `password` field (`422` if missing, `403
+  invalid_password` if wrong).
+- `GET /api/admin/instance`: `default_tenant_name` is now nullable (returned only to a default-context
+  superadmin).
+- `POST /api/users/bulk`: 1–2000 ids and `action ∈ {exclude, include, notify}` (`422` otherwise); may
+  return `400 mass_send_blocked`.
+- `GET /api/ready` may return `429`; `/api/docs` and `/api/openapi.json` return `404` unless
+  `PWNOTIFY_ENABLE_DOCS=true`.
+- New audit-action identifiers for the newly audited actions.
+
 ## [0.3.1] — 2026-07-20
 
 ### Changed
@@ -823,6 +887,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.2
 [0.3.1]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.1
 [0.3.0]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.0
 [0.2.9]: https://github.com/amslertec/pwnotify/releases/tag/v0.2.9

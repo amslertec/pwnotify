@@ -141,7 +141,7 @@ then `docker compose up -d` again. Open `http://<server-ip>:8080`. Use a reverse
 with TLS (see below) for anything beyond a trusted LAN.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`), pulled from Docker Hub as
-`amslertec/pwnotify:0.3.1`.
+`amslertec/pwnotify:0.3.2`.
 
 ### Building the image yourself
 
@@ -173,6 +173,20 @@ docker compose -f docker-compose-prod.yml up -d
 (or plain `docker compose pull && docker compose up -d` if you renamed the file to
 `docker-compose.yml`, as in the installation steps above). Migrations run automatically on
 container start.
+
+### 0.3.1 → 0.3.2: SSO is now HTTPS-only, API docs off by default
+
+This is a security-hardening release; it needs no data migration, but note three operational changes:
+
+- **SSO now requires HTTPS.** The OIDC login uses `response_mode=form_post` (RFC 9700), so Microsoft
+  Entra returns the callback as a cross-site `POST` and the short-lived flow cookie must be
+  `SameSite=None; Secure`. On a plain-HTTP instance SSO will stop working — put PwNotify behind a
+  TLS-terminating reverse proxy (`PWNOTIFY_COOKIE_SECURE=true`). Local password login is unaffected.
+  Your reverse proxy must allow `POST` to `/api/auth/oidc/callback`; the registered Entra redirect
+  URI stays the same.
+- **The interactive API docs are disabled by default.** `/api/docs` and `/api/openapi.json` now
+  return `404` unless you set `PWNOTIFY_ENABLE_DOCS=true`.
+- **Disabling two-factor now asks for the account password** (the UI was updated accordingly).
 
 ### 0.3.0 → 0.3.1: hardened database image
 
