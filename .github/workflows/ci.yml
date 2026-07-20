@@ -82,54 +82,90 @@ jobs:
     # Secrets werden Push/Scout-Schritte übersprungen (statt rot fehlzuschlagen).
     env:
       HAS_PUSH_CREDS: ${{ secrets.DOCKERHUB_TOKEN != '' && 'yes' || 'no' }}
+    # Build-once staging area. We build the multi-arch image exactly ONCE, push it
+    # into this ephemeral local registry, scan THOSE bytes, and (only on push with
+    # creds) promote the very same digest to Docker Hub. This guarantees "scan == ship":
+    # the bytes gated by Trivy are byte-for-byte the bytes we publish, instead of
+    # scanning one build and shipping a second, separately-built one.
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      # network=host lets the buildkit container reach the `registry` service on
+      # localhost:5000. buildkit treats localhost/loopback registries as insecure
+      # (plain HTTP) automatically, so no extra buildkitd config is required.
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          driver-opts: network=host
 
-      # The image below is later pushed as linux/amd64,linux/arm64 (see "Build & push
-      # multi-arch"). To make sure neither architecture ships unscanned, both are built
-      # locally and gated with Trivy BEFORE anything is pushed. arm64 runs under QEMU
-      # (via setup-qemu-action above) since this runner is amd64-only; `load: true` works
-      # for a single foreign platform because Trivy only inspects image layers, it never
-      # executes the container. This keeps the existing pre-push gate intact instead of
-      # moving the scan after the push (which would risk shipping an unscanned/vulnerable
-      # image before the gate could fail the job).
-      - name: Build (local, amd64) for scanning
+      # Tags + labels are computed up front so the single build below carries the
+      # same OCI labels as the shipped image, and the promote step can reuse the
+      # exact tag set. Runs unconditionally (harmless on PRs; the tag list is simply
+      # empty there and only consumed on push).
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+
+      # Build the multi-arch image ONCE (amd64+arm64, SBOM + provenance) and push it
+      # to the local registry. arm64 builds under QEMU (via setup-qemu-action above)
+      # since this runner is amd64-only. steps.build.outputs.digest is the OCI index
+      # digest that we scan below and promote unchanged — no second build.
+      - name: Build multi-arch once (SBOM + provenance) -> local registry
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          platforms: linux/amd64
-          load: true
-          tags: ${{ env.IMAGE }}:scan
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: true
+          tags: localhost:5000/pwnotify:ci
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
             REVISION=${{ github.sha }}
+            CREATED=${{ github.event.repository.updated_at }}
 
+      # Resolve the per-arch manifest digests out of the freshly built index so Trivy
+      # scans the EXACT bytes that were built (a digest ref, not a re-pull of a tag).
+      # The two attestation manifests (platform unknown/unknown) are filtered out.
+      - name: Resolve per-arch digests
+        id: arch
+        run: |
+          set -euo pipefail
+          raw="$(docker buildx imagetools inspect --raw localhost:5000/pwnotify@${{ steps.build.outputs.digest }})"
+          amd64="$(echo "$raw" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="amd64") | .digest')"
+          arm64="$(echo "$raw" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="arm64") | .digest')"
+          test -n "$amd64" && test -n "$arm64"
+          echo "amd64=$amd64" >> "$GITHUB_OUTPUT"
+          echo "arm64=$arm64" >> "$GITHUB_OUTPUT"
+
+      # Both arches are gated BEFORE anything is promoted. Scanning the per-arch digest
+      # inspects each architecture's layers regardless of the runner arch (Trivy never
+      # runs the container). go-containerregistry auto-detects localhost as HTTP, so no
+      # insecure flag is needed. Either finding fails the job, exactly as before.
       - name: Trivy scan amd64 (fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE }}:scan
+          image-ref: localhost:5000/pwnotify@${{ steps.arch.outputs.amd64 }}
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: false
           scanners: vuln
 
-      - name: Build (local, arm64) for scanning
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          platforms: linux/arm64
-          load: true
-          tags: ${{ env.IMAGE }}:scan-arm64
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-
       - name: Trivy scan arm64 (fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE }}:scan-arm64
+          image-ref: localhost:5000/pwnotify@${{ steps.arch.outputs.arm64 }}
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: false
@@ -140,14 +176,14 @@ jobs:
         uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1
         with:
           command: cves
-          image: ${{ env.IMAGE }}:scan
+          image: localhost:5000/pwnotify:ci
           only-severities: critical,high
           exit-code: true
         env:
           DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # ---- Push nur auf main / Tag ----
+      # ---- Promote nur auf main / Tag ----
       - name: Log in to Docker Hub
         if: github.event_name == 'push' && env.HAS_PUSH_CREDS == 'yes'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -155,28 +191,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Docker meta
+      # Promote WITHOUT rebuilding: imagetools create copies the complete OCI index
+      # (both arch manifests + the SBOM/provenance attestation manifests) by digest
+      # to the Docker Hub tags. The published index digest and every per-arch digest
+      # are byte-identical to the scanned ones — the gated bytes are the shipped bytes.
+      - name: Promote scanned image to Docker Hub (no rebuild)
         if: github.event_name == 'push' && env.HAS_PUSH_CREDS == 'yes'
-        id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=semver,pattern={{version}}
-
-      - name: Build & push multi-arch (SBOM + provenance)
-        if: github.event_name == 'push' && env.HAS_PUSH_CREDS == 'yes'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          sbom: true
-          provenance: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-            CREATED=${{ github.event.repository.updated_at }}
+        run: |
+          set -euo pipefail
+          tag_args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && tag_args+=( --tag "$t" )
+          done <<< "${{ steps.meta.outputs.tags }}"
+          docker buildx imagetools create "${tag_args[@]}" \
+            localhost:5000/pwnotify@${{ steps.build.outputs.digest }}
