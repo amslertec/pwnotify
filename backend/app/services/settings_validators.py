@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -175,18 +176,33 @@ def is_internal_host(host: str) -> bool:
     """True if ``host`` denotes a loopback / link-local / private (RFC1918/ULA) target.
 
     A bare hostname (not an IP literal) counts as internal only when it is an obvious
-    localhost alias -- full DNS-rebinding protection is out of scope; the goal is catching the
-    obvious SSRF / misconfiguration on IP literals + localhost.
+    localhost alias -- full DNS-rebinding protection is out of scope (I-02): a blocking
+    ``getaddrinfo`` in this sync validator would stall the single-worker event loop, and true
+    rebinding needs connect-time IP pinning, not validate-time resolution. That residual risk is
+    accepted here.
+
+    Numeric/legacy IPv4 forms ARE covered (M-01): ``ipaddress.ip_address`` only accepts
+    canonical dotted-decimal, so decimal (``2130706433``), octal (``0177.0.0.1``), short
+    (``127.1``) and hex (``0x7f.0.0.1``) notations would otherwise slip through as "external"
+    while the OS resolver maps every one of them to loopback -- a blind-SSRF bypass.
+    ``socket.inet_aton`` parses exactly the legacy forms the resolver accepts and yields the
+    4-byte canonical address, so we canonicalise through it first and fall back to
+    ``ip_address`` for IPv6 literals (``inet_aton`` is IPv4-only). A real hostname makes both
+    raise, leaving only the ``_LOCALHOST_NAMES`` check above to catch it.
     """
     h = _normalise_host(host)
     if not h:
         return False
     if h in _LOCALHOST_NAMES:
         return True
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address
     try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        return False
+        ip = ipaddress.ip_address(socket.inet_aton(h))
+    except OSError, ValueError:
+        try:
+            ip = ipaddress.ip_address(h)  # IPv6 literal -- inet_aton handles IPv4 only
+        except ValueError:
+            return False
     return ip.is_loopback or ip.is_link_local or ip.is_private
 
 

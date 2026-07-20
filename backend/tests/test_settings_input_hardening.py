@@ -22,7 +22,7 @@ from app.core.config import get_settings
 from app.core.errors import ValidationError
 from app.db.tenant_context import tenant_scoped_session
 from app.services.settings_service import SettingsService
-from app.services.settings_validators import smtp_host, url_setting
+from app.services.settings_validators import is_internal_host, smtp_host, url_setting
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -103,6 +103,36 @@ def test_smtp_host_accepts_external_and_empty(value: str, monkeypatch: pytest.Mo
 def test_smtp_host_allowlist_permits_internal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "smtp_allowed_hosts", "127.0.0.1, relay.internal")
     assert smtp_host("127.0.0.1") == "127.0.0.1"
+
+
+# --- M-01: numeric/legacy IPv4 forms of loopback must count as internal ------------------- #
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2130706433",  # 127.0.0.1 as a 32-bit decimal integer
+        "0177.0.0.1",  # octal first octet
+        "127.1",  # short form (127.0.0.1)
+        "0x7f.0.0.1",  # hex first octet
+    ],
+)
+def test_is_internal_host_catches_numeric_loopback(value: str) -> None:
+    assert is_internal_host(value) is True
+
+
+@pytest.mark.parametrize("value", ["8.8.8.8", "mail.example.com"])
+def test_is_internal_host_leaves_external_external(value: str) -> None:
+    assert is_internal_host(value) is False
+
+
+def test_is_internal_host_canonical_loopback_regression() -> None:
+    assert is_internal_host("127.0.0.1") is True
+
+
+@pytest.mark.parametrize("value", ["2130706433", "0177.0.0.1", "127.1", "0x7f.0.0.1"])
+def test_smtp_host_rejects_numeric_internal(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(get_settings(), "smtp_allowed_hosts", "")
+    with pytest.raises(ValidationError):
+        smtp_host(value)
 
 
 # --- A6: tls=none cross-check in the set path --------------------------------------------- #
