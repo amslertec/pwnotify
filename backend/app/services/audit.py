@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.http import client_user_agent
 from ..core.logging import get_logger
 from ..models.user import AppUser
 from ..repositories import audit_repo
@@ -131,7 +132,7 @@ async def record(
             target=target,
             outcome=outcome,
             ip_address=(request.client.host if request and request.client else None),
-            user_agent=(request.headers.get("user-agent") if request else None),
+            user_agent=client_user_agent(request),
             detail=_clean(detail),
             tenant_id=tenant_id,
             stamp_tenant=tenant_id is not None,

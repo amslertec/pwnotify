@@ -18,6 +18,7 @@ from ...core import imagetype
 from ...core.config import get_settings
 from ...core.crypto import decrypt, encrypt
 from ...core.errors import AuthError, ForbiddenError, NotFoundError, PwNotifyError
+from ...core.http import client_user_agent
 from ...core.logging import get_logger
 from ...core.security import (
     WEAK_PASSWORD_MESSAGE,
@@ -265,7 +266,7 @@ async def _complete_login(
         jti=pair.refresh_jti,
         token_hash=hash_token(pair.refresh_token),
         expires_at=pair.refresh_expires,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=client_user_agent(request),
         ip=request.client.host if request.client else None,
         active_tenant_id=tid,
     )
@@ -545,7 +546,7 @@ async def refresh(request: Request, response: Response, session: SessionDep) -> 
     us.token_hash = hash_token(pair.refresh_token)
     us.expires_at = pair.refresh_expires
     us.last_used_at = now
-    us.user_agent = request.headers.get("user-agent") or us.user_agent
+    us.user_agent = client_user_agent(request) or us.user_agent
     us.ip_address = (request.client.host if request.client else None) or us.ip_address
     await session.commit()
     set_auth_cookies(response, pair)
@@ -1182,7 +1183,7 @@ async def oidc_callback(
         jti=pair.refresh_jti,
         token_hash=hash_token(pair.refresh_token),
         expires_at=pair.refresh_expires,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=client_user_agent(request),
         ip=request.client.host if request.client else None,
         active_tenant_id=home_tenant_id,
     )
