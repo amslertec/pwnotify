@@ -19,7 +19,13 @@ from ...db.tenant_context import current_tenant_or_none
 from ...schemas.common import Message
 from ...services import audit
 from ...services.settings_validators import contained_path
-from ..deps import AdminUser, PublicTenantSettingsDep, TenantSettingsDep, TenantWriteSessionDep
+from ..deps import (
+    AdminUser,
+    PublicTenantSettingsDep,
+    TenantSettingsDep,
+    TenantWriteSessionDep,
+    TenantWriteSettingsDep,
+)
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -286,8 +292,8 @@ async def _audit_branding_change(
 ) -> None:
     """Shared audit write for the four upload/delete routes below (Security Phase 5, Task
     8/M10). Runs on its OWN `TenantWriteSessionDep` connection, separate from `svc`'s --
-    `svc: TenantSettingsDep` already committed its own change (`SettingsService.set`); this
-    just records + commits the audit entry on the write-gated session."""
+    `svc: TenantWriteSettingsDep` already committed its own change (`SettingsService.set`);
+    this just records + commits the audit entry on the write-gated session."""
     await audit.record(
         session,
         action=audit.BRANDING_CHANGED,
@@ -302,7 +308,12 @@ async def _audit_branding_change(
 async def upload_logo(
     request: Request,
     admin: AdminUser,
-    svc: TenantSettingsDep,
+    # I-01 (Security Audit v0.3.3): write authorization now lives on `svc` itself
+    # (`TenantWriteSettingsDep` -> `get_tenant_session_write`), not only on the sibling
+    # `session` gate below -- dropping `session` in a future refactor (it exists only for
+    # `_audit_branding_change`) can no longer silently reopen write access to a read-only
+    # (`auditor_tenant`-grant) account.
+    svc: TenantWriteSettingsDep,
     session: TenantWriteSessionDep,
     file: UploadFile = File(...),
 ) -> Message:
@@ -316,7 +327,8 @@ async def upload_logo(
 async def upload_favicon(
     request: Request,
     admin: AdminUser,
-    svc: TenantSettingsDep,
+    # I-01: see `upload_logo` above -- write gate lives on `svc`, not only on `session`.
+    svc: TenantWriteSettingsDep,
     session: TenantWriteSessionDep,
     file: UploadFile = File(...),
 ) -> Message:
@@ -336,7 +348,11 @@ async def _clear_upload(svc: TenantSettingsDep, key: str, stem: str) -> None:
 
 @router.delete("/logo", response_model=Message)
 async def delete_logo(
-    request: Request, admin: AdminUser, svc: TenantSettingsDep, session: TenantWriteSessionDep
+    request: Request,
+    admin: AdminUser,
+    # I-01: see `upload_logo` above -- write gate lives on `svc`, not only on `session`.
+    svc: TenantWriteSettingsDep,
+    session: TenantWriteSessionDep,
 ) -> Message:
     await _clear_upload(svc, "branding.logo_path", "logo")
     await _audit_branding_change(session, admin=admin, request=request, asset="logo", op="delete")
@@ -345,7 +361,11 @@ async def delete_logo(
 
 @router.delete("/favicon", response_model=Message)
 async def delete_favicon(
-    request: Request, admin: AdminUser, svc: TenantSettingsDep, session: TenantWriteSessionDep
+    request: Request,
+    admin: AdminUser,
+    # I-01: see `upload_logo` above -- write gate lives on `svc`, not only on `session`.
+    svc: TenantWriteSettingsDep,
+    session: TenantWriteSessionDep,
 ) -> Message:
     await _clear_upload(svc, "branding.favicon_path", "favicon")
     await _audit_branding_change(

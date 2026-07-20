@@ -187,50 +187,33 @@ EXPECTED: Final = {
     ("GET", "/api/branding"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
-    # Security Phase 5, Task 8/M10: these four now also carry `get_tenant_session_write`
-    # (a second, separate `TenantWriteSessionDep` alongside the pre-existing `svc:
-    # TenantSettingsDep`) so the new audit entry can be written write-gated -- a side
-    # effect that also closes a latent gap: an admin with only a read-only (`auditor_tenant`)
-    # grant on the active tenant can no longer reach these upload/delete routes at all,
-    # matching every sibling tenant-write route (`settings.*`, `users.*`, `notifications.
-    # retry`, `runs.trigger`).
+    # Security Phase 5, Task 8/M10 carried `get_tenant_session_write` here (a second, separate
+    # `TenantWriteSessionDep` alongside `svc: TenantSettingsDep`) so the new audit entry could
+    # be written write-gated. I-01 (Security Audit v0.3.3) then moved `svc` itself onto
+    # `TenantWriteSettingsDep` (-> `get_tenant_session_write`, not `get_tenant_session`): the
+    # write gate no longer depends on the sibling `session` parameter surviving a future
+    # refactor. Net effect on this matrix: `get_tenant_session` (the read gate) drops out of
+    # these four -- `get_tenant_session_write` alone now covers both the `svc` and `session`
+    # dependency paths, closing the same latent auditor_tenant-grant gap as before but from a
+    # second, independent place, matching every sibling tenant-write route (`settings.*`,
+    # `users.*`, `notifications.retry`, `runs.trigger`).
     ("DELETE", "/api/branding/favicon"): frozenset(
-        {
-            deps.get_current_user,
-            deps.get_tenant_session,
-            deps.get_tenant_session_write,
-            deps.require_admin,
-        }
+        {deps.get_current_user, deps.get_tenant_session_write, deps.require_admin}
     ),
     ("GET", "/api/branding/favicon"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
     ("POST", "/api/branding/favicon"): frozenset(
-        {
-            deps.get_current_user,
-            deps.get_tenant_session,
-            deps.get_tenant_session_write,
-            deps.require_admin,
-        }
+        {deps.get_current_user, deps.get_tenant_session_write, deps.require_admin}
     ),
     ("DELETE", "/api/branding/logo"): frozenset(
-        {
-            deps.get_current_user,
-            deps.get_tenant_session,
-            deps.get_tenant_session_write,
-            deps.require_admin,
-        }
+        {deps.get_current_user, deps.get_tenant_session_write, deps.require_admin}
     ),
     ("GET", "/api/branding/logo"): frozenset(
         {deps.get_public_tenant_session, deps.get_public_tenant_settings_service}
     ),
     ("POST", "/api/branding/logo"): frozenset(
-        {
-            deps.get_current_user,
-            deps.get_tenant_session,
-            deps.get_tenant_session_write,
-            deps.require_admin,
-        }
+        {deps.get_current_user, deps.get_tenant_session_write, deps.require_admin}
     ),
     ("GET", "/api/dashboard"): frozenset({deps.get_current_user, deps.get_tenant_session}),
     ("GET", "/api/entra-avatar/{entra_id}"): frozenset(
