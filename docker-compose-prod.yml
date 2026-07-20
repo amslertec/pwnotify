@@ -56,6 +56,8 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+    # db only needs to talk to the app on the isolated `internal` network; it has
+    # no reason to reach the internet, so it is NOT on `egress`. See networks below.
     networks:
       - internal
 
@@ -123,8 +125,11 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+    # app reaches the db over the isolated `internal` network AND needs outbound
+    # internet (Microsoft Graph, SMTP, GitHub release check) via `egress`.
     networks:
       - internal
+      - egress
 
     # ----------------------------------------------------------------------
     # Reverse-proxy example (Traefik) — uncomment if needed and set
@@ -142,5 +147,12 @@ volumes:
   data:
 
 networks:
+  # db <-> app only. `internal: true` blocks all outbound traffic, so a
+  # compromised db container cannot reach the internet (containment).
   internal:
+    driver: bridge
+    internal: true
+  # app's outbound path (Microsoft Graph, SMTP, GitHub release check). The db is
+  # deliberately NOT attached here — it has no need to reach the internet.
+  egress:
     driver: bridge

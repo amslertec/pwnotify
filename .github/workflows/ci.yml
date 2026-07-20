@@ -140,9 +140,11 @@ jobs:
       # The two attestation manifests (platform unknown/unknown) are filtered out.
       - name: Resolve per-arch digests
         id: arch
+        env:
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          raw="$(docker buildx imagetools inspect --raw localhost:5000/pwnotify@${{ steps.build.outputs.digest }})"
+          raw="$(docker buildx imagetools inspect --raw "localhost:5000/pwnotify@$BUILD_DIGEST")"
           amd64="$(echo "$raw" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="amd64") | .digest')"
           arm64="$(echo "$raw" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="arm64") | .digest')"
           test -n "$amd64" && test -n "$arm64"
@@ -203,11 +205,14 @@ jobs:
       # are byte-identical to the scanned ones — the gated bytes are the shipped bytes.
       - name: Promote scanned image to Docker Hub (no rebuild)
         if: github.event_name == 'push' && env.HAS_PUSH_CREDS == 'yes'
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           tag_args=()
           while IFS= read -r t; do
             [ -n "$t" ] && tag_args+=( --tag "$t" )
-          done <<< "${{ steps.meta.outputs.tags }}"
+          done <<< "$META_TAGS"
           docker buildx imagetools create "${tag_args[@]}" \
-            localhost:5000/pwnotify@${{ steps.build.outputs.digest }}
+            "localhost:5000/pwnotify@$BUILD_DIGEST"
