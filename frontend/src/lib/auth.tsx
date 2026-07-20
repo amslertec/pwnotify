@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -26,6 +26,19 @@ export function isDefaultContext(user: User | null | undefined): boolean {
   return user?.role === 'superadmin' && !!user?.active_tenant_is_default
 }
 
+/** Entscheidet, ob beim Tab-Fokus/Sichtbarkeit still `/auth/me` revalidiert werden soll.
+ *  Nur wenn der Tab sichtbar ist, ein Nutzer eingeloggt ist und nicht bereits eine
+ *  Revalidierung läuft — Letzteres verhindert doppelte Calls, wenn `visibilitychange` und
+ *  `focus` beim Zurückkehren gleichzeitig feuern. Als reine Funktion extrahiert, damit die
+ *  Guard-Logik ohne DOM/Render-Harness testbar bleibt (Repo-Konvention). */
+export function shouldRevalidateSession(
+  visibilityState: DocumentVisibilityState,
+  hasUser: boolean,
+  inFlight: boolean,
+): boolean {
+  return visibilityState === 'visible' && hasUser && !inFlight
+}
+
 interface AuthContextValue {
   user: User | null
   loading: boolean
@@ -43,6 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const qc = useQueryClient()
   const { t } = useTranslation()
+
+  // Refs, damit der einmalig (leere Deps) registrierte Sichtbarkeits-Listener stets den
+  // aktuellen Zustand sieht, ohne bei jedem `setUser` neu registriert zu werden.
+  const userRef = useRef<User | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+  const revalidatingRef = useRef(false)
 
   const refresh = async () => {
     try {
@@ -64,6 +85,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onAuthExpired.handler = null
     }
   }, [qc])
+
+  // Sitzung still revalidieren, sobald der Tab wieder sichtbar/fokussiert wird (FE1). Der
+  // Router-Guard reagiert nur auf einen FEHLGESCHLAGENEN Request; solange ein untätiger Tab
+  // offen liegt, prüft nichts die Sitzung (refetchOnWindowFocus ist aus, Hintergrund-Polling
+  // pausiert). Ohne das zeigt die SPA weiter eine tote, scheinbar eingeloggte Ansicht bis zum
+  // manuellen Reload. `/auth/me` durchläuft den 401->Refresh-Pfad: bei toter Sitzung scheitert
+  // der Refresh, onAuthExpired leert `user` (-> Redirect auf /login); bei lebender Sitzung wird
+  // `user` still aktualisiert. Bewusst KEIN setLoading(true) -> kein Vollbild-Loader-Flackern
+  // bei jedem Fokus. `focus` ergänzt `visibilitychange` für App-Wechsel bei sichtbarem Tab.
+  useEffect(() => {
+    const revalidate = () => {
+      if (!shouldRevalidateSession(document.visibilityState, !!userRef.current, revalidatingRef.current)) {
+        return
+      }
+      revalidatingRef.current = true
+      void api
+        .get<User>('/auth/me')
+        .then(setUser)
+        .catch(() => {
+          /* onAuthExpired hat `user` bereits geleert -> Router-Guard leitet zum Login */
+        })
+        .finally(() => {
+          revalidatingRef.current = false
+        })
+    }
+    document.addEventListener('visibilitychange', revalidate)
+    window.addEventListener('focus', revalidate)
+    return () => {
+      document.removeEventListener('visibilitychange', revalidate)
+      window.removeEventListener('focus', revalidate)
+    }
+  }, [])
 
   // Konto-Sprache anwenden, sobald der Benutzer bekannt ist (Login/Refresh, geräteübergreifend).
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasAdminRights, isDefaultContext } from './auth'
+import { hasAdminRights, isDefaultContext, shouldRevalidateSession } from './auth'
 import type { User } from './types'
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -56,5 +56,20 @@ describe('isDefaultContext', () => {
   it('false fuer null/undefined', () => {
     expect(isDefaultContext(null)).toBe(false)
     expect(isDefaultContext(undefined)).toBe(false)
+  })
+})
+
+describe('shouldRevalidateSession', () => {
+  it('revalidiert, wenn Tab sichtbar, Nutzer eingeloggt und kein Call laeuft (FE1)', () => {
+    expect(shouldRevalidateSession('visible', true, false)).toBe(true)
+  })
+  it('revalidiert NICHT bei verstecktem Tab (visibilitychange -> hidden)', () => {
+    expect(shouldRevalidateSession('hidden', true, false)).toBe(false)
+  })
+  it('revalidiert NICHT ohne eingeloggten Nutzer (Login-Seite -> kein /auth/me)', () => {
+    expect(shouldRevalidateSession('visible', false, false)).toBe(false)
+  })
+  it('revalidiert NICHT, wenn bereits ein Call laeuft (visibilitychange + focus gleichzeitig)', () => {
+    expect(shouldRevalidateSession('visible', true, true)).toBe(false)
   })
 })
