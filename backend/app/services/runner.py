@@ -22,7 +22,7 @@ from ..repositories import (
     notification_repo,
     run_repo,
 )
-from . import alerts, retention
+from . import alerts, audit, retention
 from .expiry import due_reminder_stage
 from .graph import GraphClient, GraphConfig
 from .graph.sync import is_graph_configured, sync_users
@@ -107,6 +107,33 @@ async def _apply_privacy_retention(
             log.info("log_retention_applied", removed=entfernt, days=log_tage)
             schritte.append({"step": "log_retention", "removed": entfernt})
     return schritte
+
+
+async def _apply_audit_retention(session: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
+    """Purge old audit-log entries per ``audit.retention_days`` and audit that purge itself.
+
+    Deleting audit history must never be silent (M3), so a real purge writes an
+    ``AUDIT_PURGED`` entry with the deleted count. Tenant attribution: written on the run's
+    session with no explicit ``tenant_id``, so ``AuditLog.tenant_id``'s ``default_factory``
+    stamps the active tenant. That is deliberate and consistent: the purge itself runs on this
+    tenant-scoped run session (see ``scheduler._run`` -> ``use_tenant``), and under RLS the
+    ``DELETE`` only removes THIS tenant's audit rows — so a tenant-scoped audit entry matches
+    exactly what was deleted. ``audit.record`` swallows its own errors, so it can never flip
+    the purge outcome. Both the delete and this entry are committed together by the runner's
+    single final commit (``purge_older_than`` no longer commits).
+    """
+    days = int(settings.get("audit.retention_days") or 0)
+    removed = await audit_repo.purge_older_than(session, days=days)
+    if not removed:
+        return []
+    await audit.record(
+        session,
+        action=audit.AUDIT_PURGED,
+        actor_type="system",
+        target="audit.retention_days",
+        detail={"removed": removed, "retention_days": days},
+    )
+    return [{"step": "audit_purge", "removed": removed}]
 
 
 async def _resolve_excluded_ids(session: Any, settings: dict[str, Any]) -> set[str]:
@@ -220,11 +247,7 @@ async def execute_run(
 
             # 1c) Aufbewahrungsfristen anwenden (alle standardmässig aus).
             try:
-                geloescht = await audit_repo.purge_older_than(
-                    session, days=int(settings.get("audit.retention_days") or 0)
-                )
-                if geloescht:
-                    detail.append({"step": "audit_purge", "removed": geloescht})
+                detail.extend(await _apply_audit_retention(session, settings))
             except Exception as exc:
                 log.warning("audit_purge_failed", error=str(exc))
 

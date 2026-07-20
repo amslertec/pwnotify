@@ -66,6 +66,10 @@ BRANDING_CHANGED = "branding.changed"  # logo/favicon upload or delete
 SSO_SYNCED = "user.sso_synced"
 TWOFA_SETUP_STARTED = "auth.2fa_setup_started"  # secret/QR issued, not yet confirmed
 
+# M3: a retention purge that actually removed audit rows -- deleting audit history must never
+# be silent. Written by the runner with the deleted count in `detail`.
+AUDIT_PURGED = "audit.purged"
+
 # Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
 # einsehbar und wird exportiert.
 _NEVER_LOG = frozenset({"password", "secret", "client_secret", "smtp_password", "token", "code"})

@@ -17,6 +17,20 @@ _MIN_COUNT = 20
 # Mehr als die Hälfte auf einmal zu löschen deutet auf einen Fehler hin, nicht auf Abgänge.
 _MAX_RATIO = 0.5
 
+# Non-erasable floor for the audit-log retention window (M3). The audit trail must always
+# keep at least this many days of recent history; 0 (keep forever) stays allowed, but any
+# positive window is treated as at least this many days.
+#
+# Why a hard floor instead of a stateful cumulative-window brake: an admin covering their
+# tracks lowers ``audit.retention_days`` in small steps and triggers a purge each time. Every
+# step stays under the >50% brake -- and slices below ``_MIN_COUNT`` bypass it entirely -- so
+# the trail (including the SETTINGS_CHANGED entries that document the shrinking) drains after a
+# few iterations. A tracked "max deleted per rolling time window" brake would stop that but
+# needs persistent purge state across runs. The floor reaches the same goal directly and
+# statelessly: the most recent FLOOR days can never be purged, so the tamper evidence always
+# survives. A stateful window brake was deliberately NOT built (YAGNI).
+AUDIT_RETENTION_FLOOR_DAYS = 30
+
 
 def purge_blocked_reason(*, to_delete: int, total: int) -> str | None:
     """Prüft, ob eine geplante Löschung plausibel ist. Grund, wenn nicht — sonst ``None``.

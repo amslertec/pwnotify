@@ -30,7 +30,7 @@ from .default_templates import (
     DEFAULT_TEXT_RESET_DE,
     DEFAULT_TEXT_RESET_EN,
 )
-from .settings_validators import branding_path, number_range
+from .settings_validators import audit_retention_days, branding_path, number_range
 
 
 @dataclass(frozen=True)
@@ -103,18 +103,26 @@ SETTINGS: dict[str, SettingSpec] = {
     # Aufbewahrung des Audit-Protokolls in Tagen. 0 = unbegrenzt (Standard) — für
     # Compliance ist eine lückenlose Historie meist erwünscht. Wer eine Löschfrist
     # braucht (Datenschutz), setzt hier z. B. 365; ältere Einträge werden nach jedem
-    # geplanten Lauf entfernt.
-    "audit.retention_days": SettingSpec(0, validate=number_range(min_value=0, integer_only=True)),
+    # geplanten Lauf entfernt. Untergrenze (M3): 0 (unbegrenzt) ODER >= FLOOR Tage — ein
+    # sub-FLOOR-Fenster (1..FLOOR-1) wird abgelehnt, damit das Protokoll nicht in kleinen
+    # Schritten leergeräumt werden kann.
+    "audit.retention_days": SettingSpec(0, validate=audit_retention_days),
     # ---- Aufbewahrung personenbezogener Daten (alle 0 = unbegrenzt) ----
     # Entra-Konten, die seit so vielen Tagen nicht mehr im Sync auftauchen, gelten als
     # ausgeschieden und werden entfernt. Ohne Frist bleiben Name, UPN und Mailadressen
     # von Personen gespeichert, die den Tenant längst verlassen haben.
     # Ein Sanity-Schutz verhindert, dass ein tagelang fehlgeschlagener Sync — nach dem
     # alle Einträge gleich alt wirken — den Bestand leerräumt.
-    "privacy.user_retention_days": SettingSpec(0),
+    # L4: Validator wie audit.retention_days — ein negativer oder nicht-numerischer Wert
+    # würde die Frist über `int(... or 0)` sonst still deaktivieren.
+    "privacy.user_retention_days": SettingSpec(
+        0, validate=number_range(min_value=0, integer_only=True)
+    ),
     # Versandhistorie (notification_log) und Lauf-Protokolle älter als X Tage entfernen.
     # Beide enthalten UPNs und Empfängeradressen.
-    "privacy.log_retention_days": SettingSpec(0),
+    "privacy.log_retention_days": SettingSpec(
+        0, validate=number_range(min_value=0, integer_only=True)
+    ),
     # Sicherung gegen Massenversand: Würde ein Lauf mehr als diesen Anteil aller
     # geprüften Benutzer benachrichtigen, ist das fast immer eine Fehlkonfiguration
     # (z. B. falsche Gültigkeitsdauer) und nicht ein realer Stichtag. Der Lauf bricht

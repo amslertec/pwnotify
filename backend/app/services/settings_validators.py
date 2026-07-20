@@ -15,6 +15,7 @@ from typing import Any
 
 from ..core.config import get_settings
 from ..core.errors import ValidationError
+from .retention import AUDIT_RETENTION_FLOOR_DAYS
 
 
 def number_range(
@@ -60,6 +61,26 @@ def number_range(
         return value
 
     return _validate
+
+
+_AUDIT_RETENTION_MSG = (
+    f"Audit-Aufbewahrung: 0 (unbegrenzt) oder mindestens {AUDIT_RETENTION_FLOOR_DAYS} Tage."
+)
+
+
+def audit_retention_days(value: Any) -> Any:
+    """Validator for ``audit.retention_days``: 0 (keep forever) OR >= the retention floor.
+
+    ``number_range`` alone cannot express "0 OR >= 30": that is a disjoint set, not a
+    contiguous range. So this reuses ``number_range`` for the type/integer/negative checks and
+    then rejects the ``1..FLOOR-1`` band. The floor (see ``retention.AUDIT_RETENTION_FLOOR_DAYS``)
+    guarantees the recent audit trail cannot be shrunk away, closing the iterative
+    "cover your tracks" purge.
+    """
+    checked = number_range(min_value=0, integer_only=True, message=_AUDIT_RETENTION_MSG)(value)
+    if 0 < int(checked) < AUDIT_RETENTION_FLOOR_DAYS:
+        raise ValidationError(_AUDIT_RETENTION_MSG)
+    return checked
 
 
 def branding_dir() -> Path:
