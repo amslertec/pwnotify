@@ -115,21 +115,25 @@ export default function AccessPage() {
       <PageHeader title={t('access.title')} description={t('access.description')} />
 
       <Tabs defaultValue="local">
-        <TabsList>
-          <TabsTrigger value="local">
-            <KeyRound className="size-4" /> {t('access.tabLocal')}
-          </TabsTrigger>
-          {showSsoTab(multiTenant) && (
-            <TabsTrigger value="sso">
-              <ShieldCheck className="size-4" /> {t('access.tabSso')}
+        {/* Wrap the tab bar so it scrolls horizontally on narrow viewports instead of
+            forcing the whole page to scroll -- same pattern as the Settings page. */}
+        <div className="overflow-x-auto pb-1">
+          <TabsList>
+            <TabsTrigger value="local">
+              <KeyRound className="size-4" /> {t('access.tabLocal')}
             </TabsTrigger>
-          )}
-          {showSuperadmins && (
-            <TabsTrigger value="superadmins">
-              <Crown className="size-4" /> {t('access.tabSuperadmins')}
-            </TabsTrigger>
-          )}
-        </TabsList>
+            {showSsoTab(multiTenant) && (
+              <TabsTrigger value="sso">
+                <ShieldCheck className="size-4" /> {t('access.tabSso')}
+              </TabsTrigger>
+            )}
+            {showSuperadmins && (
+              <TabsTrigger value="superadmins">
+                <Crown className="size-4" /> {t('access.tabSuperadmins')}
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
 
         {/* Lokale Benutzer — je Rolle eine Tabelle */}
         <TabsContent value="local">
