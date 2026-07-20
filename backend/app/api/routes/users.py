@@ -165,6 +165,23 @@ async def export_users(
     )
 
 
+# Leading characters that make a spreadsheet app (Excel, LibreOffice, Sheets) treat a cell
+# as a formula rather than text. openpyxl even persists a leading "=" as data_type='f' (a
+# REAL formula), and csv.writer merely quotes such a value -- Excel still evaluates it. A tab
+# or CR can push the payload into a formula context in some parsers, so both are included.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _neutralize_cell(value: Any) -> Any:
+    """Prefix a leading formula trigger with an apostrophe so spreadsheet apps treat the cell
+    as text, not a formula (CSV injection / CWE-1236). Only strings are at risk; numeric,
+    bool and date/ISO-string cells pass through unchanged so legitimate columns (daysLeft,
+    dates) stay typed and are not accidentally quoted."""
+    if isinstance(value, str) and value and value[0] in _FORMULA_TRIGGERS:
+        return "'" + value
+    return value
+
+
 def _build_xlsx(headers: list[str], werte: list[list[Any]]) -> io.BytesIO:
     from openpyxl import Workbook
 
@@ -173,7 +190,8 @@ def _build_xlsx(headers: list[str], werte: list[list[Any]]) -> io.BytesIO:
     ws.title = "Users"
     ws.append(headers)
     for zeile in werte:
-        ws.append([str(v) if isinstance(v, bool) else v for v in zeile])
+        # Neutralise BEFORE stringifying bools so both sinks (xlsx/csv) treat cells identically.
+        ws.append([_neutralize_cell(str(v) if isinstance(v, bool) else v) for v in zeile])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -184,7 +202,7 @@ def _build_csv(headers: list[str], werte: list[list[Any]]) -> str:
     sio = io.StringIO()
     writer = csv.writer(sio)
     writer.writerow(headers)
-    writer.writerows(werte)
+    writer.writerows([_neutralize_cell(v) for v in zeile] for zeile in werte)
     return sio.getvalue()
 
 
