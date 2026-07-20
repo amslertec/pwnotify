@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
@@ -19,6 +19,7 @@ from ...schemas.entities import EntraUserDetail, EntraUserOut
 from ...services import audit
 from ...services.mail import build_sender
 from ...services.notifier import notify_user
+from ...services.runner import mass_send_blocked_reason
 from ..deps import (
     AdminUser,
     CurrentUser,
@@ -39,8 +40,12 @@ class ExcludeRequest(BaseModel):
 
 
 class BulkRequest(BaseModel):
-    ids: list[int]
-    action: str  # exclude | include | notify
+    # Hard cap the payload: an untyped `ids: list[int]` let a single request drive an
+    # unbounded number of sends past the mass-send brake (finding H2). 2000 mirrors the
+    # existing convention in schemas/assignment.py; a Literal forbids unknown actions.
+    # Pydantic rejects a violation with 422 before any mail logic runs.
+    ids: list[int] = Field(min_length=1, max_length=2000)
+    action: Literal["exclude", "include", "notify"]
 
 
 @router.get("", response_model=Page[EntraUserOut])
@@ -260,6 +265,31 @@ async def bulk(
         return Message(message=f"{len(body.ids)} Benutzer aktualisiert.")
     if body.action == "notify":
         settings = await svc.get_all()
+        # Route bulk-notify through the SAME absolute ceiling that runner.execute_run
+        # enforces (finding H2): without this, an admin could dispatch thousands of real
+        # reminders under the customer's sender reputation, entirely past the mass-send
+        # brake. Every requested id is a deliberate send, so due == checked == len(ids);
+        # the ratio brake is meaningless here (would always be 100%), so it is switched off
+        # (max_ratio=0.0) and only the absolute count cap decides.
+        requested = len(body.ids)
+        mass_block = mass_send_blocked_reason(
+            due=requested,
+            checked=requested,
+            max_ratio=0.0,
+            max_count=int(settings.get("schedule.max_notify_count") or 0),
+        )
+        if mass_block:
+            # Nothing was sent -- record the refusal for the audit trail, then reject.
+            await audit.record(
+                session,
+                action=audit.NOTIFICATION_SENT_MANUAL,
+                actor=admin,
+                request=request,
+                outcome="blocked",
+                detail={"blocked": mass_block, "requested": requested, "kind": "bulk"},
+            )
+            await session.commit()
+            raise PwNotifyError(mass_block, code="mass_send_blocked")
         sender = build_sender(settings)
         sent = 0
         for uid in body.ids:
