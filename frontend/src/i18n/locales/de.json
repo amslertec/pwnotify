@@ -696,6 +696,14 @@
       "require2fa": "Zwei-Faktor-Authentifizierung vorschreiben",
       "require2faHint": "Lokale Konten ohne 2FA müssen es beim nächsten Anmelden einrichten. Bis dahin entsteht keine Sitzung: Nach dem Passwort führt der Weg direkt in die Einrichtung. Bestehende Sitzungen laufen weiter, bis sie ablaufen."
     },
+    "testMode": {
+      "title": "Testmodus",
+      "description": "Zum Prüfen des Versand- und Ablauf-Flows. Standardmässig aus.",
+      "saveButton": "Speichern",
+      "label": "Testmodus aktivieren",
+      "hint": "Im Testmodus werden auch deaktivierte und lizenzlose (Shared) Konten zu Benachrichtigungs-Kandidaten. Ausgeschlossene Konten und Konten ohne Ablaufdatum bleiben weiterhin unberücksichtigt.",
+      "warning": "Achtung: Im Testmodus erhalten auch deaktivierte und lizenzlose Benutzer echte Erinnerungs-Mails."
+    },
     "multiTenant": {
       "title": "Mandantenfähigkeit",
       "description": "Nur für Superadmins sichtbar. Steuert instanzweit, ob Kunden-Umschalter, Kunden-Navigation und Zuweisungen überhaupt aktiv sind.",

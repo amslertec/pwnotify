@@ -266,7 +266,14 @@ async def execute_run(
             # 2) Benachrichtigungen
             excluded_ids = await _resolve_excluded_ids(session, settings)
             sender = build_sender(settings)
-            users = await entra_repo.iter_active_for_notification(session)
+            # Test mode (sync.test_mode) also notifies disabled + unlicensed accounts with
+            # REAL sends. Threaded into the query here so the due-estimate below reasons over
+            # the exact same candidate set as the send loop (the mass-send guard depends on
+            # that consistency).
+            test_mode = bool(settings.get("sync.test_mode"))
+            users = await entra_repo.iter_active_for_notification(
+                session, include_inactive=test_mode
+            )
             checked = len(users)
 
             # Vor dem ersten Versand abschätzen, wie viele Mails anstünden. Bewusst ohne

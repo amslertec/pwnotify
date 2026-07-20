@@ -696,6 +696,14 @@
       "require2fa": "Require two-factor authentication",
       "require2faHint": "Local accounts without 2FA must set it up at their next sign-in. Until then no session is created: after the password, the path leads straight into enrolment. Existing sessions continue until they expire."
     },
+    "testMode": {
+      "title": "Test mode",
+      "description": "For exercising the send and expiry flow. Off by default.",
+      "saveButton": "Save",
+      "label": "Enable test mode",
+      "hint": "In test mode, disabled and unlicensed (shared) accounts also become notification candidates. Excluded accounts and accounts without an expiry date remain excluded.",
+      "warning": "Warning: in test mode, disabled and unlicensed users receive real reminder emails, too."
+    },
     "multiTenant": {
       "title": "Multi-tenancy",
       "description": "Superadmin-only. Controls, instance-wide, whether the tenant switcher, tenant navigation, and assignments are active at all.",

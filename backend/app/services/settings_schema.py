@@ -85,6 +85,12 @@ SETTINGS: dict[str, SettingSpec] = {
     # password expiry. Empty -> all tenant users (previous behavior).
     # transitiveMembers resolves nested groups; ideal with a dynamic group.
     "sync.group_id": SettingSpec(""),
+    # Test mode: when on, the notification filter ALSO includes disabled
+    # (account_enabled=false) and unlicensed (is_shared=true) accounts -- they receive REAL
+    # reminder mails, to exercise the send/expiry flow. Per tenant (no `instance.` prefix,
+    # like the other sync.* keys). The excluded/expiry_date filters and the mass-send brake
+    # stay in force. Default off.
+    "sync.test_mode": SettingSpec(False),
     # ---- SSO / OIDC (login with Microsoft account) ----
     # Uses the same app registration (tenant/client/secret) as Graph.
     "oidc.enabled": SettingSpec(False),

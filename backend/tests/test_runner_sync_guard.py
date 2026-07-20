@@ -167,7 +167,7 @@ def _patch_everything_but_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _no_excluded(session: Any, settings: dict[str, Any]) -> set[str]:
         return set()
 
-    async def _no_users(session: Any) -> list[Any]:
+    async def _no_users(session: Any, *, include_inactive: bool = False) -> list[Any]:
         return []
 
     async def _no_alert(*args: Any, **kwargs: Any) -> None:

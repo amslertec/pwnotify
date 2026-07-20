@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -12,12 +12,21 @@ import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import { isDefaultContext, useAuth } from '@/lib/auth'
 import { translateError } from '@/lib/errors'
-import type { InstanceSettings, VersionInfo } from '@/lib/types'
+import type { InstanceSettings, Settings, VersionInfo } from '@/lib/types'
+
+/** Whether sync test mode is on, read from the settings object. Extracted as a pure predicate
+ *  so the toggle's initial state is unit-testable without a DOM (repo convention). Default off:
+ *  a missing/undefined value must never read as enabled -- test mode sends real mails to
+ *  disabled + unlicensed accounts. */
+export function isTestModeEnabled(settings: Settings): boolean {
+  return Boolean(settings['sync.test_mode'] ?? false)
+}
 
 export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
   const { t } = useTranslation()
   const [updateCheck, setUpdateCheck] = useState(Boolean(settings['app.update_check'] ?? true))
   const [require2fa, setRequire2fa] = useState(Boolean(settings['auth.require_2fa'] ?? false))
+  const [testMode, setTestMode] = useState(isTestModeEnabled(settings))
   // Aufbewahrungsfristen in Tagen; 0 = unbegrenzt (Standard).
   const [auditDays, setAuditDays] = useState(String(settings['audit.retention_days'] ?? 0))
   const [userDays, setUserDays] = useState(String(settings['privacy.user_retention_days'] ?? 0))
@@ -179,6 +188,32 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
             />
           </Field>
         </div>
+      </Section>
+
+      <Section
+        title={t('generalTab.testMode.title')}
+        description={t('generalTab.testMode.description')}
+        footer={
+          <Button onClick={() => save({ 'sync.test_mode': testMode })} loading={saving}>
+            {t('generalTab.testMode.saveButton')}
+          </Button>
+        }
+      >
+        <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
+          <span>
+            <span className="block text-sm font-medium">{t('generalTab.testMode.label')}</span>
+            <span className="text-muted-foreground mt-1 block text-sm">
+              {t('generalTab.testMode.hint')}
+            </span>
+          </span>
+          <Switch checked={testMode} onCheckedChange={setTestMode} />
+        </label>
+        {testMode && (
+          <div className="border-warning/40 bg-warning/10 text-foreground flex items-start gap-2 rounded-lg border p-3 text-sm">
+            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+            <p>{t('generalTab.testMode.warning')}</p>
+          </div>
+        )}
       </Section>
 
       <MultiTenantSection />

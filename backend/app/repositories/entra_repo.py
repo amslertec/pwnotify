@@ -103,14 +103,25 @@ async def list_users(
     return list(rows), int(total)
 
 
-async def iter_active_for_notification(session: AsyncSession) -> list[EntraUser]:
-    """Kandidaten für Benachrichtigung: aktiv, nicht ausgeschlossen, hat Ablaufdatum."""
-    stmt = select(EntraUser).where(
-        EntraUser.account_enabled.is_(True),
+async def iter_active_for_notification(
+    session: AsyncSession, *, include_inactive: bool = False
+) -> list[EntraUser]:
+    """Notification candidates: has an expiry date and is not excluded.
+
+    Normally only enabled, licensed accounts qualify. ``include_inactive`` (sync test mode)
+    drops the ``account_enabled``/``is_shared`` gates so disabled + unlicensed accounts become
+    candidates too -- for exercising the real send/expiry flow. ``excluded`` and
+    ``expiry_date`` always stay: an opted-out account or one without an expiry date is never
+    notified, test mode or not.
+    """
+    conditions = [
         EntraUser.excluded.is_(False),
-        EntraUser.is_shared.is_(False),
         EntraUser.expiry_date.is_not(None),
-    )
+    ]
+    if not include_inactive:
+        conditions.append(EntraUser.account_enabled.is_(True))
+        conditions.append(EntraUser.is_shared.is_(False))
+    stmt = select(EntraUser).where(*conditions)
     return list((await session.execute(stmt)).scalars().all())
 
 
