@@ -25,8 +25,11 @@ from app.core.crypto import encrypt
 from app.core.errors import AuthError
 from app.core.security import hash_password
 from app.core.twofa import generate_recovery_codes, generate_secret, matching_step
+from app.models.audit import AuditLog
 from app.models.user import AppUser
 from app.schemas.auth import TwoFactorDisable, UserOut
+from app.services import audit
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _PASSWORD = "Str0ng!Pass99"
@@ -142,3 +145,79 @@ async def test_recovery_code_with_correct_password_disables(session: AsyncSessio
     assert isinstance(out, UserOut)
     await session.refresh(user)
     assert user.totp_enabled is False
+
+
+# --------------------------------------------------------------------------- #
+# F-02: the password re-auth on disable must count failures + lock + audit, the
+# same brute-force protection the login path has. Without it a hijacked session
+# could guess the plaintext password (bounded only by the per-IP rate limit).
+# --------------------------------------------------------------------------- #
+async def test_wrong_password_counts_failures_and_locks_and_audits(session: AsyncSession) -> None:
+    """Five wrong-password disable attempts MUST lock the account and leave an audit trail;
+    a further attempt -- even with the correct password -- is then refused as locked."""
+    user, secret, _ = await _twofa_user(session)
+    # A valid code -- irrelevant here, the wrong password is rejected before the code is read.
+    fresh_code = pyotp.TOTP(secret).now()
+
+    for _ in range(5):  # login_max_failures default = 5
+        with pytest.raises(AuthError) as exc_info:
+            await two_factor_disable(
+                _FakeRequest(),  # type: ignore[arg-type]
+                TwoFactorDisable(code=fresh_code, password="wrong-password"),
+                user,
+                session,
+                None,
+            )
+        assert exc_info.value.code == "invalid_password"
+
+    await session.refresh(user)
+    assert user.locked_until is not None
+    assert user.totp_enabled is True  # 2FA never got disabled
+
+    # Locked out now -- the correct password no longer helps.
+    with pytest.raises(AuthError) as exc_info:
+        await two_factor_disable(
+            _FakeRequest(),  # type: ignore[arg-type]
+            TwoFactorDisable(code=fresh_code, password=_PASSWORD),
+            user,
+            session,
+            None,
+        )
+    assert exc_info.value.code == "account_locked"
+
+    failed = (
+        await session.execute(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.actor_id == user.id, AuditLog.action == audit.LOGIN_FAILED)
+        )
+    ).scalar_one()
+    locked = (
+        await session.execute(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.actor_id == user.id, AuditLog.action == audit.ACCOUNT_LOCKED)
+        )
+    ).scalar_one()
+    assert failed == 5
+    assert locked == 1
+
+
+async def test_successful_disable_resets_failed_counter(session: AsyncSession) -> None:
+    """A successful disable clears a partial failure counter, mirroring the login path's
+    reset_failed_attempts -- otherwise stale failures would linger and lock the account early."""
+    user, secret, _ = await _twofa_user(session)
+    user.failed_login_count = 3
+    await session.flush()
+    fresh_code = pyotp.TOTP(secret).now()
+
+    await two_factor_disable(
+        _FakeRequest(),  # type: ignore[arg-type]
+        TwoFactorDisable(code=fresh_code, password=_PASSWORD),
+        user,
+        session,
+        None,
+    )
+    await session.refresh(user)
+    assert user.totp_enabled is False
+    assert user.failed_login_count == 0

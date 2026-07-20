@@ -41,7 +41,7 @@ from ...core.twofa import (
     provisioning_uri,
     qr_png_data_uri,
 )
-from ...db.tenant_context import current_tenant_id, tenant_scoped_session
+from ...db.tenant_context import tenant_scoped_session
 from ...models._base import utcnow
 from ...models.user import AppUser
 from ...repositories import assignment_group_repo, tenant_repo, user_repo
@@ -76,6 +76,7 @@ from ..deps import (
     clear_2fa_cookie,
     clear_auth_cookies,
     clear_oidc_flow_cookie,
+    default_tenant_id,
     limiter,
     set_2fa_cookie,
     set_auth_cookies,
@@ -353,20 +354,22 @@ async def login(
     # schwächer: Das Access-Token wäre bereits gültig.
     if not user.is_sso:
         # `auth.require_2fa` is a PER-TENANT setting (no `instance.` prefix in
-        # `settings_schema.py`): each customer governs its own requirement. The owner session
-        # carries no tenant context, so `SettingsService.get_all` would fall back to the
-        # DEFAULT tenant and read the wrong customer's value -- a security control governed by
-        # the wrong tenant. Bind the account's HOME tenant for this one read so the requirement
-        # is taken from where it was configured. The owner session bypasses RLS by ownership,
-        # so it can read the home tenant's row regardless. `user.tenant_id` may be None for an
-        # instance-wide local admin; setting the context to None is equivalent to no context,
-        # so `get_all` then falls back to the default tenant -- the correct home for such an
-        # account.
-        token = current_tenant_id.set(user.tenant_id)
-        try:
-            require_2fa = await SettingsService(session).get("auth.require_2fa")
-        finally:
-            current_tenant_id.reset(token)
+        # `settings_schema.py`): each customer governs its own requirement. Reading it on the
+        # owner session (no tenant context) would fall back to the DEFAULT tenant and apply the
+        # wrong customer's value -- a security control governed by the wrong tenant. Read it
+        # through an explicitly tenant-scoped session bound to the account's HOME tenant instead
+        # of setting the tenant `ContextVar` around the owner session (F-03): the former would
+        # make the begin-listener arm `SET LOCAL ROLE pwnotify_app` on the owner connection if a
+        # new transaction opened mid-read, and the later owner-session writes in `_complete_login`
+        # (user_session INSERT, audit) have no rights under `pwnotify_app` -> login breaks. The
+        # scoped read runs on its own runtime connection (RLS-enforced) and leaves this `session`
+        # untouched. `user.tenant_id` may be None for an instance-wide local admin; resolve the
+        # default tenant then -- its correct home.
+        home_tid = user.tenant_id
+        if home_tid is None:
+            home_tid = await default_tenant_id(session)
+        async with tenant_scoped_session(home_tid) as tscoped:
+            require_2fa = await SettingsService(tscoped).get("auth.require_2fa")
         if require_2fa:
             await session.commit()
             set_2fa_cookie(response, create_2fa_token(str(user.id)))
@@ -861,12 +864,47 @@ async def change_password(
     session: SessionDep,
     response: Response,
 ) -> Message:
+    # The current-password reauth is a brute-force surface just like login and 2FA-disable
+    # (F-02): a hijacked session could otherwise guess `current_password` -- bounded only by
+    # the per-IP rate limit -- and then take the account over via a new password. Honour the
+    # lockout here, and count+audit+commit a wrong password so the account actually locks.
+    now = utcnow()
+    if user.locked_until and user.locked_until > now:
+        raise AuthError(
+            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
+        )
     if not verify_password(body.current_password, user.password_hash):
+        locked = register_failed_attempt(
+            user,
+            now=now,
+            max_failures=_settings.login_max_failures,
+            lockout_min=_settings.login_lockout_min,
+        )
+        if locked:
+            log.warning("account_locked", username=user.username, factor="change_password")
+            await audit.record(
+                session,
+                action=audit.ACCOUNT_LOCKED,
+                actor=user,
+                request=request,
+                detail={"factor": "change_password", "lockout_min": _settings.login_lockout_min},
+            )
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "wrong_current_password", "context": "change_password"},
+        )
+        await session.commit()
         raise AuthError("Aktuelles Passwort ist falsch.", code="wrong_current_password")
     # Full server-side password policy (Security Phase 5, Task 2) -- pydantic's
     # `min_length=10` on `PasswordChangeRequest.new_password` is only a floor.
     if not password_meets_policy(body.new_password):
         raise ForbiddenError(WEAK_PASSWORD_MESSAGE, code="password_policy")
+    # Successful reauth clears any partial failure counter (login-path parity, F-02).
+    reset_failed_attempts(user)
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
 
@@ -994,10 +1032,46 @@ async def two_factor_disable(
     if not user.totp_enabled:
         return await _user_out(session, user, active_tenant)
 
+    # The password re-auth below is a brute-force surface just like login (a hijacked session
+    # could otherwise guess the plaintext password, bounded only by the per-IP rate limit).
+    # Honour the account lockout HERE too (F-02): without this check the lockout set below would
+    # never bite on this path, since the session stays valid regardless of `locked_until`.
+    now = utcnow()
+    if user.locked_until and user.locked_until > now:
+        raise AuthError(
+            "Konto vorübergehend gesperrt. Bitte später erneut versuchen.", code="account_locked"
+        )
+
     # Re-authenticate with the current password: disabling the second factor is a high-value
     # action, and a hijacked SESSION alone must not suffice (L1). Password first, then code --
-    # both must be correct.
+    # both must be correct. A wrong password counts as a failed attempt and can lock the account
+    # (F-02), mirroring the login handler; the commit is mandatory, or the counter/lock is rolled
+    # back on the raise (same trap as F-01/H1).
     if not verify_password(body.password, user.password_hash):
+        locked = register_failed_attempt(
+            user,
+            now=now,
+            max_failures=_settings.login_max_failures,
+            lockout_min=_settings.login_lockout_min,
+        )
+        if locked:
+            log.warning("account_locked", username=user.username, factor="2fa_disable")
+            await audit.record(
+                session,
+                action=audit.ACCOUNT_LOCKED,
+                actor=user,
+                request=request,
+                detail={"factor": "2fa_disable", "lockout_min": _settings.login_lockout_min},
+            )
+        await audit.record(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor=user,
+            outcome="failure",
+            request=request,
+            detail={"reason": "invalid_password", "context": "2fa_disable"},
+        )
+        await session.commit()
         raise AuthError("Passwort falsch.", code="invalid_password")
 
     # Replay-safe TOTP check, exactly like /2fa/verify and /2fa/enable: match the step and
@@ -1012,6 +1086,9 @@ async def two_factor_disable(
         totp_ok = match_recovery_code(body.code, recovery_hashes) is not None
     if not totp_ok:
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
+    # Successful re-auth clears any partial failure counter, exactly like the login path's
+    # `reset_failed_attempts` -- otherwise stale failures would linger and lock the account early.
+    reset_failed_attempts(user)
     user.totp_enabled = False
     user.totp_secret = None
     user.recovery_codes = None
