@@ -122,11 +122,34 @@ class GraphClient:
         misconfiguration only surfaces when a token is actually requested.
         """
         if self._app is None:
-            self._app = msal.ConfidentialClientApplication(
-                self.config.client_id,
-                authority=self.config.authority,
-                client_credential=self.config.client_secret,
-            )
+            # A9: validate config BEFORE constructing MSAL. An empty/whitespace tenant_id
+            # (or client_id/secret) would otherwise fail only AFTER MSAL's instance-discovery
+            # network roundtrip -- and in a send loop that roundtrip repeats per recipient
+            # (send_mail -> _acquire_token per address), a self-DoS against a misconfigured
+            # tenant. This check is cheap and deterministic, so even a per-recipient call
+            # never touches the network.
+            if not (
+                self.config.tenant_id.strip()
+                and self.config.client_id.strip()
+                and self.config.client_secret.strip()
+            ):
+                raise GraphError(
+                    "Graph ist nicht vollständig konfiguriert.", code="graph_not_configured"
+                )
+            try:
+                self._app = msal.ConfidentialClientApplication(
+                    self.config.client_id,
+                    authority=self.config.authority,
+                    client_credential=self.config.client_secret,
+                )
+            except ValueError as exc:
+                # A10: surface a GraphError (not MSAL's raw ValueError) so the existing
+                # `except GraphError` handlers (test_connection, get_user_photo) give a clean
+                # "not configured" message instead of a generic 500 / raw MSAL string leaking
+                # into per-user notify failures.
+                raise GraphError(
+                    f"Graph-Konfiguration ungültig: {exc}", code="graph_config_invalid"
+                ) from exc
         return self._app
 
     # -- HTTP-Verbindung ----------------------------------------------------- #
@@ -179,24 +202,36 @@ class GraphClient:
 
     # -- Pagination ---------------------------------------------------------- #
     def _same_graph_host(self, url: str) -> bool:
-        """True only when ``url``'s host matches the configured Graph host."""
-        return urlparse(url).netloc == urlparse(self.config.base).netloc
+        """True only when ``url`` is https AND its host matches the configured Graph host.
+
+        The scheme check matters: comparing only ``netloc`` would let an ``http://`` link to
+        the same host pass, and the follow-up request would then carry the Bearer token over
+        a cleartext connection (A2, CWE-918).
+        """
+        p = urlparse(url)
+        return p.scheme == "https" and p.netloc == urlparse(self.config.base).netloc
 
     def _next_link(self, data: dict[str, Any]) -> str:
         """Return the ``@odata.nextLink`` to follow, or ``""`` to stop the loop.
 
         Every page request carries the app's Bearer token. ``@odata.nextLink`` is an
         absolute URL copied verbatim from the response body -- a spoofed/broken response (or
-        a misbehaving proxy) could point it at a foreign host, and the loop would then send
-        the Bearer token there. Graph's response is TLS-authenticated so this is
-        defense-in-depth (I3), but a token leaking off-tenant is severe and the check is
-        cheap: a nextLink on any other host is dropped (loop ends) and logged, never
-        followed.
+        a misbehaving proxy) could point it at a foreign host, or downgrade the same host to
+        cleartext ``http://``, and the loop would then send the Bearer token there. Graph's
+        response is TLS-authenticated so this is defense-in-depth (I3/A2), but a token leaking
+        off-tenant is severe. A mismatching nextLink is a security event, not a normal loop
+        end: we raise (not silently drop to ``""``, which would quietly truncate the result
+        set and mask the tampering) so the whole paginated call aborts before the token is
+        ever sent to the untrusted target.
         """
         nxt = str(data.get("@odata.nextLink") or "")
         if nxt and not self._same_graph_host(nxt):
             log.warning("graph_nextlink_host_mismatch", next_link=nxt)
-            return ""
+            raise GraphError(
+                "Nicht vertrauenswürdiger @odata.nextLink-Host/Schema; "
+                "Abbruch zum Schutz des Zugriffstokens.",
+                code="graph_nextlink_untrusted",
+            )
         return nxt
 
     # -- HTTP ---------------------------------------------------------------- #
