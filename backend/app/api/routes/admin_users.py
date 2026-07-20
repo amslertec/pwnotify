@@ -158,13 +158,18 @@ async def create_local(
 ) -> AdminUserOut:
     """Creates a local account -- scoped by caller (Task 3).
 
-    Superadmin: unrestricted, NO automatic assignment (the superadmin assigns tenants
-    later, deliberately, Task 4). Every other admin caller (local admin or SSO admin):
-    the new account is automatically assigned to the caller's ACTIVE tenant -- with the
-    assignment kind matching the new role (`role=='admin'` -> `admin_tenant`,
-    `role=='auditor'` -> `auditor_tenant`), so a `role=='admin'` account never has ONLY an
-    `auditor_tenant` assignment (that would grant it write access via the role gate that
-    the assignment itself doesn't confer).
+    Superadmin: assignment depends on the ACTIVE context (prod-bug fix). In the DEFAULT/
+    provider context (`active_tenant` absent or == default tenant) the account is provider
+    staff -- default-homed, NO automatic assignment (the superadmin assigns customers later,
+    deliberately, Task 4). But a superadmin who switched INTO a REAL customer (`active_tenant`
+    set, != default, tenant exists + active) creates a CUSTOMER-homed + customer-granted
+    account there, exactly like a customer admin would -- otherwise a superadmin inviting from
+    a customer view produced an invisible, unassigned account at the default tenant. Every
+    other admin caller (local admin or SSO admin): the new account is automatically assigned
+    to the caller's ACTIVE tenant -- with the assignment kind matching the new role
+    (`role=='admin'` -> `admin_tenant`, `role=='auditor'` -> `auditor_tenant`), so a
+    `role=='admin'` account never has ONLY an `auditor_tenant` assignment (that would grant it
+    write access via the role gate that the assignment itself doesn't confer).
 
     The `active_tenant` claim is NOT taken at face value (per `ActiveTenantClaim` it is
     unauthorized, meant for display only) -- instead it's additionally checked via
@@ -184,9 +189,12 @@ async def create_local(
       `is_allowed(..., write=True)`) -- the new account is thus customer-homed AND
       correspondingly assigned, so per Task 2 it's structurally not cross-grantable to a
       foreign tenant -- purely a customer-staff account.
-    - Superadmin caller: home = the default tenant (`deps.default_tenant_id`) -- provider
-      staff are default-homed, so an account created this way remains cross-grantable to
-      any customer via the assignment API (Task 4/cross-grant lock Task 2).
+    - Superadmin caller in the DEFAULT/provider context: home = the default tenant
+      (`deps.default_tenant_id`) -- provider staff are default-homed, so an account created
+      this way remains cross-grantable to any customer via the assignment API (Task 4/
+      cross-grant lock Task 2). Superadmin caller in a REAL customer context: home = that
+      customer (`grant_tenant_id`), like a customer admin -- customer-homed, hence per Task 2
+      structurally NOT cross-grantable to a foreign tenant (prod-bug fix).
       (A superadmin creating a *superadmin* account remains unchanged in
       `create_superadmin` -- instance-wide, no home needed.)
 
@@ -228,6 +236,7 @@ async def create_local(
         password_hash = hash_password(raw_password)
 
     is_superadmin_caller = not admin.is_sso and admin.role == "superadmin"
+    default_tid = await default_tenant_id(session)
     grant_tenant_id: int | None = None
     if not is_superadmin_caller:
         if active_tenant is None or not await tenant_repo.is_allowed(
@@ -237,10 +246,20 @@ async def create_local(
                 "Kein aktiver Mandant mit Verwaltungsrechten.", code="tenant_required"
             )
         grant_tenant_id = active_tenant
+    elif active_tenant is not None and active_tenant != default_tid:
+        # Superadmin switched INTO a customer context (prod-bug fix): create a customer-homed
+        # account for that customer (home + grant), exactly like a customer admin would -- the
+        # invite/creation belongs to the customer the superadmin is managing, not the provider
+        # default. We reuse the SAME `is_allowed(..., write=True)` gate as the customer-admin
+        # branch above: for a superadmin it returns True precisely when the target tenant exists
+        # AND is active (`tenant_repo.is_allowed` short-circuits superadmins to an active-tenant
+        # check -- the superadmin is globally authorized and holds no admin_tenant grants), so a
+        # stale/forged claim to a missing or inactive tenant falls through to provider staff
+        # (grant None, home default) instead of homing there.
+        if await tenant_repo.is_allowed(session, admin, active_tenant, write=True):
+            grant_tenant_id = active_tenant
 
-    home_tenant_id = (
-        grant_tenant_id if not is_superadmin_caller else await default_tenant_id(session)
-    )
+    home_tenant_id = grant_tenant_id if grant_tenant_id is not None else default_tid
 
     user = await user_repo.create(
         session,
