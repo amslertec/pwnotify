@@ -103,14 +103,30 @@ class _RetryableStatusError(Exception):
 class GraphClient:
     def __init__(self, config: GraphConfig):
         self.config = config
-        self._app = msal.ConfidentialClientApplication(
-            config.client_id,
-            authority=config.authority,
-            client_credential=config.client_secret,
-        )
+        self._app: msal.ConfidentialClientApplication | None = None
         self._token: str | None = None
         self._token_exp: dt.datetime = dt.datetime.min.replace(tzinfo=dt.UTC)
         self._http: httpx.AsyncClient | None = None
+
+    def _msal_app(self) -> msal.ConfidentialClientApplication:
+        """Build the MSAL client lazily, on first token acquisition.
+
+        Constructing it eagerly in ``__init__`` raises on an incomplete authority: an
+        empty ``graph.tenant_id`` degrades the authority to
+        ``https://login.microsoftonline.com/`` (no tenant path segment), which MSAL
+        rejects at construction time. Since the mail backend defaults to ``graph``, a
+        partially configured tenant would then crash the whole scheduled run just by
+        BUILDING the sender — even with nothing to send (prod: run_id 19, tenant 2,
+        checked=0). Deferring construction keeps an unused client harmless; a real
+        misconfiguration only surfaces when a token is actually requested.
+        """
+        if self._app is None:
+            self._app = msal.ConfidentialClientApplication(
+                self.config.client_id,
+                authority=self.config.authority,
+                client_credential=self.config.client_secret,
+            )
+        return self._app
 
     # -- HTTP-Verbindung ----------------------------------------------------- #
     def _shared_http(self) -> httpx.AsyncClient:
@@ -142,7 +158,7 @@ class GraphClient:
         if self._token and now < self._token_exp - dt.timedelta(minutes=2):
             return self._token
         result = await asyncio.to_thread(
-            self._app.acquire_token_for_client, scopes=[self.config.scope]
+            self._msal_app().acquire_token_for_client, scopes=[self.config.scope]
         )
         if "access_token" not in result:
             desc = result.get("error_description", result.get("error", "unbekannter Fehler"))
