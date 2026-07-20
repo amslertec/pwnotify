@@ -17,16 +17,17 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from app.api.deps import limiter
+from app.api.deps import REFRESH_COOKIE, limiter
 from app.api.routes.admin_users import delete_user, send_reset
+from app.api.routes.auth import refresh as auth_refresh
 from app.api.routes.public_tokens import reset_token
-from app.core.errors import ForbiddenError
-from app.core.security import hash_token, verify_password
+from app.core.errors import AuthError, ForbiddenError
+from app.core.security import hash_token, issue_token_pair, verify_password
 from app.models._base import utcnow
 from app.models.tenant import AdminTenant, Tenant
 from app.models.token import UserToken
 from app.models.user import AppUser
-from app.repositories import tenant_repo
+from app.repositories import tenant_repo, user_repo
 from app.schemas.auth import TokenReset
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -339,6 +340,72 @@ async def test_weak_password_rejected_by_reset_endpoint(
     # starken Passwort muss weiterhin funktionieren.
     row = await _token_row(session, target.id, "reset")
     assert row.consumed_at is None
+
+
+# ---- H3: ein Reset widerruft alle bestehenden Sitzungen ------------------------------------ #
+
+
+class _FakeRequest:
+    """Duck-typed Request -- `refresh` liest nur `.cookies` (plus `.client`/Headers für die
+    In-Place-Rotation, die hier aber nie erreicht wird)."""
+
+    def __init__(self, cookies: dict[str, str]) -> None:
+        self.cookies = cookies
+        self.headers: dict[str, str] = {}
+        self.client: object | None = None
+
+
+class _FakeResponse:
+    def __init__(self) -> None:
+        self.cookie_values: dict[str, str] = {}
+        self.deleted_cookies: set[str] = set()
+
+    def set_cookie(self, name: str, value: str, **_: object) -> None:
+        self.cookie_values[name] = value
+
+    def delete_cookie(self, name: str, **_: object) -> None:
+        self.deleted_cookies.add(name)
+
+
+async def test_public_reset_revokes_existing_sessions(
+    session: AsyncSession, fake_sender: _FakeSender
+) -> None:
+    """H3: ein Passwort-Reset ist eine Recovery-Massnahme. Eine bereits bestehende (evtl. vom
+    Angreifer gehaltene) Sitzung MUSS mit dem Reset sterben -- sonst rotiert ihr Refresh-Token
+    ungestört weiter (bis zu `refresh_token_ttl_days`), obwohl das Passwort neu gesetzt wurde."""
+    superadmin = await _mk_user(session, role="superadmin")
+    tenant = await _mk_tenant(session)
+    target = await _mk_user(session, role="admin", tenant_id=tenant.id, email="hijack@pr5.test")
+    assert target.id is not None
+
+    # Bestehende Sitzung des Kontos (wie nach einem Login): gültige user_session-Zeile.
+    pair = issue_token_pair(str(target.id), generation=0)
+    await user_repo.create_session(
+        session,
+        user_id=target.id,
+        jti=pair.refresh_jti,
+        token_hash=hash_token(pair.refresh_token),
+        expires_at=pair.refresh_expires,
+        user_agent=None,
+        ip=None,
+    )
+    assert len(await user_repo.list_sessions(session, target.id)) == 1
+
+    raw = await _mk_reset(session, fake_sender, admin=superadmin, target=target)
+    msg = await reset_token(  # type: ignore[arg-type]
+        None, TokenReset(token=raw, password="NewStr0ng!Pass"), session
+    )
+    assert msg.message
+
+    # (a) keine aktive Sitzung mehr -- die alte Zeile ist widerrufen.
+    assert await user_repo.list_sessions(session, target.id) == []
+
+    # (b) der ALTE Refresh-Token liefert an /auth/refresh 401 (session_invalid).
+    req = _FakeRequest({REFRESH_COOKIE: pair.refresh_token})
+    resp = _FakeResponse()
+    with pytest.raises(AuthError) as exc_info:
+        await auth_refresh(req, resp, session)  # type: ignore[arg-type]
+    assert exc_info.value.code == "session_invalid"
 
 
 # ---- Carry-forward-Fix aus Task 1: `delete_user` eines Tokens-Erstellers ------------------ #

@@ -127,5 +127,12 @@ async def reset_token(request: Request, body: TokenReset, session: SessionDep) -
         target=target.username,
         request=request,
     )
-    await session.commit()
+
+    # Revoke every existing session and bump the token generation: a password reset is a
+    # recovery action, so any session an attacker may still hold must die with it -- otherwise
+    # a stolen refresh token keeps rotating (up to `refresh_token_ttl_days`) despite the reset.
+    # The /auth/password path does the same; this side effect was missed when reset was added.
+    # `revoke_all` commits the pending password change, token consumption and audit record too.
+    assert target.id is not None  # guaranteed non-None since the row was loaded above
+    await user_repo.revoke_all(session, target.id)
     return Message(message="Passwort geändert. Sie können sich jetzt anmelden.")
