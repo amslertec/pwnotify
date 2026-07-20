@@ -195,7 +195,10 @@ async def sync_group(
             continue  # Eine Bedingung nicht erfüllt -> Konto BEHALTEN (fail-closed).
         assert account.id is not None
         # `user_repo.delete` entfernt zuerst explizit die `UserSession`-Zeilen des Kontos
-        # (kein FK-Dangle) und committet je Aufruf -- gleiche Lösch-Semantik wie der SSO-Sync.
+        # (kein FK-Dangle). Es committet NICHT mehr selbst (M-03): Löschung + der folgende
+        # `USER_DELETED`-Audit-Eintrag werden nur gestaged und landen zusammen im Commit des
+        # Aufrufers (`admin_groups._auto_sync`/`sync_group_route`) -- so geht bei einem Crash
+        # dazwischen keine Löschung ohne ihren Audit-Eintrag (oder umgekehrt) durch.
         await user_repo.delete(session, account.id)
         await audit.record(
             session,

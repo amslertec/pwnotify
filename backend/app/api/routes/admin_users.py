@@ -696,6 +696,10 @@ async def delete_user(
                     "Der letzte Admin dieses Kunden kann nicht gelöscht werden.",
                     code="last_tenant_admin",
                 )
+    # Atomicity (L-04/M-03): STAGE the audit entry, then the deletion, and commit ONCE at
+    # the end -- both land in the same transaction. Previously the audit was committed HERE,
+    # BEFORE the deletion below, so a failure in `delete_created_by`/`delete` left a phantom
+    # `USER_DELETED` in the log for an account that still existed.
     await audit.record(
         session,
         action=audit.USER_DELETED,
@@ -709,7 +713,6 @@ async def delete_user(
         # event into that tenant's audit view (Review-Fix, Task 7/M11).
         tenant_id=(target.tenant_id if target.role != "superadmin" else None),
     )
-    await session.commit()
     # Carry-forward fix from Task 1: `user_token.created_by` has NO `ON DELETE` (a
     # deleted creator account must not take down a still-valid token of ANOTHER user)
     # -- without this step BEFORE the actual deletion, it fails with an `IntegrityError`
@@ -719,6 +722,7 @@ async def delete_user(
     # `app_user_id`, not needed for that).
     await user_token_repo.delete_created_by(session, user_id)
     await user_repo.delete(session, user_id)
+    await session.commit()
     return Message(message="Benutzer gelöscht.")
 
 

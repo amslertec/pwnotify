@@ -201,6 +201,14 @@ async def list_local_granted_to_tenants(
 
 
 async def delete(session: AsyncSession, user_id: int) -> None:
+    """Stage the removal of the account and its sessions; the CALLER must commit.
+
+    Deliberately does NOT commit (M-03): the deletion and the caller's `USER_DELETED`
+    audit entry must land in ONE transaction. If this committed internally, a crash
+    between the internal commit and the caller's audit commit would persist the removal
+    while losing its audit trail (a silent deletion). Every caller (`admin_users.
+    delete_user`, `group_sync.sync_group`, `oidc.sync_sso_users`) commits after this call.
+    """
     user = await session.get(AppUser, user_id)
     if user is not None:
         # Remove ALL sessions first and explicitly. Two pitfalls:
@@ -212,7 +220,6 @@ async def delete(session: AsyncSession, user_id: int) -> None:
         #    direct DELETE runs immediately and is thus guaranteed to run first.
         await session.execute(sa_delete(UserSession).where(UserSession.user_id == user_id))
         await session.delete(user)
-        await session.commit()
 
 
 async def delete_by_tenant(session: AsyncSession, tenant_id: int) -> int:

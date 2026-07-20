@@ -111,6 +111,11 @@ async def delete_created_by(session: AsyncSession, user_id: int) -> None:
     schlägt das Löschen mit einem `IntegrityError` fehl, sobald noch Tokens offen sind, die
     dieser Admin ausgestellt hat. Mirror von `user_repo.delete`s expliziter
     Sessions-Löschung (dieselbe Begründung: kein ORM-Relationship, DELETE erzwingt die
-    Reihenfolge)."""
+    Reihenfolge).
+
+    Committet NICHT (M-03): Dieser Schritt steht in `delete_user` zwischen dem gestagten
+    `USER_DELETED`-Audit-Eintrag und der eigentlichen Kontolöschung. Ein interner Commit
+    hier würde den davor gestagten Audit-Eintrag verfrüht festschreiben, sodass ein
+    späterer Fehler eine Phantom-Löschung im Log hinterliesse. Der einzige Aufrufer
+    (`admin_users.delete_user`) committet Audit + Löschung gemeinsam am Ende."""
     await session.execute(sa_delete(UserToken).where(UserToken.created_by == user_id))
-    await session.commit()
