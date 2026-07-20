@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from ...core.config import get_settings
 from ...core.errors import NotFoundError, PwNotifyError
+from ...core.logging import get_logger
 from ...repositories import entra_repo
 from ...schemas.common import Message, Page
 from ...schemas.entities import EntraUserDetail, EntraUserOut
@@ -29,6 +30,8 @@ from ..deps import (
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+log = get_logger("users")
 
 # Obergrenze fuer einen Export. Darueber wird abgelehnt statt abgeschnitten —
 # ein unvollstaendiger Export, der vollstaendig aussieht, ist gefaehrlicher.
@@ -237,7 +240,11 @@ async def notify_now(
     )
     await session.commit()
     if outcome.action == "failed":
-        raise NotFoundError(outcome.error or "", code="send_failed")
+        # Never surface the raw transport error (M10): SMTP/Graph text carries server banners,
+        # internal hostnames and tenant GUIDs. The detail goes to the log only; the client gets
+        # a generic message that points the operator at the log.
+        log.warning("manual_send_failed", user=user.upn, error=outcome.error)
+        raise NotFoundError("Versand fehlgeschlagen. Bitte Log prüfen.", code="send_failed")
     if outcome.action == "skipped":
         return Message(message=f"Kein Versand: {outcome.reason}")
     return Message(message=f"Reminder an {outcome.recipient} gesendet.")

@@ -125,7 +125,11 @@ async def list_users(
     if user.role not in ("admin", "superadmin"):
         return {"local": [], "sso": []}
 
-    is_superadmin_caller = user.role == "superadmin"
+    # Use the shared predicate (L6): `is_superadmin()` also excludes SSO accounts
+    # (`not is_sso and role == "superadmin"`). A raw role compare would let an SSO account that
+    # somehow held role=="superadmin" skip `is_allowed` below while `tid` comes from the
+    # UNAUTHORIZED active-tenant claim -- a cross-tenant read one line from being reachable.
+    is_superadmin_caller = is_superadmin(user)
     tid = active_tenant if active_tenant is not None else await default_tenant_id(session)
 
     if not is_superadmin_caller and not await tenant_repo.is_allowed(session, user, tid):
@@ -703,7 +707,10 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
     if is_superadmin(user):
         tenants = await tenant_repo.list_active(session)
     else:
-        tid = await _resolve_authorized_tenant(request, user, session)
+        # WRITE gate (M1): `sync_sso_users` creates, re-activates, overwrites roles on and
+        # DELETES SSO accounts -- a destructive write. A read-only `auditor_tenant` grant must
+        # not be enough to trigger it (sister route `runs.trigger` gates the same way).
+        tid = await _resolve_authorized_tenant(request, user, session, write=True)
         tenant = await tenant_repo.get(session, tid)
         tenants = [tenant] if tenant is not None else []
 
