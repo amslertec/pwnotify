@@ -62,9 +62,10 @@ services:
       - internal
 
   app:
-    # From Docker Hub. Pin by digest for immutable deployments, e.g.:
-    #   PWNOTIFY_IMAGE=amslertec/pwnotify:0.3.3@sha256:<digest>
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.3}
+    # From Docker Hub, digest-pinned for an immutable deployment (like the db image above):
+    # a compromised Docker Hub account or a tag overwrite cannot silently swap the running app
+    # on the next pull. Override PWNOTIFY_IMAGE to move to a newer release (pin its digest too).
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.3@sha256:199fdaffa5d6c44fb6a339852d4ef5eef135d583f36b302b4847f700eb78b6fc}
     pull_policy: always
     depends_on:
       db:
