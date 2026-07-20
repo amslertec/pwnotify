@@ -176,7 +176,13 @@ jobs:
         uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1
         with:
           command: cves
-          image: localhost:5000/pwnotify:ci
+          # Point Scout at the amd64 single-platform DIGEST in the local registry, not the
+          # multi-arch `:ci` tag. Like Trivy above, Scout resolves registry refs via
+          # go-containerregistry, which auto-uses HTTP for a loopback registry -- but a
+          # single-platform digest avoids having to pick a platform out of a multi-arch index
+          # over that HTTP endpoint, which the tag form does not resolve reliably. PR-only and
+          # advisory; the authoritative gate is the two Trivy scans on the exact built digests.
+          image: localhost:5000/pwnotify@${{ steps.arch.outputs.amd64 }}
           only-severities: critical,high
           exit-code: true
         env:

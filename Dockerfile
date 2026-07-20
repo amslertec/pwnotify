@@ -8,7 +8,7 @@
 # =============================================================================
 
 # ---------- Stage 1: Frontend ------------------------------------------------
-FROM node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS frontend
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
@@ -23,7 +23,7 @@ COPY frontend/ ./
 RUN pnpm run build            # Ausgabe -> /fe/dist
 
 # ---------- Stage 2: Python-Dependencies (venv) ------------------------------
-FROM cgr.dev/chainguard/python:latest-dev@sha256:b5ce829f93559a3a724837305f267244529bad30b878dc5623940af0a255c6b9 AS deps
+FROM cgr.dev/chainguard/python:latest-dev@sha256:31d318170df60ddec4b04ed595cbe79c33eeb2cf94f9676db6f9eaf46542e6be AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN mkdir -p /tmp/data-empty
 
 # ---------- Stage 3: Runtime -------------------------------------------------
-FROM cgr.dev/chainguard/python:latest@sha256:ce9aaca1f826f7f963cd031e98f8c19f993b1843096d395ea919b646e72cb8de AS runtime
+FROM cgr.dev/chainguard/python:latest@sha256:2c6a2e8bdeb1336cd8545d3586d1c1e5b4f7564ef00924b0447ebfbe57a549ee AS runtime
 
 # --- OCI-Labels (Werte via build-args aus CI) ---
 ARG VERSION=0.3.2
@@ -56,7 +56,7 @@ LABEL org.opencontainers.image.title="PwNotify" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.base.name="cgr.dev/chainguard/python:latest" \
-      org.opencontainers.image.base.digest="sha256:ce9aaca1f826f7f963cd031e98f8c19f993b1843096d395ea919b646e72cb8de"
+      org.opencontainers.image.base.digest="sha256:2c6a2e8bdeb1336cd8545d3586d1c1e5b4f7564ef00924b0447ebfbe57a549ee"
 
 WORKDIR /app
 # TZ=UTC: the runtime image ships no /etc/timezone, so tzlocal cannot detect a zone and
