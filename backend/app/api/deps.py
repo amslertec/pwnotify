@@ -365,6 +365,24 @@ async def require_superadmin_default_context(
 SuperadminDefaultContextUser = Annotated[AppUser, Depends(require_superadmin_default_context)]
 
 
+async def superadmin_in_default_context(
+    request: Request, user: AppUser, session: AsyncSession
+) -> bool:
+    """Non-raising counterpart to ``require_superadmin_default_context``: True only for a local
+    superadmin whose active tenant is the default (provider) tenant.
+
+    For routes that stay open to EVERY account but must expose a provider-only field ONLY in
+    that context -- e.g. ``GET /admin/instance`` returns ``multi_tenant_mode`` to all accounts
+    (UI gating) but ``default_tenant_name`` (provider metadata) only here (I5). A superadmin
+    switched into a customer context sees the customer's operative view, so the provider name
+    is withheld there too, matching Matrix B and the PUT gate above.
+    """
+    if not is_superadmin(user):
+        return False
+    active = await _resolve_authorized_tenant(request, user, session)
+    return active == await default_tenant_id(session)
+
+
 def _cookie_kwargs() -> dict[str, object]:
     settings = get_settings()
     return {

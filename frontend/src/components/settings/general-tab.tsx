@@ -208,7 +208,7 @@ function MultiTenantSection() {
   // Einmaliger Seed aus dem Server-Stand -- danach steuert nur noch die lokale Eingabe
   // (kein Re-Sync bei Refetch, sonst gingen ungespeicherte Tastatureingaben verloren).
   useEffect(() => {
-    if (instance) setDefaultName(instance.default_tenant_name)
+    if (instance) setDefaultName(instance.default_tenant_name ?? '')
   }, [instance])
 
   const toggleMode = useMutation({

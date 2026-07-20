@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field
 
 class InstanceOut(BaseModel):
     multi_tenant_mode: bool
-    default_tenant_name: str
+    # `None` for any account that is not a superadmin in the default/provider context: the
+    # name is provider metadata withheld from customer accounts (I5).
+    default_tenant_name: str | None = None
 
 
 class InstanceUpdate(BaseModel):

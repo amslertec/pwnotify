@@ -25,16 +25,29 @@ from fastapi import APIRouter, Request
 from ...repositories import tenant_repo
 from ...schemas.instance import InstanceOut, InstanceUpdate
 from ...services import audit, instance_settings
-from ..deps import CurrentUser, SessionDep, SuperadminDefaultContextUser
+from ..deps import (
+    CurrentUser,
+    SessionDep,
+    SuperadminDefaultContextUser,
+    superadmin_in_default_context,
+)
 
 router = APIRouter(prefix="/admin/instance", tags=["admin-instance"])
 
 
 @router.get("", response_model=InstanceOut)
-async def get_instance(_: CurrentUser, session: SessionDep) -> InstanceOut:
+async def get_instance(request: Request, user: CurrentUser, session: SessionDep) -> InstanceOut:
+    # `multi_tenant_mode` gates the UI and is safe for every account. `default_tenant_name`
+    # is provider metadata and must NOT leak to customer accounts (e.g. auditors), so it is
+    # returned only to a superadmin acting in the default/provider context (I5); everyone
+    # else gets `None`. The frontend only requests this in exactly that context
+    # (`isDefaultContext`), so no legitimate caller loses the name.
+    name = None
+    if await superadmin_in_default_context(request, user, session):
+        name = await instance_settings.read_default_tenant_name(session)
     return InstanceOut(
         multi_tenant_mode=await instance_settings.read_mode(session),
-        default_tenant_name=await instance_settings.read_default_tenant_name(session),
+        default_tenant_name=name,
     )
 
 

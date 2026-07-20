@@ -15,6 +15,7 @@ import datetime as dt
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import jwt
@@ -176,6 +177,28 @@ class GraphClient:
         except jwt.PyJWTError:
             return []
 
+    # -- Pagination ---------------------------------------------------------- #
+    def _same_graph_host(self, url: str) -> bool:
+        """True only when ``url``'s host matches the configured Graph host."""
+        return urlparse(url).netloc == urlparse(self.config.base).netloc
+
+    def _next_link(self, data: dict[str, Any]) -> str:
+        """Return the ``@odata.nextLink`` to follow, or ``""`` to stop the loop.
+
+        Every page request carries the app's Bearer token. ``@odata.nextLink`` is an
+        absolute URL copied verbatim from the response body -- a spoofed/broken response (or
+        a misbehaving proxy) could point it at a foreign host, and the loop would then send
+        the Bearer token there. Graph's response is TLS-authenticated so this is
+        defense-in-depth (I3), but a token leaking off-tenant is severe and the check is
+        cheap: a nextLink on any other host is dropped (loop ends) and logged, never
+        followed.
+        """
+        nxt = str(data.get("@odata.nextLink") or "")
+        if nxt and not self._same_graph_host(nxt):
+            log.warning("graph_nextlink_host_mismatch", next_link=nxt)
+            return ""
+        return nxt
+
     # -- HTTP ---------------------------------------------------------------- #
     @retry(
         retry=retry_if_exception_type(
@@ -255,7 +278,7 @@ class GraphClient:
                 if pages >= _MAX_PAGES:
                     log.warning("graph_pagination_cap_reached", pages=pages)
                     break
-                url = data.get("@odata.nextLink", "")
+                url = self._next_link(data)
         return default_validity, by_domain
 
     async def iter_users(self) -> AsyncIterator[dict[str, Any]]:
@@ -272,7 +295,7 @@ class GraphClient:
                 if pages >= _MAX_PAGES:
                     log.warning("graph_pagination_cap_reached", pages=pages)
                     break
-                url = data.get("@odata.nextLink", "")
+                url = self._next_link(data)
 
     async def get_user_photo(self, user_id: str) -> bytes | None:
         """Profilfoto eines Benutzers (Bytes) oder None, wenn keins vorhanden ist.
@@ -315,7 +338,7 @@ class GraphClient:
                 if pages >= _MAX_PAGES:
                     log.warning("graph_pagination_cap_reached", pages=pages)
                     break
-                url = data.get("@odata.nextLink", "")
+                url = self._next_link(data)
 
     async def get_group_members(self, group_id: str) -> list[dict[str, Any]]:
         """Benutzer-Mitglieder einer Gruppe (id, upn, displayName, accountEnabled)."""
@@ -335,7 +358,7 @@ class GraphClient:
                 if pages >= _MAX_PAGES:
                     log.warning("graph_pagination_cap_reached", pages=pages)
                     break
-                url = data.get("@odata.nextLink", "")
+                url = self._next_link(data)
         return members
 
     async def get_group_member_ids(self, group_id: str) -> set[str]:
@@ -354,7 +377,7 @@ class GraphClient:
                 if pages >= _MAX_PAGES:
                     log.warning("graph_pagination_cap_reached", pages=pages)
                     break
-                url = data.get("@odata.nextLink", "")
+                url = self._next_link(data)
         return ids
 
     async def check_member_groups(self, user_id: str, group_ids: list[str]) -> set[str]:

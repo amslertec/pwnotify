@@ -292,7 +292,10 @@ export type Settings = Record<string, unknown>
  *  `Settings`, weil diese Werte den Standard-Kunden betreffen, nicht den aktiven Mandanten. */
 export interface InstanceSettings {
   multi_tenant_mode: boolean
-  default_tenant_name: string
+  /** `null` unless the caller is a superadmin in the default/provider context — provider
+   *  metadata is withheld from customer accounts (I5). The general tab only reads this in
+   *  exactly that context (`isDefaultContext`), so it always sees a real name there. */
+  default_tenant_name: string | null
 }
 
 export interface DashboardData {

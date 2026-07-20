@@ -84,7 +84,23 @@ def audit_retention_days(value: Any) -> Any:
 
 
 def branding_dir() -> Path:
-    """Resolved directory that legitimately holds uploaded branding assets."""
+    """Resolved directory that legitimately holds uploaded branding assets.
+
+    Deliberately the SHARED branding root, not a per-tenant subdirectory, even though new
+    uploads are written tenant-scoped under ``{root}/{tenant_id}/`` (see
+    ``routes/branding._tenant_branding_dir``). Two reasons this asymmetry is intentional and
+    safe, NOT a cross-tenant read (L5):
+
+    * Legacy ``branding.*_path`` values still point at the flat, pre-tenant-scoping layout
+      (``{root}/logo.png``); the containment base must stay at the root so those keep
+      resolving. A tenant subdir is itself inside the root, so new uploads pass too.
+    * Every path-resolving branding route (``get_logo``/``get_favicon``/``public_branding``)
+      runs on ``PublicTenantSettingsDep`` -- ALWAYS the default tenant -- so only the default
+      tenant's own stored path is ever resolved and served, regardless of caller. The value
+      comes from that tenant's persisted setting, never from free request input. The
+      traversal guard (``resolve()`` + ``relative_to``, defeating ``..`` and symlinks) is the
+      actual security boundary here and is unaffected.
+    """
     return (Path(get_settings().data_dir) / "branding").resolve()
 
 

@@ -20,11 +20,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from app.api.deps import require_superadmin
+from app.api.deps import ACCESS_COOKIE, require_superadmin
 from app.api.routes.admin_instance import get_instance, update_instance
 from app.api.routes.auth import me
 from app.api.routes.settings import update as settings_update
 from app.core.errors import ForbiddenError
+from app.core.security import issue_token_pair
 from app.models.setting import Setting
 from app.models.tenant import Tenant
 from app.models.user import AppUser
@@ -35,6 +36,21 @@ from app.services import instance_settings
 from app.services.settings_service import SettingsService
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class _FakeRequest:
+    """Duck-typed Request -- the GET route only reads `.cookies` (via
+    `_resolve_authorized_tenant`), same shape as `test_matrix_b_route_gating.py`."""
+
+    def __init__(self, cookies: dict[str, str] | None = None) -> None:
+        self.cookies = cookies or {}
+        self.headers: dict[str, str] = {}
+        self.client: object | None = None
+
+
+def _request_with_claim(user_id: int, tenant_id: int | None) -> _FakeRequest:
+    pair = issue_token_pair(str(user_id), active_tenant=tenant_id)
+    return _FakeRequest({ACCESS_COOKIE: pair.access_token})
 
 
 def _slug() -> str:
@@ -85,8 +101,9 @@ async def test_superadmin_toggles_mode_and_renames_default_tenant(session: Async
         assert out.multi_tenant_mode is True
         assert out.default_tenant_name == "Neue Firma"
 
-        # Zurückgelesen über GET -- eigener Aufruf, eigene Auflösung.
-        got = await get_instance(superadmin, session)  # type: ignore[arg-type]
+        # Zurückgelesen über GET -- als Default-Kontext-Superadmin (kein active_tenant-Claim
+        # -> resolve_initial_tenant liefert den Default-Tenant) kommt der echte Name zurück.
+        got = await get_instance(_FakeRequest(), superadmin, session)  # type: ignore[arg-type]
         assert got.multi_tenant_mode is True
         assert got.default_tenant_name == "Neue Firma"
 
@@ -113,20 +130,45 @@ async def test_local_admin_put_instance_is_forbidden(session: AsyncSession) -> N
     assert (await instance_settings.read_mode(session)) is False
 
 
-# ---- GET /admin/instance: für jedes authentifizierte Konto -------------------------------- #
+# ---- GET /admin/instance: Mode für jedes Konto, default_tenant_name nur Provider ---------- #
 
 
-async def test_get_instance_reflects_current_mode_for_any_authenticated_user(
+async def test_get_instance_reflects_mode_for_any_account_but_hides_provider_name(
     session: AsyncSession,
 ) -> None:
+    """`multi_tenant_mode` (UI-Gating) sieht jedes Konto; `default_tenant_name` ist Provider-
+    Metadatum und wird einem Kunden-Konto (hier: Auditor) NICHT offengelegt (I5)."""
     auditor = await _mk_auditor(session)
     try:
         await instance_settings.write_mode(session, True)
-        out = await get_instance(auditor, session)  # type: ignore[arg-type]
+        out = await get_instance(_FakeRequest(), auditor, session)  # type: ignore[arg-type]
         assert out.multi_tenant_mode is True
-        assert out.default_tenant_name
+        assert out.default_tenant_name is None
     finally:
         await instance_settings.write_mode(session, False)
+
+
+async def test_get_instance_exposes_name_only_to_default_context_superadmin(
+    session: AsyncSession,
+) -> None:
+    superadmin = await _mk_superadmin(session)
+    assert superadmin.id is not None
+    default = await tenant_repo.default_tenant(session)
+    assert default.id is not None
+    customer = await _mk_tenant(session, name="Kunde AG")
+    assert customer.id is not None
+
+    # Default-Kontext (Claim == Default-Tenant): echter Name.
+    got_default = await get_instance(
+        _request_with_claim(superadmin.id, default.id), superadmin, session
+    )  # type: ignore[arg-type]
+    assert got_default.default_tenant_name == default.name
+
+    # In einen Kunden-Kontext umgeschaltet: Provider-Metadatum verschwindet (Matrix B).
+    got_customer = await get_instance(
+        _request_with_claim(superadmin.id, customer.id), superadmin, session
+    )  # type: ignore[arg-type]
+    assert got_customer.default_tenant_name is None
 
 
 # ---- Isolation: der Schalter lebt NUR auf dem Default-Tenant ------------------------------- #
