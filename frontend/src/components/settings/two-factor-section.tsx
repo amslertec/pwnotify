@@ -10,6 +10,13 @@ import { translateError } from '@/lib/errors'
 import { useAuth } from '@/lib/auth'
 import type { TwoFactorSetup } from '@/lib/types'
 
+/** Freigabe-Bedingung fürs Deaktivieren: Code UND Passwort müssen gesetzt sein. Das
+ *  Abschalten des zweiten Faktors verlangt eine Passwort-Reauth (L1) — ohne Passwort darf
+ *  der Button nicht auslösen. Als reines Prädikat testbar (kein DOM). */
+export function canDisable(v: { code: string; password: string }): boolean {
+  return v.code.trim().length > 0 && v.password.length > 0
+}
+
 /** 2FA-Verwaltung als Status-Karte (nur lokale Konten). Zeigt den Zustand deutlich über
  *  ein Schild-Icon und führt durch Einrichtung bzw. Deaktivierung. */
 export function TwoFactorSection() {
@@ -19,6 +26,8 @@ export function TwoFactorSection() {
   const [recovery, setRecovery] = useState<string[] | null>(null)
   const [disabling, setDisabling] = useState(false)
   const [code, setCode] = useState('')
+  // Passwort-Reauth beim Deaktivieren (L1): getrennt vom Code, nur im Disable-Flow genutzt.
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
   if (user?.is_sso) return null // SSO-Konten nutzen die Entra-Anmeldung
@@ -58,9 +67,11 @@ export function TwoFactorSection() {
   const disable = async () => {
     setBusy(true)
     try {
-      await api.post('/auth/2fa/disable', { code: code.trim() })
+      // Passwort mitsenden (L1): der Server verlangt es zusätzlich zum Code.
+      await api.post('/auth/2fa/disable', { code: code.trim(), password })
       setDisabling(false)
       setCode('')
+      setPassword('')
       await refresh()
       toast.success(t('twofa.disabled'))
     } catch (e) {
@@ -123,12 +134,20 @@ export function TwoFactorSection() {
             <div className="flex flex-col items-center gap-3">
               <p className="text-muted-foreground text-sm">{t('twofa.disablePrompt')}</p>
               {codeInput}
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder={t('twofa.currentPassword')}
+                className="max-w-48"
+              />
               <div className="flex gap-2">
                 <Button
                   variant="destructive"
                   onClick={disable}
                   loading={busy}
-                  disabled={!code.trim()}
+                  disabled={!canDisable({ code, password })}
                 >
                   {t('twofa.disable')}
                 </Button>
@@ -137,6 +156,7 @@ export function TwoFactorSection() {
                   onClick={() => {
                     setDisabling(false)
                     setCode('')
+                    setPassword('')
                   }}
                 >
                   {t('common.cancel')}

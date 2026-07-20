@@ -40,7 +40,6 @@ from ...core.twofa import (
     matching_step,
     provisioning_uri,
     qr_png_data_uri,
-    verify_totp,
 )
 from ...db.tenant_context import current_tenant_id, tenant_scoped_session
 from ...models._base import utcnow
@@ -57,6 +56,7 @@ from ...schemas.auth import (
     SwitchTenantRequest,
     TenantRef,
     TwoFactorCode,
+    TwoFactorDisable,
     TwoFactorSetupOut,
     UserOut,
 )
@@ -949,17 +949,31 @@ async def two_factor_enable(
 @limiter.limit(_settings.login_rate_limit)
 async def two_factor_disable(
     request: Request,
-    body: TwoFactorCode,
+    body: TwoFactorDisable,
     user: CurrentUser,
     session: SessionDep,
     active_tenant: ActiveTenantClaim,
 ) -> UserOut:
     if not user.totp_enabled:
         return await _user_out(session, user, active_tenant)
-    valid = (user.totp_secret and verify_totp(decrypt(user.totp_secret), body.code)) or (
-        match_recovery_code(body.code, json.loads(user.recovery_codes or "[]")) is not None
-    )
-    if not valid:
+
+    # Re-authenticate with the current password: disabling the second factor is a high-value
+    # action, and a hijacked SESSION alone must not suffice (L1). Password first, then code --
+    # both must be correct.
+    if not verify_password(body.password, user.password_hash):
+        raise AuthError("Passwort falsch.", code="invalid_password")
+
+    # Replay-safe TOTP check, exactly like /2fa/verify and /2fa/enable: match the step and
+    # advance totp_last_step so the same code cannot be used to log in AND then disable within
+    # its ~90 s window (L1). A recovery code stays a valid fallback.
+    step = matching_step(decrypt(user.totp_secret), body.code) if user.totp_secret else None
+    totp_ok = step is not None and step != user.totp_last_step
+    if totp_ok:
+        user.totp_last_step = step
+    else:
+        recovery_hashes = json.loads(user.recovery_codes or "[]")
+        totp_ok = match_recovery_code(body.code, recovery_hashes) is not None
+    if not totp_ok:
         raise AuthError("Ungültiger 2FA-Code.", code="invalid_2fa_code")
     user.totp_enabled = False
     user.totp_secret = None

@@ -77,6 +77,16 @@ class TwoFactorCode(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
+class TwoFactorDisable(BaseModel):
+    """Body für `POST /2fa/disable` -- bewusst NICHT `TwoFactorCode` (das teilen sich
+    verify/enable, die kein Passwort verlangen dürfen). Das Abschalten des zweiten Faktors
+    ist eine hochwertige Aktion: Sie verlangt zusätzlich das Konto-Passwort, damit eine
+    übernommene Sitzung allein 2FA nicht deaktivieren kann (L1)."""
+
+    code: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=1024)
+
+
 class TwoFactorSetupOut(BaseModel):
     otpauth_uri: str
     qr_png: str
