@@ -42,7 +42,7 @@ from ...core.twofa import (
     qr_png_data_uri,
     verify_totp,
 )
-from ...db.tenant_context import tenant_scoped_session
+from ...db.tenant_context import current_tenant_id, tenant_scoped_session
 from ...models._base import utcnow
 from ...models.user import AppUser
 from ...repositories import assignment_group_repo, tenant_repo, user_repo
@@ -351,10 +351,26 @@ async def login(
     # 2fa-Cookie erlaubt genau zwei Dinge — einrichten und aktivieren. Erst danach gibt
     # es Tokens. Eine Sitzung auszustellen und die Oberfläche hinterher zu sperren wäre
     # schwächer: Das Access-Token wäre bereits gültig.
-    if not user.is_sso and await SettingsService(session).get("auth.require_2fa"):
-        await session.commit()
-        set_2fa_cookie(response, create_2fa_token(str(user.id)))
-        return LoginResponse(two_factor_setup_required=True)
+    if not user.is_sso:
+        # `auth.require_2fa` is a PER-TENANT setting (no `instance.` prefix in
+        # `settings_schema.py`): each customer governs its own requirement. The owner session
+        # carries no tenant context, so `SettingsService.get_all` would fall back to the
+        # DEFAULT tenant and read the wrong customer's value -- a security control governed by
+        # the wrong tenant. Bind the account's HOME tenant for this one read so the requirement
+        # is taken from where it was configured. The owner session bypasses RLS by ownership,
+        # so it can read the home tenant's row regardless. `user.tenant_id` may be None for an
+        # instance-wide local admin; setting the context to None is equivalent to no context,
+        # so `get_all` then falls back to the default tenant -- the correct home for such an
+        # account.
+        token = current_tenant_id.set(user.tenant_id)
+        try:
+            require_2fa = await SettingsService(session).get("auth.require_2fa")
+        finally:
+            current_tenant_id.reset(token)
+        if require_2fa:
+            await session.commit()
+            set_2fa_cookie(response, create_2fa_token(str(user.id)))
+            return LoginResponse(two_factor_setup_required=True)
 
     return await _complete_login(request, response, session, user)
 
