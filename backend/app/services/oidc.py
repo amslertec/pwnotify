@@ -20,7 +20,8 @@ from ..core.crypto import decrypt, encrypt
 from ..core.errors import AuthError, PwNotifyError
 from ..core.logging import get_logger
 from ..core.security import hash_password
-from ..repositories import assignment_group_repo, user_repo
+from ..repositories import assignment_group_repo, tenant_repo, user_repo
+from . import audit
 from .graph import GraphClient, GraphConfig
 
 log = get_logger("oidc")
@@ -376,14 +377,16 @@ async def sync_sso_users(
         synced += 1
 
     # SSO-Benutzer, die in keiner berechtigten Gruppe mehr sind, entfernen -- NUR die
-    # dieses Mandanten (siehe Sicherheitsfix-Hinweis im Docstring oben).
+    # dieses Mandanten (siehe Sicherheitsfix-Hinweis im Docstring oben). Wir behalten die
+    # Konto-Objekte (nicht nur die IDs): für den Audit-Eintrag brauchen wir die UPN (M-02)
+    # und für den Last-Admin-Backstop Rolle/Tenant-Zugehörigkeit (L-03).
     existing_sso = await user_repo.list_sso_for_tenant(session, tenant_id)
-    to_remove = [u.id for u in existing_sso if u.username.lower() not in desired]
+    removable = [u for u in existing_sso if u.username.lower() not in desired]
 
     blocked = removal_blocked_reason(
         desired_count=len(desired),
         existing_count=len(existing_sso),
-        removal_count=len(to_remove),
+        removal_count=len(removable),
     )
     if blocked:
         await session.commit()  # Rollen-/Namensabgleich oben behalten, nur nicht löschen
@@ -392,14 +395,53 @@ async def sync_sso_users(
             reason=blocked,
             desired=len(desired),
             existing=len(existing_sso),
-            would_remove=len(to_remove),
+            would_remove=len(removable),
         )
         return {"synced": synced, "removed": 0, "removal_blocked": 1}
 
-    for uid in to_remove:
-        if uid is not None:
-            await user_repo.delete(session, uid)
+    removed = 0
+    admin_protected = 0
+    for u in removable:
+        if u.id is None:
+            continue
+        # L-03: Last-Admin-Backstop -- den einzigen Admin eines Tenants NIE deprovisionieren,
+        # selbst wenn die Löschquote es zuliesse. Konsistent mit A4 (set_role/delete_user):
+        # ein per SSO-Gruppenabgang verlorener letzter Admin sperrt den Tenant sonst aus.
+        protected = False
+        for tid in await tenant_repo.admin_tenants(session, u):
+            if await user_repo.count_tenant_admins(session, tid) <= 1:
+                protected = True
+                break
+        if protected:
+            admin_protected += 1
+            log.warning("sso_removal_admin_protected", username=u.username, sync_tenant=tenant_id)
+            continue
+        upn = u.username
+        await user_repo.delete(session, u.id)
+        # M-02: eine Löschung ist nie leise. Atomar mit der Löschung, da `user_repo.delete`
+        # nicht mehr selbst committet (M-03) und dieser Sync unten einmal committet.
+        await audit.record(
+            session,
+            action=audit.USER_DELETED,
+            actor_type="system",
+            target=upn,
+            tenant_id=tenant_id,
+            detail={"reason": "sso_sync_deprovision"},
+        )
+        removed += 1
+
+    # M-02: ein Aggregat-SSO_SYNCED, damit auch ein GEPLANTER Sync eine Spur hinterlässt (bisher
+    # schrieb das nur die manuelle Route). Auf den synchronisierten Tenant attribuiert. Auch bei
+    # admin_protected schreiben, damit ein Lauf, der NUR einen Admin schützte, sichtbar bleibt.
+    if synced or removed or admin_protected:
+        await audit.record(
+            session,
+            action=audit.SSO_SYNCED,
+            actor_type="system",
+            tenant_id=tenant_id,
+            detail={"synced": synced, "removed": removed, "admin_protected": admin_protected},
+        )
 
     await session.commit()
-    log.info("sso_users_synced", synced=synced, removed=len(to_remove))
-    return {"synced": synced, "removed": len(to_remove)}
+    log.info("sso_users_synced", synced=synced, removed=removed, admin_protected=admin_protected)
+    return {"synced": synced, "removed": removed, "admin_protected": admin_protected}

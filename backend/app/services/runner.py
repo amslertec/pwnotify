@@ -232,10 +232,11 @@ async def execute_run(
                             sso_stats = await oidc.sync_sso_users(
                                 owner_session, settings, tenant_id=tenant_id_for_sso
                             )
-                    if sso_stats.get("removal_blocked"):
+                    if sso_stats.get("removal_blocked") or sso_stats.get("admin_protected"):
                         # Sichtbar machen: ein blockierter Abgleich heisst, dass die
-                        # Gruppenkonfiguration nicht stimmt. Der Lauf darf dann nicht
-                        # "success" melden, sonst bleibt die Fehlkonfiguration unbemerkt —
+                        # Gruppenkonfiguration nicht stimmt; ein geschützter letzter Admin
+                        # (L-03) heisst, ein Tenant hätte fast seinen einzigen Admin verloren.
+                        # Der Lauf darf dann nicht "success" melden, sonst bleibt das unbemerkt —
                         # "partial" löst zusätzlich den Admin-Alert aus.
                         status = "partial"
                         detail.append({"step": "sso_sync", **sso_stats})

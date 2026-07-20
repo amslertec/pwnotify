@@ -772,18 +772,9 @@ async def sync_sso(request: Request, user: AdminUser, session: SessionDep) -> Me
     if blocked_count:
         # Report a COUNT, never tenant names -- no cross-tenant name disclosure.
         message += f" Entfernen für {blocked_count} Mandant(en) blockiert (Schutz vor Aussperrung)."
-    # Security Phase 5, Task 8/M10: one summary entry for the whole sync -- per-tenant rows
-    # would be noise, and the caller's own message already avoids leaking foreign tenant
-    # names. `tid` (Task 7/M11 override) is set only in the single-tenant, non-superadmin
-    # branch above; the superadmin fan-out stays instance-wide (`tenant_id=None`).
-    await audit.record(
-        session,
-        action=audit.SSO_SYNCED,
-        actor=user,
-        request=request,
-        detail={"synced": synced, "removed": removed, "blocked": blocked_count},
-        tenant_id=tid,
-    )
+    # M-02: the SSO_SYNCED audit entry is written INSIDE `oidc.sync_sso_users` now (per synced
+    # tenant, atomically with any USER_DELETED it stages), so the SCHEDULED runner path is
+    # audited too -- not only this manual route. Writing it a second time here would double-log.
     await session.commit()
     return Message(message=message)
 

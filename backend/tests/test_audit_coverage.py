@@ -499,7 +499,19 @@ async def test_sync_sso_records_action(
     async def _fake_sync(
         session: Any, settings: dict[str, Any], *, tenant_id: int
     ) -> dict[str, int]:
-        return {"synced": 2, "removed": 1}
+        # M-02: the SSO_SYNCED audit entry is written INSIDE `sync_sso_users` now (attributed to
+        # the synced tenant), not by the manual route. The fake reproduces that write so the test
+        # still verifies the route's outcome: a committed `user.sso_synced` for the caller's tenant.
+        from app.services import audit
+
+        await audit.record(
+            session,
+            action=audit.SSO_SYNCED,
+            actor_type="system",
+            tenant_id=tenant_id,
+            detail={"synced": 2, "removed": 1, "admin_protected": 0},
+        )
+        return {"synced": 2, "removed": 1, "admin_protected": 0}
 
     monkeypatch.setattr("app.services.oidc.sync_sso_users", _fake_sync)
 
