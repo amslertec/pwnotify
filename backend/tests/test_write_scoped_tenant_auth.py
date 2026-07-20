@@ -256,8 +256,11 @@ async def test_set_role_admin_to_auditor_migrates_grant_back(session: AsyncSessi
     caller = await _mk_superadmin(session)
     a = await tenant_repo.create(session, name="Wsta Migrate B", slug=_slug())
     assert a.id is not None
-    # A second admin so the last-admin-demotion guard does not block this test.
-    await _mk_local(session, role="admin")
+    # A second admin OF TENANT A so neither the instance-wide nor the per-tenant (A4)
+    # last-admin-demotion guard blocks this test -- A must retain an admin after the demotion.
+    other = await _mk_local(session, role="admin")
+    assert other.id is not None
+    await tenant_repo.add_grant(session, user_id=other.id, tenant_id=a.id, kind="admin")
     target = await _mk_local(session, role="admin")
     assert target.id is not None
     await tenant_repo.add_grant(session, user_id=target.id, tenant_id=a.id, kind="admin")

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.tenant import AdminTenant, AuditorTenant
@@ -35,6 +35,47 @@ async def count_admins(session: AsyncSession) -> int:
     weder gelöscht noch herabgestuft werden)."""
     stmt = select(func.count(AppUser.id)).where(
         AppUser.role == "admin", AppUser.is_active.is_(True)
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def count_tenant_admins(session: AsyncSession, tenant_id: int) -> int:
+    """Aktive Konten mit Admin-(Schreib-)Kapazität auf GENAU diesen Tenant -- Grundlage für den
+    Schutz vor Aussperrung PRO KUNDE (A4), das per-Tenant-Pendant zu `count_admins`.
+
+    Zählt deckungsgleich mit `tenant_repo.admin_tenants(user)` (Design §2):
+    - Konten (lokal ODER SSO) mit einer `admin_tenant`-Grant-Zeile auf `tenant_id`; PLUS
+    - SSO-Konten, deren HEIM-Tenant (`AppUser.tenant_id`) exakt dieser ist UND deren Rolle
+      `admin` ist -- ihr Heim verleiht die Admin-Kapazität ohne eigene Grant-Zeile.
+
+    Bewusst AUSGESCHLOSSEN:
+    - **Superadmins** (`role=='superadmin'`): instanzweit, verwalten ohnehin alle Tenants und
+      sind über `count_superadmins` separat vor Aussperrung geschützt -- ein (verwaister)
+      `admin_tenant`-Grant auf einen Superadmin darf den letzten Kunden-Admin nicht kaschieren.
+    - **inaktive/pending Konten** (`is_active=False`): ein deaktiviertes oder noch nicht
+      angenommenes (eingeladenes) Konto kann niemanden verwalten und zählt daher nicht als
+      verbliebener Admin.
+
+    `func.distinct`, weil das LEFT JOIN auf `admin_tenant` sonst ein Konto mit mehreren
+    Grant-Zeilen mehrfach zählte (hier auf `tenant_id` gefiltert wäre es zwar höchstens eine
+    Zeile -- die Composite-PK garantiert das --, `distinct` bleibt aber der defensive Ausdruck
+    der Absicht "Konten, nicht Zeilen")."""
+    stmt = (
+        select(func.count(func.distinct(AppUser.id)))
+        .select_from(AppUser)
+        .outerjoin(AdminTenant, AdminTenant.user_id == AppUser.id)
+        .where(
+            AppUser.is_active.is_(True),
+            AppUser.role != "superadmin",
+            or_(
+                AdminTenant.tenant_id == tenant_id,
+                and_(
+                    AppUser.is_sso.is_(True),
+                    AppUser.role == "admin",
+                    AppUser.tenant_id == tenant_id,
+                ),
+            ),
+        )
     )
     return int((await session.execute(stmt)).scalar_one())
 

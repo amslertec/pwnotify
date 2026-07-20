@@ -407,6 +407,24 @@ async def set_role(
             "Der letzte Administrator kann nicht herabgestuft werden.",
             code="cannot_demote_last_admin",
         )
+    # Per-Tenant-Aussperr-Schutz (A4): der instanzweite `count_admins`-Guard oben stellt nur
+    # sicher, dass IRGENDWO noch ein Admin bleibt -- nicht, dass JEDER Kunde seinen letzten
+    # (Schreib-)Admin behält. Ein lokaler Admin von Kunde A könnte A sonst den letzten Admin
+    # entziehen, während ein Admin eines ANDEREN Tenants die instanzweite Zahl > 1 hält; nur
+    # der Provider-Superadmin könnte danach noch retten. Deshalb: wird ein Admin-Ziel
+    # herabgestuft, muss jeder Tenant, den es aktuell administriert (`admin_tenants` =
+    # `admin_tenant`-Grants vereinigt mit dem SSO-Heim), danach >= 1 Admin behalten.
+    # `count_tenant_admins` zählt das Ziel selbst noch mit (Grant/Heim bestehen zu diesem
+    # Zeitpunkt), also ist `<= 1` genau "das Ziel ist der letzte". Nur relevant, wenn das Ziel
+    # WIRKLICH Admin ist -- ein Auditor-Ziel hat keine `admin_tenant`-Grants, `admin_tenants`
+    # ist leer, die Schleife läuft nicht.
+    if target.role == "admin" and body.role != "admin":
+        for tid in await tenant_repo.admin_tenants(session, target):
+            if await user_repo.count_tenant_admins(session, tid) <= 1:
+                raise ConflictError(
+                    "Der letzte Admin dieses Kunden kann nicht herabgestuft werden.",
+                    code="last_tenant_admin",
+                )
     vorher = target.role
     target.role = body.role
     # Grant migration (Task 4, H8): keep the target's tenant grant rows in sync with its new
@@ -666,6 +684,20 @@ async def delete_user(
             "Der letzte Superadmin kann nicht gelöscht werden.",
             code="cannot_delete_last_superadmin",
         )
+    # Per-Tenant-Aussperr-Schutz (A4) -- Spiegel des `set_role`-Guards: `delete_user` hatte
+    # bisher GAR keinen Admin-Zähl-Guard (nur Letzter-Benutzer, Selbstlöschung, Letzter-
+    # Superadmin), ein Admin liess sich also selbst als letzter Admin eines Kunden löschen,
+    # solange ein anderer Tenant die instanzweite Zahl > 1 hielt. Vor der Löschung eines
+    # Admin-Ziels: jeder von ihm administrierte Tenant muss danach >= 1 Admin behalten
+    # (gleiche Zähl-/Randbedingungen wie in `set_role`; `count_tenant_admins` schliesst das
+    # noch existierende Ziel ein, `<= 1` heisst also "das Ziel ist der letzte").
+    if target.role == "admin":
+        for tid in await tenant_repo.admin_tenants(session, target):
+            if await user_repo.count_tenant_admins(session, tid) <= 1:
+                raise ConflictError(
+                    "Der letzte Admin dieses Kunden kann nicht gelöscht werden.",
+                    code="last_tenant_admin",
+                )
     await audit.record(
         session,
         action=audit.USER_DELETED,
