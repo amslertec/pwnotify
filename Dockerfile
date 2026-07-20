@@ -59,10 +59,15 @@ LABEL org.opencontainers.image.title="PwNotify" \
       org.opencontainers.image.base.digest="sha256:ce9aaca1f826f7f963cd031e98f8c19f993b1843096d395ea919b646e72cb8de"
 
 WORKDIR /app
+# TZ=UTC: the runtime image ships no /etc/timezone, so tzlocal cannot detect a zone and
+# logs a UserWarning on startup, defaulting to UTC anyway. Setting TZ makes that explicit and
+# silences the noise. Scheduling is unaffected -- APScheduler always receives an explicit
+# timezone (Europe/Zurich) from the settings, never the process-local one.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
+    TZ=UTC \
     PWNOTIFY_STATIC_DIR=/app/static \
     PWNOTIFY_DATA_DIR=/data \
     PWNOTIFY_PORT=8080
