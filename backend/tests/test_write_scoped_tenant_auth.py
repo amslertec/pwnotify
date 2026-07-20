@@ -182,7 +182,9 @@ async def test_stale_grant_admin_blocked_from_settings_write_route(
     uid, tid = stale_grant_admin
     with pytest.raises(ForbiddenError) as exc_info:
         async with _tenant_write_settings_for(uid, claim=tid) as svc:
-            await template_reset(None, svc)  # type: ignore[arg-type]
+            # The WRITE gate raises ForbiddenError on context entry above, so this call
+            # never actually runs -- but keep its arity in step with the route signature.
+            await template_reset(None, None, svc, None)  # type: ignore[arg-type]
     assert exc_info.value.code == "tenant_forbidden"
 
 

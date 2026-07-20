@@ -32,6 +32,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from app.api.deps import ACCESS_COOKIE
+from app.api.routes import auth as auth_routes
 from app.api.routes import branding, notifications, runs, settings, setup, users
 from app.api.routes.admin_users import sync_sso
 from app.api.routes.auth import two_factor_setup
@@ -42,6 +43,7 @@ from app.db.tenant_context import open_active_session, tenant_scoped_session
 from app.models.entra import EntraUser
 from app.models.notification import NotificationLog
 from app.repositories import tenant_repo, user_repo
+from app.schemas.auth import LanguageUpdate, ProfileUpdate
 from app.schemas.settings import ExclusionCreate
 from app.services.notifier import NotifyOutcome
 from app.services.scheduler import SchedulerService, set_scheduler
@@ -515,3 +517,88 @@ async def test_sync_sso_records_action(
         assert row.tenant_id == cid, "sync_sso's single-tenant call must stamp that tenant"
         assert row.detail.get("synced") == 2
         assert row.detail.get("removed") == 1
+
+
+# --- L3: audit coverage for the export + self-service routes ------------------------------- #
+
+
+async def test_export_users_records_users_exported(
+    tenant_admin_entra_user: dict[str, Any],
+) -> None:
+    """The mass-PII export (`GET /users/export`) must leave exactly one audit row with the
+    row count/format and NO PII in the detail. RED without the fix (no row at all)."""
+    tid = tenant_admin_entra_user["tenant_id"]
+    admin = tenant_admin_entra_user["admin"]
+
+    async with tenant_scoped_session(tid) as session:
+        resp = await users.export_users(None, admin, session, fmt="csv")  # type: ignore[arg-type]
+        assert resp is not None
+
+        row = await _latest_action_row(session, action="entra_user.exported")
+        assert row is not None, "export_users did not write an audit_log row (RED without the fix)"
+        assert row.tenant_id == tid
+        assert row.detail.get("format") == "csv"
+        # The one committed EntraUser from the fixture must be counted.
+        assert row.detail.get("count") == 1
+        # Hard guarantee: no per-user PII (upn/mail/display_name) leaks into the audit detail.
+        blob = str(row.detail).lower()
+        for pii_marker in ("upn", "mail", "display", "@"):
+            assert pii_marker not in blob, f"export audit detail leaked PII: {pii_marker}"
+
+
+async def test_template_reset_records_action(
+    tenant_admin_entra_user: dict[str, Any],
+) -> None:
+    tid = tenant_admin_entra_user["tenant_id"]
+    admin = tenant_admin_entra_user["admin"]
+
+    async with tenant_scoped_session(tid) as session:
+        svc = SettingsService(session)
+        await settings.template_reset(None, admin, svc, session)  # type: ignore[arg-type]
+        row = await _latest_action_row(session, action="settings.template_reset")
+        assert row is not None, "template_reset did not write an audit_log row (RED)"
+        assert row.tenant_id == tid
+
+
+async def test_update_profile_records_action(session: AsyncSession) -> None:
+    user = await user_repo.create(
+        session, username=_uname("prof"), password_hash="x", role="admin", is_sso=False
+    )
+    request = _FakeRequest()
+    await auth_routes.update_profile(
+        request,
+        ProfileUpdate(display_name="New Name"),
+        user,
+        session,
+        None,  # type: ignore[arg-type]
+    )
+    row = await _latest_action_row(session, action="auth.profile_updated")
+    assert row is not None, "update_profile did not write an audit_log row (RED)"
+
+
+async def test_set_language_records_action(session: AsyncSession) -> None:
+    user = await user_repo.create(
+        session, username=_uname("lang"), password_hash="x", role="admin", is_sso=False
+    )
+    request = _FakeRequest()
+    await auth_routes.set_language(
+        request,
+        LanguageUpdate(language="en"),
+        user,
+        session,
+        None,  # type: ignore[arg-type]
+    )
+    row = await _latest_action_row(session, action="auth.language_changed")
+    assert row is not None, "set_language did not write an audit_log row (RED)"
+    assert row.detail.get("language") == "en"
+
+
+async def test_delete_avatar_records_action(session: AsyncSession) -> None:
+    user = await user_repo.create(
+        session, username=_uname("av"), password_hash="x", role="admin", is_sso=False
+    )
+    request = _FakeRequest()
+    await auth_routes.delete_my_avatar(request, user, session, None)  # type: ignore[arg-type]
+    row = await _latest_action_row(session, action="auth.avatar_changed")
+    assert row is not None, "delete_my_avatar did not write an audit_log row (RED)"
+    assert row.detail.get("op") == "delete"

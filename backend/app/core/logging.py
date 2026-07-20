@@ -9,41 +9,12 @@ from typing import Any
 import structlog
 
 from .config import get_settings
+from .redaction import is_secret_key
 
-# Schlüssel, deren Werte niemals im Klartext geloggt werden dürfen.
-_REDACT_KEYS = {
-    "password",
-    "new_password",
-    "current_password",
-    "client_secret",
-    "secret",
-    "secret_key",
-    "smtp_password",
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "token",
-    "access_token",
-    "refresh_token",
-    "totp_secret",
-    "recovery_codes",
-    "graph_client_secret",
-    "id_token",
-    "api_key",
-    "private_key",
-}
-
-# In addition to the exact match: keys containing one of these suffixes/substrings
-# are also considered secret (e.g. "graph_client_secret", "smtp_password",
-# "new_password" -- without having to enumerate every prefix individually).
-# Deliberately kept separate from `_PII_KEYS`: redaction (deletion) and PII
-# masking (truncation) are different treatments; the redact check runs first.
-_REDACT_KEY_SUBSTRINGS = ("password", "secret", "token")
-
-
-def _is_secret_key(key: str) -> bool:
-    return key in _REDACT_KEYS or any(part in key for part in _REDACT_KEY_SUBSTRINGS)
-
+# Which keys count as secret is defined once in `core.redaction.is_secret_key` and shared
+# with the audit trail (finding I1), so the logger and the audit log can never diverge on
+# what gets redacted. Redaction (deletion) stays deliberately separate from `_PII_KEYS`
+# masking (truncation) below -- different treatments; the redact check runs first.
 
 # Schlüssel mit Personenbezug. Sie werden nicht entfernt, sondern gekürzt: Logs werden
 # oft zentral gesammelt und lange aufbewahrt, dort gehören keine vollständigen Adressen
@@ -76,7 +47,7 @@ def _redact_value(key: str, value: Any) -> Any:
     masking list-of-string fields that were previously logged in full.
     """
     k = key.lower()
-    if _is_secret_key(k):
+    if is_secret_key(k):
         return "***redacted***"
     if isinstance(value, dict):
         return {kk: _redact_value(kk, vv) for kk, vv in value.items()}

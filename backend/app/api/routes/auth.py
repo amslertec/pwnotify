@@ -670,7 +670,11 @@ async def switch_tenant(
 
 @router.post("/profile", response_model=UserOut)
 async def update_profile(
-    body: ProfileUpdate, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+    request: Request,
+    body: ProfileUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+    active_tenant: ActiveTenantClaim,
 ) -> UserOut:
     """Task 5, §7d: `email` ist NUR für lokale Konten editierbar -- ein SSO-Konto bezieht
     seine Adresse aus Entra, ein hier eingetragener Wert würde sie nur verdecken, ohne am
@@ -681,6 +685,9 @@ async def update_profile(
     if not user.is_sso:
         user.email = (body.email or "").strip() or None
     user.updated_at = utcnow()
+    # Audit (finding L3): a self-service profile change. The new display name/email are the
+    # user's own PII, so they stay OUT of `detail` -- the actor identity is enough for the trail.
+    await audit.record(session, action=audit.PROFILE_UPDATED, actor=user, request=request)
     await session.commit()
     await session.refresh(user)
     return await _user_out(session, user, active_tenant)
@@ -688,10 +695,22 @@ async def update_profile(
 
 @router.post("/language", response_model=UserOut)
 async def set_language(
-    body: LanguageUpdate, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+    request: Request,
+    body: LanguageUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+    active_tenant: ActiveTenantClaim,
 ) -> UserOut:
     user.language = body.language
     user.updated_at = utcnow()
+    # Audit (finding L3): the language code is not PII, so it is safe to record.
+    await audit.record(
+        session,
+        action=audit.LANGUAGE_CHANGED,
+        actor=user,
+        request=request,
+        detail={"language": body.language},
+    )
     await session.commit()
     await session.refresh(user)
     return await _user_out(session, user, active_tenant)
@@ -708,6 +727,7 @@ async def get_my_avatar(user: CurrentUser) -> FileResponse:
 
 @router.post("/me/avatar", response_model=UserOut)
 async def upload_my_avatar(
+    request: Request,
     user: CurrentUser,
     session: SessionDep,
     active_tenant: ActiveTenantClaim,
@@ -736,12 +756,21 @@ async def upload_my_avatar(
         raise PwNotifyError("Ungültige Bilddatei.", code="invalid_image")
     _ensure_avatar_dir()
     _avatar_path(user.id).write_bytes(processed)  # type: ignore[arg-type]
+    # Audit (finding L3): self-service avatar change -- only the operation, never the image.
+    await audit.record(
+        session,
+        action=audit.AVATAR_CHANGED,
+        actor=user,
+        request=request,
+        detail={"op": "upload"},
+    )
+    await session.commit()
     return await _user_out(session, user, active_tenant)
 
 
 @router.delete("/me/avatar", response_model=UserOut)
 async def delete_my_avatar(
-    user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
+    request: Request, user: CurrentUser, session: SessionDep, active_tenant: ActiveTenantClaim
 ) -> UserOut:
     if user.is_sso:
         raise PwNotifyError(
@@ -749,6 +778,14 @@ async def delete_my_avatar(
         )
     if user.id is not None:
         _avatar_path(user.id).unlink(missing_ok=True)
+    await audit.record(
+        session,
+        action=audit.AVATAR_CHANGED,
+        actor=user,
+        request=request,
+        detail={"op": "delete"},
+    )
+    await session.commit()
     return await _user_out(session, user, active_tenant)
 
 

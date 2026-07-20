@@ -221,8 +221,23 @@ async def template_preview(
 
 
 @router.post("/template/reset", response_model=dict)
-async def template_reset(_: AdminUser, svc: TenantWriteSettingsDep) -> dict[str, Any]:
+async def template_reset(
+    request: Request,
+    admin: AdminUser,
+    svc: TenantWriteSettingsDep,
+    session: TenantWriteSessionDep,
+) -> dict[str, Any]:
     defaults = {k: spec.default for k, spec in SETTINGS.items() if k.startswith("template.")}
+    # Audit (finding L3): resetting all notification templates is a state change an auditor
+    # should see. Recorded on the same session `svc` writes on, so `set_many`'s commit below
+    # persists both together. Only the count, never the template bodies.
+    await audit.record(
+        session,
+        action=audit.TEMPLATE_RESET,
+        actor=admin,
+        request=request,
+        detail={"count": len(defaults)},
+    )
     await svc.set_many(defaults)
     return await svc.get_public()
 

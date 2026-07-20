@@ -36,7 +36,7 @@ async def test_local_account_sets_email_persisted_and_reflected_in_me(
     new_email = f"new-{uuid.uuid4().hex[:8]}@pe5.test"
 
     out = await update_profile(  # type: ignore[arg-type]
-        ProfileUpdate(display_name="Neuer Name", email=new_email), user, session, None
+        None, ProfileUpdate(display_name="Neuer Name", email=new_email), user, session, None
     )
     assert out.email == new_email
     assert out.display_name == "Neuer Name"
@@ -52,7 +52,7 @@ async def test_local_account_can_clear_email(session: AsyncSession) -> None:
     user = await _mk_user(session, is_sso=False, email="old@pe5.test")
 
     out = await update_profile(  # type: ignore[arg-type]
-        ProfileUpdate(display_name=None, email=None), user, session, None
+        None, ProfileUpdate(display_name=None, email=None), user, session, None
     )
     assert out.email is None
     refreshed = await session.get(AppUser, user.id)
@@ -64,7 +64,7 @@ async def test_sso_account_email_edit_is_ignored(session: AsyncSession) -> None:
     attacker_supplied = "attacker@pe5.test"
 
     out = await update_profile(  # type: ignore[arg-type]
-        ProfileUpdate(display_name="SSO Name", email=attacker_supplied), user, session, None
+        None, ProfileUpdate(display_name="SSO Name", email=attacker_supplied), user, session, None
     )
     assert out.email is None
     assert out.display_name == "SSO Name"  # display_name bleibt weiterhin editierbar

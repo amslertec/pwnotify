@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.http import client_user_agent
 from ..core.logging import get_logger
+from ..core.redaction import is_secret_key
 from ..models.user import AppUser
 from ..repositories import audit_repo
 
@@ -74,16 +75,22 @@ AUDIT_PURGED = "audit.purged"
 # to an arbitrary recipient -- previously left no trace at all. Recipient goes into `detail`.
 MAIL_TEST_SENT = "settings.mail_test_sent"
 
-# Werte dieser Felder gehören nie ins Protokoll, auch nicht gekürzt: Es ist für Admins
-# einsehbar und wird exportiert.
-_NEVER_LOG = frozenset({"password", "secret", "client_secret", "smtp_password", "token", "code"})
+# Finding L3: coverage for routes that previously wrote no audit entry at all. `USERS_EXPORTED`
+# is the important one -- a full-tenant PII export (`GET /users/export`) that left no trace.
+# The others are low-signal self-service changes the auditor still lists.
+USERS_EXPORTED = "entra_user.exported"  # mass-PII export (CSV/XLSX) -- count/format only
+TEMPLATE_RESET = "settings.template_reset"  # notification templates reset to defaults
+PROFILE_UPDATED = "auth.profile_updated"  # self-service display name/email change
+LANGUAGE_CHANGED = "auth.language_changed"  # self-service UI language change
+AVATAR_CHANGED = "auth.avatar_changed"  # self-service avatar upload/delete
 
 
 def _clean_value(value: Any) -> Any:
-    """Drop ``_NEVER_LOG`` keys recursively so a nested secret key inside a
-    ``detail`` sub-dict is dropped too, not only at the top level."""
+    """Drop secret keys recursively (shared predicate `is_secret_key`, finding I1) so a
+    nested secret key inside a ``detail`` sub-dict is dropped too, not only at the top level.
+    The audit log is admin-readable and exportable -- a secret value must never reach it."""
     if isinstance(value, dict):
-        return {k: _clean_value(v) for k, v in value.items() if k.lower() not in _NEVER_LOG}
+        return {k: _clean_value(v) for k, v in value.items() if not is_secret_key(k)}
     if isinstance(value, (list, tuple)):
         return type(value)(_clean_value(v) for v in value)
     return value
@@ -92,7 +99,7 @@ def _clean_value(value: Any) -> Any:
 def _clean(detail: dict[str, Any] | None) -> dict[str, Any]:
     if not detail:
         return {}
-    return {k: _clean_value(v) for k, v in detail.items() if k.lower() not in _NEVER_LOG}
+    return {k: _clean_value(v) for k, v in detail.items() if not is_secret_key(k)}
 
 
 async def record(

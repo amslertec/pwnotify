@@ -81,7 +81,8 @@ async def list_users(
 
 @router.get("/export")
 async def export_users(
-    _: CurrentUser,
+    request: Request,
+    user: CurrentUser,
     session: TenantSessionDep,
     fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
     search: str | None = None,
@@ -98,6 +99,20 @@ async def export_users(
             "Bitte über Suche oder Status filtern.",
             code="export_too_large",
         )
+    # Audit (finding L3): a full-tenant PII export must never be traceless. Record who
+    # exported how many rows in which format -- NEVER the exported PII itself, only counts
+    # and filter flags. Committed BEFORE the streaming response is handed back, because the
+    # dependency-scoped session closes once the response body has been streamed. `session`
+    # is tenant-scoped (runtime role, which holds CRUD on `audit_log`), so the entry is
+    # stamped with the active tenant by `AuditLog.tenant_id`'s default_factory.
+    await audit.record(
+        session,
+        action=audit.USERS_EXPORTED,
+        actor=user,
+        request=request,
+        detail={"format": fmt, "count": total, "search": bool(search), "status": status},
+    )
+    await session.commit()
     headers = [
         "displayName",
         "upn",
