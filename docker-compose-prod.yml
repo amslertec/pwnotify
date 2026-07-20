@@ -33,6 +33,21 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Defense-in-depth: drop every Linux capability, then add back only the
+    # minimal set the Postgres entrypoint needs. It starts as root, fixes up
+    # data-dir ownership (CHOWN, DAC_OVERRIDE, FOWNER) and drops to the
+    # `postgres` user via su-exec (SETGID, SETUID). Deliberately NOT set:
+    #   - `user:` would pre-empt that root->postgres drop and break init.
+    #   - `read_only: true` — Postgres writes its unix socket and stats files
+    #     under the data dir at runtime; a read-only rootfs is fragile here.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     tmpfs:
       - /tmp
       - /run
