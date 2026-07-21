@@ -65,7 +65,7 @@ services:
     # From Docker Hub, digest-pinned for an immutable deployment (like the db image above):
     # a compromised Docker Hub account or a tag overwrite cannot silently swap the running app
     # on the next pull. Override PWNOTIFY_IMAGE to move to a newer release (pin its digest too).
-    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.6}
+    image: ${PWNOTIFY_IMAGE:-amslertec/pwnotify:0.3.6@sha256:61b10a71fedb0b081344a23e7b4a4612d1c6d9bf993c595e04af8922f9dd620c}
     pull_policy: always
     depends_on:
       db:
