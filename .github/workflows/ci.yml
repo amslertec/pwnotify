@@ -216,3 +216,17 @@ jobs:
           done <<< "$META_TAGS"
           docker buildx imagetools create "${tag_args[@]}" \
             "localhost:5000/pwnotify@$BUILD_DIGEST"
+
+      # Sync the Docker Hub repository "Overview" from DOCKERHUB.md so the published
+      # description never drifts from the shipped version again. Tag-releases only (not
+      # every main push) and only when push creds exist. Uses the same DOCKERHUB_TOKEN as
+      # the image push -- it must have read/write repo scope for the description API.
+      - name: Sync Docker Hub description
+        if: startsWith(github.ref, 'refs/tags/v') && env.HAS_PUSH_CREDS == 'yes'
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          readme-filepath: ./DOCKERHUB.md
+          short-description: "Password expiry notification for Microsoft Entra ID - hardened, self-hosted, multi-tenant"
