@@ -21,11 +21,11 @@ from ...services import audit
 from ...services.mail import build_sender
 from ...services.notifier import notify_user
 from ...services.runner import mass_send_blocked_reason
+from ...services.settings_service import SettingsService
 from ..deps import (
     AdminUser,
     CurrentUser,
     TenantSessionDep,
-    TenantSettingsDep,
     TenantWriteSessionDep,
     TenantWriteSettingsDep,
 )
@@ -56,7 +56,6 @@ class BulkRequest(BaseModel):
 async def list_users(
     _: CurrentUser,
     session: TenantSessionDep,
-    settings: TenantSettingsDep,
     search: str | None = None,
     status: str | None = None,
     sort_by: str = "days_left",
@@ -65,8 +64,10 @@ async def list_users(
     page_size: int = Query(25, ge=1, le=200),
 ) -> Page[EntraUserOut]:
     # In sync test mode the default list also surfaces shared/unlicensed accounts, matching
-    # the test-mode notification scope; normal operation keeps them in their own view.
-    include_shared = bool(await settings.get("sync.test_mode"))
+    # the test-mode notification scope; normal operation keeps them in their own view. The
+    # settings service is built inline from the (tenant-scoped) session rather than injected,
+    # so direct unit calls of this route function keep working without a new positional arg.
+    include_shared = bool(await SettingsService(session).get("sync.test_mode"))
     rows, total = await entra_repo.list_users(
         session,
         search=search,
@@ -90,12 +91,11 @@ async def export_users(
     request: Request,
     user: CurrentUser,
     session: TenantSessionDep,
-    settings: TenantSettingsDep,
     fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
     search: str | None = None,
     status: str | None = None,
 ) -> StreamingResponse:
-    include_shared = bool(await settings.get("sync.test_mode"))
+    include_shared = bool(await SettingsService(session).get("sync.test_mode"))
     rows, total = await entra_repo.list_users(
         session,
         search=search,
