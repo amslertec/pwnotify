@@ -7,7 +7,7 @@ import { ConnectionStatus } from '../run-status'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Field, Section } from './section'
+import { Field, Panel, Section, ToggleRow } from './section'
 import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
 import { hasAdminRights, useAuth } from '@/lib/auth'
@@ -25,6 +25,7 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
   const [backend, setBackend] = useState(String(settings['mail.backend'] ?? 'graph'))
   const [from, setFrom] = useState(String(settings['mail.from'] ?? ''))
   const [strategy, setStrategy] = useState(String(settings['mail.recipient_strategy'] ?? 'primary'))
+  const [upnFallback, setUpnFallback] = useState(Boolean(settings['mail.upn_fallback'] ?? false))
   const [smtpHost, setSmtpHost] = useState(String(settings['mail.smtp_host'] ?? ''))
   const [smtpPort, setSmtpPort] = useState(String(settings['mail.smtp_port'] ?? 587))
   const [smtpUser, setSmtpUser] = useState(String(settings['mail.smtp_username'] ?? ''))
@@ -43,6 +44,7 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
       'mail.backend': backend,
       'mail.from': from,
       'mail.recipient_strategy': strategy,
+      'mail.upn_fallback': upnFallback,
       'mail.smtp_host': smtpHost,
       'mail.smtp_port': Number(smtpPort),
       'mail.smtp_username': smtpUser,
@@ -182,6 +184,15 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
           </>
         )}
       </div>
+
+      <Panel>
+        <ToggleRow
+          title={t('mailTab.upnFallback.title')}
+          description={t('mailTab.upnFallback.description')}
+          checked={upnFallback}
+          onCheckedChange={setUpnFallback}
+        />
+      </Panel>
 
       <div className="border-border bg-muted/40 rounded-lg border p-3">
         <p className="mb-2 text-sm font-medium">{t('mailTab.test.title')}</p>

@@ -104,6 +104,10 @@ SETTINGS: dict[str, SettingSpec] = {
     "mail.backend": SettingSpec("graph"),  # graph | smtp
     "mail.from": SettingSpec(""),
     "mail.recipient_strategy": SettingSpec("primary"),
+    # When an account has no mailbox (`mail` empty) and no alternate address, fall back to its
+    # UPN as the recipient. Off by default: many orgs' UPNs are not routable mailboxes, so
+    # enabling it must be a deliberate choice to avoid sending into the void / to wrong domains.
+    "mail.upn_fallback": SettingSpec(False),
     # A6: smtp_host rejects internal/link-local/RFC1918 targets (blind SSRF), unless explicitly
     # allowed via PWNOTIFY_SMTP_ALLOWED_HOSTS. tls=none cross-check: SettingsService.set_many.
     "mail.smtp_host": SettingSpec("", validate=smtp_host),
@@ -158,7 +162,10 @@ SETTINGS: dict[str, SettingSpec] = {
     "policy.validity_days_override": SettingSpec(None),
     # ---- Shared mailbox detection ----
     # Primary: account has a mailbox but no license -> Shared/Room/Equipment.
-    "sync.shared_detect_unlicensed": SettingSpec(True),
+    # Off by default: classifying every unlicensed-but-has-mailbox account as a shared mailbox
+    # hides it from the default user list, which silently drops legitimate unlicensed users
+    # (an enterprise "missing users" trap). Admins with real shared mailboxes can opt in.
+    "sync.shared_detect_unlicensed": SettingSpec(False),
     # Additionally (optional): glob patterns against UPN/primary mail as a manual override.
     "sync.shared_patterns": SettingSpec(
         ["noreply@*", "no-reply@*", "donotreply@*", "do-not-reply@*"]

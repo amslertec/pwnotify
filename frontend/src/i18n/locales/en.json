@@ -774,6 +774,10 @@
       "ssl": "SSL/TLS",
       "none": "None"
     },
+    "upnFallback": {
+      "title": "Use the UPN as address when no mailbox exists",
+      "description": "When an account has no mailbox (empty mail field) and no alternate address, its UPN (e.g. name@company.com) is used as the recipient. Only enable this if your UPNs are real, deliverable email addresses."
+    },
     "test": {
       "title": "Send test email",
       "placeholder": "recipient@example.com",

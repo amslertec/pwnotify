@@ -19,7 +19,7 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
   )
   const [patternInput, setPatternInput] = useState('')
   const [detectUnlicensed, setDetectUnlicensed] = useState(
-    Boolean(settings['sync.shared_detect_unlicensed'] ?? true),
+    Boolean(settings['sync.shared_detect_unlicensed'] ?? false),
   )
 
   const addPattern = () => {

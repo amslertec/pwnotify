@@ -69,7 +69,13 @@ async def notify_user(
         return NotifyOutcome(action="skipped", reason="not_due")
 
     strategy = settings.get("mail.recipient_strategy", "primary")
-    recipients, channel = resolve_recipients(strategy, user.mail, user.other_mails)
+    recipients, channel = resolve_recipients(
+        strategy,
+        user.mail,
+        user.other_mails,
+        upn=user.upn,
+        upn_fallback=bool(settings.get("mail.upn_fallback")),
+    )
     if not recipients:
         return NotifyOutcome(action="skipped", stage=stage, reason="no_recipient")
 

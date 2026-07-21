@@ -35,3 +35,32 @@ def test_alternate_fallback_falls_back_to_primary() -> None:
 
 def test_no_primary_mail_yields_empty() -> None:
     assert resolve_recipients("primary", None, OTHERS) == ([], "primary")
+
+
+UPN = "user@contoso.com"
+
+
+def test_upn_fallback_used_when_no_mailbox() -> None:
+    # No mailbox, no alternates, fallback on: UPN becomes the primary recipient.
+    assert resolve_recipients("primary", None, [], upn=UPN, upn_fallback=True) == ([UPN], "primary")
+
+
+def test_upn_fallback_ignored_when_mailbox_present() -> None:
+    # A real mailbox always wins over the UPN.
+    assert resolve_recipients("primary", PRIMARY, [], upn=UPN, upn_fallback=True) == (
+        [PRIMARY],
+        "primary",
+    )
+
+
+def test_upn_fallback_off_yields_empty() -> None:
+    # Fallback off (default): a mailbox-less account stays without a recipient.
+    assert resolve_recipients("primary", None, [], upn=UPN, upn_fallback=False) == ([], "primary")
+
+
+def test_upn_fallback_feeds_both_and_alternate_fallback() -> None:
+    # The UPN-derived primary also flows into `both` and `alternate_fallback_primary`.
+    assert resolve_recipients("both", None, [], upn=UPN, upn_fallback=True) == ([UPN], "both")
+    assert resolve_recipients(
+        "alternate_fallback_primary", None, [], upn=UPN, upn_fallback=True
+    ) == ([UPN], "primary")

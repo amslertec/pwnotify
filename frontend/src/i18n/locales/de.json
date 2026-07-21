@@ -774,6 +774,10 @@
       "ssl": "SSL/TLS",
       "none": "Keine"
     },
+    "upnFallback": {
+      "title": "UPN als Adresse verwenden, wenn kein Postfach vorhanden",
+      "description": "Hat ein Konto kein Postfach (leeres Mail-Feld) und keine Alternativadresse, wird der UPN (z. B. name@firma.ch) als Empfänger genutzt. Nur aktivieren, wenn eure UPNs echte, zustellbare Mailadressen sind."
+    },
     "test": {
       "title": "Test-Mail senden",
       "placeholder": "empfaenger@example.com",

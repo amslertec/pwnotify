@@ -36,7 +36,10 @@ from .graph.client import GraphClient, GraphConfig
 _ENTRA_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 PHOTO_TTL = timedelta(days=7)
-NEG_TTL = timedelta(days=1)
+# "No photo" is cached for a full week (matching PHOTO_TTL): profile photos are rarely added
+# after the fact, and a 1-day negative TTL meant a large photoless tenant re-hit Graph with a
+# 404 for every such user every day. A week cuts that Graph traffic ~7x with negligible staleness.
+NEG_TTL = timedelta(days=7)
 
 # Browser-Cache: verhindert, dass jeder Tabellen-Render die Route erneut trifft.
 _BROWSER_MAX_AGE = 3600
