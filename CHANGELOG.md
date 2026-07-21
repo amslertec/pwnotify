@@ -4,6 +4,23 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] — 2026-07-21
+
+A UI-polish release that makes the Settings tabs more compact and consistent, plus a design-token fix.
+
+### Changed
+
+- **Settings tabs redesigned for density and consistency.** Repeated inline patterns are now shared
+  primitives: toggle options sit in a unified, tighter list (`ToggleRow`/`Panel` with hairline
+  dividers), the three chip inputs (reminder days, shared-mailbox patterns, alert recipients) share
+  one `ChipInput`, and info/warning boxes share one `Callout`. Cards use tighter padding and a
+  lighter header. The long dynamic-group rule guide on the Graph tab is now collapsible.
+
+### Fixed
+
+- **The `warning` color token was undefined**, so the amber-tinted warning boxes (test mode, group
+  permission notice) rendered without their tint. Added `--warning` for light and dark themes.
+
 ## [0.3.4] — 2026-07-20
 
 A hardening-and-fix release closing a third independent security-audit round, plus two production
@@ -991,6 +1008,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.5
 [0.3.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.4
 [0.3.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.3
 [0.3.2]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.2
