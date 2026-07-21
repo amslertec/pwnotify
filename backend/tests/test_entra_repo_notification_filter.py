@@ -80,3 +80,25 @@ async def test_include_inactive_adds_disabled_and_shared(
         _upn("disabled"),
         _upn("shared"),
     }
+
+
+async def _list_upns(session: AsyncSession, **kwargs: object) -> set[str]:
+    rows, _total = await entra_repo.list_users(session, page_size=200, **kwargs)  # type: ignore[arg-type]
+    return {u.upn for u in rows if u.upn.startswith(_PREFIX)}
+
+
+async def test_list_default_hides_shared_shows_disabled(
+    session: AsyncSession, seeded: dict[str, EntraUser]
+) -> None:
+    # The default users list hides shared mailboxes but still shows disabled accounts.
+    got = await _list_upns(session)
+    assert _upn("shared") not in got
+    assert {_upn("normal"), _upn("disabled")} <= got
+
+
+async def test_list_include_shared_surfaces_shared(
+    session: AsyncSession, seeded: dict[str, EntraUser]
+) -> None:
+    # Sync test mode (include_shared=True) surfaces shared/unlicensed accounts in the list.
+    got = await _list_upns(session, include_shared=True)
+    assert {_upn("normal"), _upn("disabled"), _upn("shared")} <= got

@@ -25,6 +25,7 @@ from ..deps import (
     AdminUser,
     CurrentUser,
     TenantSessionDep,
+    TenantSettingsDep,
     TenantWriteSessionDep,
     TenantWriteSettingsDep,
 )
@@ -55,6 +56,7 @@ class BulkRequest(BaseModel):
 async def list_users(
     _: CurrentUser,
     session: TenantSessionDep,
+    settings: TenantSettingsDep,
     search: str | None = None,
     status: str | None = None,
     sort_by: str = "days_left",
@@ -62,6 +64,9 @@ async def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> Page[EntraUserOut]:
+    # In sync test mode the default list also surfaces shared/unlicensed accounts, matching
+    # the test-mode notification scope; normal operation keeps them in their own view.
+    include_shared = bool(await settings.get("sync.test_mode"))
     rows, total = await entra_repo.list_users(
         session,
         search=search,
@@ -70,6 +75,7 @@ async def list_users(
         sort_dir=sort_dir,
         page=page,
         page_size=page_size,
+        include_shared=include_shared,
     )
     return Page[EntraUserOut](
         items=[EntraUserOut.model_validate(r, from_attributes=True) for r in rows],
@@ -84,12 +90,19 @@ async def export_users(
     request: Request,
     user: CurrentUser,
     session: TenantSessionDep,
+    settings: TenantSettingsDep,
     fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
     search: str | None = None,
     status: str | None = None,
 ) -> StreamingResponse:
+    include_shared = bool(await settings.get("sync.test_mode"))
     rows, total = await entra_repo.list_users(
-        session, search=search, status=status, page=1, page_size=_EXPORT_MAX_ROWS
+        session,
+        search=search,
+        status=status,
+        page=1,
+        page_size=_EXPORT_MAX_ROWS,
+        include_shared=include_shared,
     )
     if total > _EXPORT_MAX_ROWS:
         # Do not silently truncate: an export that looks complete but drops rows

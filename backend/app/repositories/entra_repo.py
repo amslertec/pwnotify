@@ -47,7 +47,9 @@ async def get_by_entra_id(session: AsyncSession, entra_id: str) -> EntraUser | N
     return res.scalar_one_or_none()
 
 
-def _apply_filters(stmt: Select[Any], *, search: str | None, status: str | None) -> Select[Any]:
+def _apply_filters(
+    stmt: Select[Any], *, search: str | None, status: str | None, include_shared: bool = False
+) -> Select[Any]:
     if search:
         like = f"%{search.lower()}%"
         stmt = stmt.where(
@@ -69,10 +71,13 @@ def _apply_filters(stmt: Select[Any], *, search: str | None, status: str | None)
         stmt = stmt.where(EntraUser.account_enabled.is_(False))
     elif status == "excluded":
         stmt = stmt.where(EntraUser.excluded.is_(True))
-    # Shared mailboxes only show up in their own view (status='shared'), otherwise hidden.
+    # Shared mailboxes normally only show up in their own view (status='shared') and are
+    # hidden everywhere else. `include_shared` (sync test mode) lifts that hiding so the
+    # default list surfaces shared/unlicensed accounts too -- consistent with test mode
+    # already notifying them (see `iter_active_for_notification`).
     if status == "shared":
         stmt = stmt.where(EntraUser.is_shared.is_(True))
-    else:
+    elif not include_shared:
         stmt = stmt.where(EntraUser.is_shared.is_(False))
     return stmt
 
@@ -86,12 +91,20 @@ async def list_users(
     sort_dir: str = "asc",
     page: int = 1,
     page_size: int = 25,
+    include_shared: bool = False,
 ) -> tuple[list[EntraUser], int]:
-    base = _apply_filters(select(EntraUser), search=search, status=status)
+    base = _apply_filters(
+        select(EntraUser), search=search, status=status, include_shared=include_shared
+    )
 
     total = (
         await session.execute(
-            _apply_filters(select(func.count(EntraUser.id)), search=search, status=status)
+            _apply_filters(
+                select(func.count(EntraUser.id)),
+                search=search,
+                status=status,
+                include_shared=include_shared,
+            )
         )
     ).scalar_one()
 
