@@ -1,3 +1,3 @@
 """PwNotify — Password Expiry Notification Tool für Microsoft Entra ID."""
 
-__version__ = "0.3.5"
+__version__ = "0.3.6"

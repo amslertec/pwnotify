@@ -4,6 +4,38 @@ All notable changes to PwNotify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] — 2026-07-21
+
+A large-tenant correctness release: unlicensed users are no longer hidden, mailbox-less
+accounts can be notified, sync test mode reveals hidden accounts, and Graph photo traffic drops.
+
+### Changed
+
+- **Unlicensed accounts are shown by default.** The "detect unlicensed mailboxes as shared"
+  heuristic (`sync.shared_detect_unlicensed`) now defaults to **off**. On by default it
+  classified every unlicensed-but-has-mailbox account as a shared mailbox and hid it from the
+  user list — silently dropping hundreds of legitimate users in large tenants. Existing
+  instances keep their stored value; flip it in Settings → Policy. Real shared mailboxes can
+  opt back in.
+
+### Added
+
+- **UPN fallback for notifications** (`mail.upn_fallback`, Settings → Mail, off by default).
+  When an account has no mailbox (empty `mail`) and no alternate address, its UPN is used as
+  the recipient — for tenants where the UPN is the deliverable address. Off by default so it is
+  a deliberate choice, never a surprise send.
+
+### Fixed
+
+- **Sync test mode now also reveals shared/unlicensed accounts in the user list and export**
+  (previously it only affected notification eligibility, so those accounts stayed hidden even
+  in test mode).
+
+### Performance
+
+- **The "no profile photo" negative cache lasts 7 days instead of 1**, cutting repeated Graph
+  `photo/$value` 404s by ~7× for large photoless tenants.
+
 ## [0.3.5] — 2026-07-21
 
 A UI-polish release that makes the Settings tabs more compact and consistent, plus a design-token fix.
@@ -1008,6 +1040,7 @@ Initial release.
 - **CI**: GitHub Actions running lint, type-checks, tests, Trivy and Docker Scout
   scans (build fails on HIGH/CRITICAL), and multi-arch publish.
 
+[0.3.6]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.6
 [0.3.5]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.5
 [0.3.4]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.4
 [0.3.3]: https://github.com/amslertec/pwnotify/releases/tag/v0.3.3
