@@ -5,9 +5,8 @@ import { toast } from 'sonner'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Switch } from '../ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
-import { Field, Section } from './section'
+import { Field, Panel, Section, ToggleRow } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import { translateError } from '@/lib/errors'
@@ -87,18 +86,19 @@ export function TemplateTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('templateTab.perUser.title')}</p>
-            <p className="text-muted-foreground text-xs">
+        <Panel>
+          <ToggleRow
+            title={t('templateTab.perUser.title')}
+            description={
               <Trans
                 i18nKey="templateTab.perUser.description"
                 components={{ code: <code className="font-mono" /> }}
               />
-            </p>
-          </div>
-          <Switch checked={perUser} onCheckedChange={setPerUser} />
-        </div>
+            }
+            checked={perUser}
+            onCheckedChange={setPerUser}
+          />
+        </Panel>
         <Field label={t('templateTab.defaultLang.label')} hint={t('templateTab.defaultLang.hint')}>
           <Select value={defaultLang} onValueChange={setDefaultLang}>
             <SelectTrigger className="max-w-48">

@@ -1,11 +1,9 @@
-import { X } from 'lucide-react'
 import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Switch } from '../ui/switch'
-import { Field, Section } from './section'
+import { ChipInput, Field, Panel, Section, ToggleRow } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 
 export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
@@ -49,18 +47,19 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('policyTab.autoDetect.title')}</p>
-            <p className="text-muted-foreground text-xs">
+        <Panel>
+          <ToggleRow
+            title={t('policyTab.autoDetect.title')}
+            description={
               <Trans
                 i18nKey="policyTab.autoDetect.description"
                 components={{ code: <code className="font-mono" /> }}
               />
-            </p>
-          </div>
-          <Switch checked={auto} onCheckedChange={setAuto} />
-        </div>
+            }
+            checked={auto}
+            onCheckedChange={setAuto}
+          />
+        </Panel>
 
         <Field
           label={t('policyTab.manualValidity.label')}
@@ -85,40 +84,28 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('policyTab.detectUnlicensed.title')}</p>
-            <p className="text-muted-foreground text-xs">
-              {t('policyTab.detectUnlicensed.description')}
-            </p>
-          </div>
-          <Switch checked={detectUnlicensed} onCheckedChange={setDetectUnlicensed} />
-        </div>
+        <Panel>
+          <ToggleRow
+            title={t('policyTab.detectUnlicensed.title')}
+            description={t('policyTab.detectUnlicensed.description')}
+            checked={detectUnlicensed}
+            onCheckedChange={setDetectUnlicensed}
+          />
+        </Panel>
 
         <Field label={t('policyTab.patterns.label')} hint={t('policyTab.patterns.hint')}>
-          <div className="flex flex-wrap items-center gap-2">
-            {patterns.map((p) => (
-              <span
-                key={p}
-                className="bg-muted inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-sm"
-              >
-                {p}
-                <button
-                  onClick={() => setPatterns(patterns.filter((x) => x !== p))}
-                  aria-label={t('policyTab.remove')}
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))}
-            <Input
-              value={patternInput}
-              onChange={(e) => setPatternInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPattern())}
-              placeholder={t('policyTab.patterns.placeholder')}
-              className="w-40 font-mono"
-            />
-          </div>
+          <ChipInput
+            values={patterns}
+            chipLabel={(p) => p}
+            onRemove={(p) => setPatterns(patterns.filter((x) => x !== p))}
+            input={patternInput}
+            onInputChange={setPatternInput}
+            onAdd={addPattern}
+            placeholder={t('policyTab.patterns.placeholder')}
+            removeLabel={t('policyTab.remove')}
+            mono
+            inputClassName="w-40"
+          />
         </Field>
       </Section>
     </div>

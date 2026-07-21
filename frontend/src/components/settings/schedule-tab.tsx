@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
 
 import { RunTriggerButtons } from '../run-status'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Switch } from '../ui/switch'
-import { Field, Section } from './section'
+import { ChipInput, Field, Panel, Section, ToggleRow } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { hasAdminRights, useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
@@ -70,9 +68,9 @@ export function ScheduleTab({ settings, save, saving }: SettingsTabProps) {
         </Field>
       </div>
 
-      <div className="border-border bg-muted/40 rounded-lg border p-4">
+      <div className="border-border bg-muted/40 rounded-lg border p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
             {t('scheduleTab.nextRuns')}
           </p>
           {/* Hier sieht man den Zeitplan — also der richtige Ort, ihn zu testen oder
@@ -91,38 +89,28 @@ export function ScheduleTab({ settings, save, saving }: SettingsTabProps) {
       </div>
 
       <Field label={t('scheduleTab.reminderLevels')}>
-        <div className="flex flex-wrap items-center gap-2">
-          {days.map((d) => (
-            <span
-              key={d}
-              className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-medium"
-            >
-              {t('scheduleTab.dayChip', { n: d })}
-              <button
-                onClick={() => setDays(days.filter((x) => x !== d))}
-                aria-label={t('scheduleTab.remove')}
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-          <Input
-            value={dayInput}
-            onChange={(e) => setDayInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDay())}
-            placeholder={t('scheduleTab.daysPlaceholder')}
-            className="w-20"
-          />
-        </div>
+        <ChipInput
+          values={days}
+          chipLabel={(d) => t('scheduleTab.dayChip', { n: d })}
+          onRemove={(d) => setDays(days.filter((x) => x !== d))}
+          input={dayInput}
+          onInputChange={setDayInput}
+          onAdd={addDay}
+          placeholder={t('scheduleTab.daysPlaceholder')}
+          removeLabel={t('scheduleTab.remove')}
+          tone="primary"
+          inputClassName="w-20"
+        />
       </Field>
 
-      <div className="border-border flex items-center justify-between rounded-lg border p-4">
-        <div>
-          <p className="text-sm font-medium">{t('scheduleTab.dryRun.title')}</p>
-          <p className="text-muted-foreground text-xs">{t('scheduleTab.dryRun.description')}</p>
-        </div>
-        <Switch checked={dryRun} onCheckedChange={setDryRun} />
-      </div>
+      <Panel>
+        <ToggleRow
+          title={t('scheduleTab.dryRun.title')}
+          description={t('scheduleTab.dryRun.description')}
+          checked={dryRun}
+          onCheckedChange={setDryRun}
+        />
+      </Panel>
     </Section>
   )
 }

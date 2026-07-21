@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
-import { Switch } from '../ui/switch'
-import { Field, Section } from './section'
+import { Callout, Field, Panel, Section, ToggleRow } from './section'
 import { LockableInput } from './lockable-input'
 import type { SettingsTabProps } from '@/pages/settings'
 import { hasAdminRights, useAuth } from '@/lib/auth'
@@ -79,13 +78,14 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
         </Button>
       }
     >
-      <div className="border-border flex items-center justify-between rounded-lg border p-4">
-        <div>
-          <p className="text-sm font-medium">{t('ssoTab.enable.title')}</p>
-          <p className="text-muted-foreground text-xs">{t('ssoTab.enable.description')}</p>
-        </div>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
-      </div>
+      <Panel>
+        <ToggleRow
+          title={t('ssoTab.enable.title')}
+          description={t('ssoTab.enable.description')}
+          checked={enabled}
+          onCheckedChange={setEnabled}
+        />
+      </Panel>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
@@ -151,9 +151,9 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
         </Field>
       </div>
 
-      <div className="border-border bg-muted/40 rounded-lg border p-4 text-xs">
-        <p className="mb-2 font-medium">{t('ssoTab.setup.heading')}</p>
-        <ol className="text-muted-foreground list-decimal space-y-1 pl-4">
+      <Callout>
+        <p className="text-foreground font-medium">{t('ssoTab.setup.heading')}</p>
+        <ol className="list-decimal space-y-1 pl-4">
           <li>
             {t('ssoTab.setup.step1a')} <strong>Web</strong> {t('ssoTab.setup.step1b')}{' '}
             <code className="bg-card rounded px-1 py-0.5 font-mono break-all">{redirectUri}</code>
@@ -176,12 +176,12 @@ export function SsoTab({ settings, save, saving }: SettingsTabProps) {
             {t('ssoTab.setup.step4e')}
           </li>
         </ol>
-        <p className="text-muted-foreground mt-3 text-xs">
+        <p>
           {t('ssoTab.setup.photoNote1')}{' '}
           <code className="bg-card rounded px-1 py-0.5 font-mono">User.Read.All</code>{' '}
           {t('ssoTab.setup.photoNote2')}
         </p>
-      </div>
+      </Callout>
     </Section>
   )
 }

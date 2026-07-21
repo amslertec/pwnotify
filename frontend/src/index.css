@@ -40,6 +40,7 @@
   --status-never: #94a3b8;
 
   --success: #16a34a;
+  --warning: #d97706;
   --danger: #dc2626;
 }
 
@@ -73,6 +74,7 @@
   --status-never: #64748b;
 
   --success: #22c55e;
+  --warning: #fbbf24;
   --danger: #f87171;
 }
 
@@ -102,6 +104,7 @@
   --color-status-expired: var(--status-expired);
   --color-status-never: var(--status-never);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-danger: var(--danger);
 
   --font-display: 'Space Grotesk Variable', 'Segoe UI', system-ui, sans-serif;

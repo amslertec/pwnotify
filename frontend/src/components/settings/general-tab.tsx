@@ -6,8 +6,7 @@ import { toast } from 'sonner'
 
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Switch } from '../ui/switch'
-import { Field, Section } from './section'
+import { Callout, Field, Panel, Section, ToggleRow } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 import { api } from '@/lib/api'
 import { isDefaultContext, useAuth } from '@/lib/auth'
@@ -61,7 +60,7 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <div className="border-border flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+        <div className="border-border flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
           <div className="flex items-center gap-3">
             {ver?.update_available ? (
               <ArrowUpCircle className="text-primary size-5 shrink-0" />
@@ -106,13 +105,14 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           </div>
         </div>
 
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div className="pr-3">
-            <p className="text-sm font-medium">{t('generalTab.autoCheck.title')}</p>
-            <p className="text-muted-foreground text-xs">{t('generalTab.autoCheck.description')}</p>
-          </div>
-          <Switch checked={updateCheck} onCheckedChange={setUpdateCheck} />
-        </div>
+        <Panel>
+          <ToggleRow
+            title={t('generalTab.autoCheck.title')}
+            description={t('generalTab.autoCheck.description')}
+            checked={updateCheck}
+            onCheckedChange={setUpdateCheck}
+          />
+        </Panel>
       </Section>
       <Section
         title={t('generalTab.security.title')}
@@ -123,15 +123,14 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
-          <span>
-            <span className="block text-sm font-medium">{t('generalTab.security.require2fa')}</span>
-            <span className="text-muted-foreground mt-1 block text-sm">
-              {t('generalTab.security.require2faHint')}
-            </span>
-          </span>
-          <Switch checked={require2fa} onCheckedChange={setRequire2fa} />
-        </label>
+        <Panel>
+          <ToggleRow
+            title={t('generalTab.security.require2fa')}
+            description={t('generalTab.security.require2faHint')}
+            checked={require2fa}
+            onCheckedChange={setRequire2fa}
+          />
+        </Panel>
       </Section>
 
       <Section
@@ -199,20 +198,18 @@ export function GeneralTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
-          <span>
-            <span className="block text-sm font-medium">{t('generalTab.testMode.label')}</span>
-            <span className="text-muted-foreground mt-1 block text-sm">
-              {t('generalTab.testMode.hint')}
-            </span>
-          </span>
-          <Switch checked={testMode} onCheckedChange={setTestMode} />
-        </label>
+        <Panel>
+          <ToggleRow
+            title={t('generalTab.testMode.label')}
+            description={t('generalTab.testMode.hint')}
+            checked={testMode}
+            onCheckedChange={setTestMode}
+          />
+        </Panel>
         {testMode && (
-          <div className="border-warning/40 bg-warning/10 text-foreground flex items-start gap-2 rounded-lg border p-3 text-sm">
-            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+          <Callout variant="warning" icon={<AlertTriangle className="text-warning size-4" />}>
             <p>{t('generalTab.testMode.warning')}</p>
-          </div>
+          </Callout>
         )}
       </Section>
 
@@ -284,19 +281,15 @@ function MultiTenantSection() {
       title={t('generalTab.multiTenant.title')}
       description={t('generalTab.multiTenant.description')}
     >
-      <label className="border-border flex items-start justify-between gap-4 rounded-lg border p-4">
-        <span>
-          <span className="block text-sm font-medium">{t('generalTab.multiTenant.modeLabel')}</span>
-          <span className="text-muted-foreground mt-1 block text-sm">
-            {t('generalTab.multiTenant.modeHint')}
-          </span>
-        </span>
-        <Switch
+      <Panel>
+        <ToggleRow
+          title={t('generalTab.multiTenant.modeLabel')}
+          description={t('generalTab.multiTenant.modeHint')}
           checked={Boolean(instance?.multi_tenant_mode)}
           disabled={isLoading || toggleMode.isPending}
           onCheckedChange={(v) => toggleMode.mutate(v)}
         />
-      </label>
+      </Panel>
 
       <Field
         label={t('generalTab.multiTenant.defaultNameLabel')}

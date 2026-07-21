@@ -79,7 +79,10 @@ export function BrandingTab({ settings, save, saving }: SettingsTabProps) {
         <Field label={t('brandingTab.companyName')}>
           <Input value={company} onChange={(e) => setCompany(e.target.value)} />
         </Field>
-        <Field label={t('brandingTab.primaryColor.label')} hint={t('brandingTab.primaryColor.hint')}>
+        <Field
+          label={t('brandingTab.primaryColor.label')}
+          hint={t('brandingTab.primaryColor.hint')}
+        >
           <div className="flex items-center gap-2">
             <input
               type="color"
@@ -107,7 +110,7 @@ export function BrandingTab({ settings, save, saving }: SettingsTabProps) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="border-border rounded-lg border p-4">
+        <div className="border-border rounded-lg border p-3">
           <p className="mb-2 text-sm font-medium">{t('brandingTab.logo.title')}</p>
           {settings['branding.logo_path'] ? (
             <img
@@ -136,7 +139,7 @@ export function BrandingTab({ settings, save, saving }: SettingsTabProps) {
             ) : null}
           </div>
         </div>
-        <div className="border-border rounded-lg border p-4">
+        <div className="border-border rounded-lg border p-3">
           <p className="mb-2 text-sm font-medium">{t('brandingTab.favicon.title')}</p>
           {settings['branding.favicon_path'] ? (
             <img

@@ -183,7 +183,7 @@ export function MailTab({ settings, save, saving }: SettingsTabProps) {
         )}
       </div>
 
-      <div className="border-border bg-muted/40 rounded-lg border p-4">
+      <div className="border-border bg-muted/40 rounded-lg border p-3">
         <p className="mb-2 text-sm font-medium">{t('mailTab.test.title')}</p>
         <div className="flex gap-2">
           <Input

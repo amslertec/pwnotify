@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -7,7 +8,7 @@ import { ConnectionStatus } from '../run-status'
 import { EntraGuide } from '../entra-guide'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Field, Section } from './section'
+import { Callout, Field, Section } from './section'
 import { LockableInput } from './lockable-input'
 import { GraphResultCard } from '@/pages/setup'
 import type { SettingsTabProps } from '@/pages/settings'
@@ -167,67 +168,74 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
           />
         </Field>
 
-        <div className="border-warning/40 bg-warning/10 text-foreground rounded-lg border p-3 text-xs">
+        <Callout variant="warning">
           <p>
             <strong>{t('graphTab.group.permWarning.title')}</strong>{' '}
             {t('graphTab.group.permWarning.text1')}{' '}
             <code className="bg-card rounded px-1 py-0.5 font-mono">GroupMember.Read.All</code>{' '}
             {t('graphTab.group.permWarning.text2')}
           </p>
-        </div>
+        </Callout>
 
-        <div className="border-border bg-muted/40 text-muted-foreground space-y-3 rounded-lg border p-4 text-xs">
-          <p className="text-foreground text-sm font-medium">
+        <details className="group border-border bg-muted/40 rounded-lg border text-xs">
+          <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-2 p-3 text-sm font-medium">
             {t('graphTab.group.template.heading')}
-          </p>
-          <p>
-            {t('graphTab.group.template.intro1')}{' '}
-            <strong>{t('graphTab.group.template.introGroupsNew')}</strong>{' '}
-            {t('graphTab.group.template.intro2')}{' '}
-            <strong>{t('graphTab.group.template.introDynamicUser')}</strong>{' '}
-            {t('graphTab.group.template.intro3')}{' '}
-            <strong>{t('graphTab.group.template.introEditRule')}</strong>{' '}
-            {t('graphTab.group.template.intro4')}
-          </p>
-
-          <div className="space-y-1.5">
-            <p className="text-foreground font-medium">{t('graphTab.group.template.rule1Title')}</p>
-            <p>{t('graphTab.group.template.rule1Desc')}</p>
-            <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
-              {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.assignedPlans -any (assignedPlan.capabilityStatus -eq "Enabled"))`}
-            </pre>
-          </div>
-
-          <div className="space-y-1.5">
-            <p className="text-foreground font-medium">{t('graphTab.group.template.rule2Title')}</p>
+            <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="border-border text-muted-foreground space-y-3 border-t p-3">
             <p>
-              {t('graphTab.group.template.rule2Desc1')}{' '}
-              <code className="bg-card rounded px-1 py-0.5 font-mono">GROSSBUCHSTABEN</code>
-              {t('graphTab.group.template.rule2Desc2')}
+              {t('graphTab.group.template.intro1')}{' '}
+              <strong>{t('graphTab.group.template.introGroupsNew')}</strong>{' '}
+              {t('graphTab.group.template.intro2')}{' '}
+              <strong>{t('graphTab.group.template.introDynamicUser')}</strong>{' '}
+              {t('graphTab.group.template.intro3')}{' '}
+              <strong>{t('graphTab.group.template.introEditRule')}</strong>{' '}
+              {t('graphTab.group.template.intro4')}
             </p>
-            <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
-              {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.userPrincipalName -match "@FIRMA-DOMAIN.CH$") and\n(user.department -eq "ABTEILUNG")`}
-            </pre>
-            <ul className="list-disc space-y-0.5 pl-4">
-              <li>
-                <code className="bg-card rounded px-1 py-0.5 font-mono">FIRMA-DOMAIN.CH</code>{' '}
-                {t('graphTab.group.template.placeholderDomain')}
-              </li>
-              <li>
-                <code className="bg-card rounded px-1 py-0.5 font-mono">ABTEILUNG</code>{' '}
-                {t('graphTab.group.template.placeholderDept1')}{' '}
-                <code className="font-mono">department</code>{' '}
-                {t('graphTab.group.template.placeholderDept2')}
-              </li>
-            </ul>
-          </div>
 
-          <p>
-            {t('graphTab.group.template.static1')}{' '}
-            <strong>{t('graphTab.group.template.staticGroup')}</strong>
-            {t('graphTab.group.template.static2')}
-          </p>
-        </div>
+            <div className="space-y-1.5">
+              <p className="text-foreground font-medium">
+                {t('graphTab.group.template.rule1Title')}
+              </p>
+              <p>{t('graphTab.group.template.rule1Desc')}</p>
+              <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
+                {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.assignedPlans -any (assignedPlan.capabilityStatus -eq "Enabled"))`}
+              </pre>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-foreground font-medium">
+                {t('graphTab.group.template.rule2Title')}
+              </p>
+              <p>
+                {t('graphTab.group.template.rule2Desc1')}{' '}
+                <code className="bg-card rounded px-1 py-0.5 font-mono">GROSSBUCHSTABEN</code>
+                {t('graphTab.group.template.rule2Desc2')}
+              </p>
+              <pre className="bg-card text-foreground overflow-x-auto rounded-md p-3 font-mono">
+                {`(user.accountEnabled -eq true) and\n(user.userType -eq "Member") and\n(user.userPrincipalName -match "@FIRMA-DOMAIN.CH$") and\n(user.department -eq "ABTEILUNG")`}
+              </pre>
+              <ul className="list-disc space-y-0.5 pl-4">
+                <li>
+                  <code className="bg-card rounded px-1 py-0.5 font-mono">FIRMA-DOMAIN.CH</code>{' '}
+                  {t('graphTab.group.template.placeholderDomain')}
+                </li>
+                <li>
+                  <code className="bg-card rounded px-1 py-0.5 font-mono">ABTEILUNG</code>{' '}
+                  {t('graphTab.group.template.placeholderDept1')}{' '}
+                  <code className="font-mono">department</code>{' '}
+                  {t('graphTab.group.template.placeholderDept2')}
+                </li>
+              </ul>
+            </div>
+
+            <p>
+              {t('graphTab.group.template.static1')}{' '}
+              <strong>{t('graphTab.group.template.staticGroup')}</strong>
+              {t('graphTab.group.template.static2')}
+            </p>
+          </div>
+        </details>
       </Section>
 
       <EntraGuide />

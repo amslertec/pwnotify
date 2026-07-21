@@ -1,11 +1,8 @@
-import { X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/button'
-import { Input } from '../ui/input'
-import { Switch } from '../ui/switch'
-import { Field, Section } from './section'
+import { ChipInput, Field, Panel, Section, ToggleRow } from './section'
 import type { SettingsTabProps } from '@/pages/settings'
 
 export function AlertsTab({ settings, save, saving }: SettingsTabProps) {
@@ -43,56 +40,45 @@ export function AlertsTab({ settings, save, saving }: SettingsTabProps) {
           </Button>
         }
       >
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('alertsTab.enabled.title')}</p>
-            <p className="text-muted-foreground text-xs">{t('alertsTab.enabled.description')}</p>
-          </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-        </div>
+        <Panel>
+          <ToggleRow
+            title={t('alertsTab.enabled.title')}
+            description={t('alertsTab.enabled.description')}
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
+        </Panel>
 
         <Field label={t('alertsTab.recipients.label')} hint={t('alertsTab.recipients.hint')}>
-          <div className="flex flex-wrap items-center gap-2">
-            {recipients.map((r) => (
-              <span
-                key={r}
-                className="bg-muted inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-sm"
-              >
-                {r}
-                <button
-                  onClick={() => setRecipients(recipients.filter((x) => x !== r))}
-                  aria-label={t('alertsTab.remove')}
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))}
-            <Input
-              type="email"
-              value={recipientInput}
-              onChange={(e) => setRecipientInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addRecipient())}
-              placeholder={t('alertsTab.recipients.placeholder')}
-              className="w-56 font-mono"
-            />
-          </div>
+          <ChipInput
+            values={recipients}
+            chipLabel={(r) => r}
+            onRemove={(r) => setRecipients(recipients.filter((x) => x !== r))}
+            input={recipientInput}
+            onInputChange={setRecipientInput}
+            onAdd={addRecipient}
+            placeholder={t('alertsTab.recipients.placeholder')}
+            removeLabel={t('alertsTab.remove')}
+            mono
+            type="email"
+            inputClassName="w-56"
+          />
         </Field>
 
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('alertsTab.digest.title')}</p>
-            <p className="text-muted-foreground text-xs">{t('alertsTab.digest.description')}</p>
-          </div>
-          <Switch checked={digest} onCheckedChange={setDigest} />
-        </div>
-
-        <div className="border-border flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">{t('alertsTab.onFailure.title')}</p>
-            <p className="text-muted-foreground text-xs">{t('alertsTab.onFailure.description')}</p>
-          </div>
-          <Switch checked={onFailure} onCheckedChange={setOnFailure} />
-        </div>
+        <Panel>
+          <ToggleRow
+            title={t('alertsTab.digest.title')}
+            description={t('alertsTab.digest.description')}
+            checked={digest}
+            onCheckedChange={setDigest}
+          />
+          <ToggleRow
+            title={t('alertsTab.onFailure.title')}
+            description={t('alertsTab.onFailure.description')}
+            checked={onFailure}
+            onCheckedChange={setOnFailure}
+          />
+        </Panel>
       </Section>
     </div>
   )
