@@ -37,7 +37,7 @@ export function PolicyTab({ settings, save, saving }: SettingsTabProps) {
     })
 
   return (
-    <div className="space-y-4">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Section
         title={t('policyTab.passwordPolicy.title')}
         description={t('policyTab.passwordPolicy.description')}

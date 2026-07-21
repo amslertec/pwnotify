@@ -75,7 +75,7 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Section
         title={t('graphTab.graph.title')}
         description={t('graphTab.graph.description')}
@@ -238,7 +238,9 @@ export function GraphTab({ settings, save, saving }: SettingsTabProps) {
         </details>
       </Section>
 
-      <EntraGuide />
+      <div className="lg:col-span-2">
+        <EntraGuide />
+      </div>
     </div>
   )
 }
